@@ -45,9 +45,11 @@ half-created observation and reports `SkippedDuplicate`, so its evidence is neve
 
 ### GitHub Actions
 
-`.github/workflows/ci.yml` is a draft that has never run (nothing is pushed yet). To do:
+`.github/workflows/ci.yml` ran green on the Dependabot PRs (2026-10-02: Ubuntu and Windows build/test, format, pack, gitleaks). To do:
 
-- validate it on the first push: Windows leg (DPAPI test), `dotnet format` check, gitleaks (CI only; it is not in the devcontainer), pack; add a job that runs `scripts/validate-config.sh`;
+- `tech/setup-repo` is currently the default branch and `main` does not exist on the remote, so Dependabot PRs target the working branch. Push `main`, make it the default, let Dependabot retarget;
+- the devcontainer node feature bump (1 -> 2) is still open as a Dependabot PR: rebuild the devcontainer locally before merging, CI does not cover it;
+- add a CI job that runs `scripts/validate-config.sh` (the tools are not on the runners yet);
 - release workflow per `docs/releasing.md`: checkout with `fetch-depth: 0` (MinVer reads the tag), pack, push to nuget.org, create the GitHub Release with notes extracted from `CHANGELOG.md`;
 - branch protection on `main`, Dependabot for NuGet and Actions.
 
