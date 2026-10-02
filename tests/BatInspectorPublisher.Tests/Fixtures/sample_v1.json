@@ -1,0 +1,41 @@
+{
+  "SchemaVersion": 1,
+  "DocumentFiles": [
+    {
+      "Comment": null,
+      "Date": "13.06.2026 04:26:34",
+      "Humidity": 92.443848,
+      "Latitude": 50.110000,
+      "Longitude": 8.682000,
+      "PathToPng": "C:\\data\\bat\\session1\\wav\\pnat_20260613_042634.png",
+      "PathToWav": "C:\\data\\bat\\session1\\wav\\PNAT_20260613_042634.wav",
+      "SpeciesLatin": "Pipistrellus nathusii",
+      "SpeciesLocal": "Rauhautfledermaus",
+      "Temperature": 20.052185
+    },
+    {
+      "Comment": null,
+      "Date": "12.06.2026 22:47:18",
+      "Humidity": 90.234375,
+      "Latitude": 50.110010,
+      "Longitude": 8.682020,
+      "PathToPng": "C:\\data\\bat\\session1\\wav\\eser_20260612_224718.png",
+      "PathToWav": "C:\\data\\bat\\session1\\wav\\ESER_20260612_224718.wav",
+      "SpeciesLatin": "Eptesicus Serotinus",
+      "SpeciesLocal": "Breitflügelfledermaus",
+      "Temperature": 19.981689
+    },
+    {
+      "Comment": "unsicher, Verwechslung mit Mausohr-Arten möglich",
+      "Date": "13.06.2026 23:21:14",
+      "Humidity": 77.801514,
+      "Latitude": 50.110020,
+      "Longitude": 8.681980,
+      "PathToPng": "C:\\data\\bat\\session1\\wav\\mmyo_20260613_232114.png",
+      "PathToWav": "C:\\data\\bat\\session1\\wav\\MMYO_20260613_232114.wav",
+      "SpeciesLatin": "Myotis myotis",
+      "SpeciesLocal": "Großes Mausohr",
+      "Temperature": 21.351318
+    }
+  ]
+}

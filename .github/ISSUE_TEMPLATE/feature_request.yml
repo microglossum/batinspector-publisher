@@ -1,0 +1,19 @@
+name: Feature request / Funktionswunsch
+description: Suggest an improvement or offer a new platform adapter. English or German is fine. / Englisch oder Deutsch.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem should it solve? / Welches Problem soll gelöst werden?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Proposed solution / Lösungsvorschlag
+  - type: textarea
+    id: platform
+    attributes:
+      label: "For a new platform adapter: where is its API documented, and how does it authenticate?"
+      description: Adapters are only started once the platform's API and auth model are documented.

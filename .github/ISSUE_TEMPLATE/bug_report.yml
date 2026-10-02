@@ -1,0 +1,42 @@
+name: Bug report / Fehlermeldung
+description: Something does not work as documented. English or German is fine. / Englisch oder Deutsch.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do **not** paste access tokens, client secrets or real roost coordinates. / Bitte **keine** Tokens, Client-Secrets oder echten Quartierkoordinaten einfügen.
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      placeholder: "0.1.0-preview.1"
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Runtime and OS
+      placeholder: ".NET 8 on Windows 11"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened? / Was ist passiert?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect? / Was hast du erwartet?
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps or sanitized input file / Schritte oder bereinigte Eingabedatei
+      render: json
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log output or exception (remove tokens) / Log oder Exception (Tokens entfernen)
+      render: text

@@ -1,0 +1,13 @@
+{
+  // Prose is wrapped by the author; tables and long lines are fine.
+  "config": {
+    "default": true,
+    "MD013": false,
+    "MD024": { "siblings_only": true },
+    "MD033": false,
+    "MD041": false,
+    "MD060": false
+  },
+  "globs": ["**/*.md"],
+  "ignores": ["node_modules/**", "local/**", "**/bin/**", "**/obj/**", "artifacts/**"]
+}

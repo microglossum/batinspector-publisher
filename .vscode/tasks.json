@@ -1,0 +1,70 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "${workspaceFolder}/BatInspectorPublisher.sln", "--nologo", "-v", "q"],
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "test",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["test", "${workspaceFolder}/BatInspectorPublisher.sln", "--nologo"],
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "test (watch)",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["watch", "test", "--project", "${workspaceFolder}/tests/BatInspectorPublisher.Tests"],
+      "isBackground": true,
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "format",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["format", "${workspaceFolder}/BatInspectorPublisher.sln"],
+      "problemMatcher": []
+    },
+    {
+      "label": "format (check)",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["format", "${workspaceFolder}/BatInspectorPublisher.sln", "--verify-no-changes"],
+      "problemMatcher": []
+    },
+    {
+      "label": "pack",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["pack", "${workspaceFolder}/src/BatInspectorPublisher", "-c", "Release", "-o", "${workspaceFolder}/artifacts"],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "clean",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["clean", "${workspaceFolder}/BatInspectorPublisher.sln", "--nologo", "-v", "q"],
+      "problemMatcher": []
+    },
+    {
+      "label": "validate (config files)",
+      "type": "process",
+      "command": "${workspaceFolder}/scripts/validate-config.sh",
+      "problemMatcher": []
+    },
+    {
+      "label": "check (format + build + test)",
+      "dependsOrder": "sequence",
+      "dependsOn": ["format (check)", "build", "test"],
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}

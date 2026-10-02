@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net8.0 stays so consumers on .NET 8 can use the package; net10.0 is the current LTS. -->
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <RootNamespace>BatInspectorPublisher</RootNamespace>
+    <AssemblyName>BatInspectorPublisher</AssemblyName>
+
+    <PackageId>BatInspectorPublisher</PackageId>
+    <!-- Version comes from the git tag (MinVer): tag v0.1.0-preview.1 gives package 0.1.0-preview.1. Untagged builds are 0.1.0-preview.0.N. -->
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+    <MinVerMinimumMajorMinor>0.1</MinVerMinimumMajorMinor>
+    <MinVerDefaultPreReleaseIdentifiers>preview.0</MinVerDefaultPreReleaseIdentifiers>
+    <Authors>Simon Köhler</Authors>
+    <Description>Publishes bat acoustic-monitoring observations from BatInspector to citizen-science platforms (iNaturalist first).</Description>
+    <PackageTags>bats;bioacoustics;inaturalist;citizen-science;batinspector</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/microglossum/batinspector-publisher</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/microglossum/batinspector-publisher</PackageProjectUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+    <PackageReference Include="MinVer" Version="8.0.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.401" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <InternalsVisibleTo Include="BatInspectorPublisher.Tests" />
+  </ItemGroup>
+
+</Project>

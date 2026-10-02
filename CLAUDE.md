@@ -1,0 +1,94 @@
+# BatInspectorPublisher
+
+.NET NuGet library `BatInspectorPublisher` (MIT; targets net8.0 + net10.0, SDK 10 pinned in `global.json`) that BatInspector references in-process to publish
+bat acoustic-monitoring observations to citizen-science platforms. iNaturalist first; NABU|naturgucker later.
+Public repo: <https://github.com/microglossum/batinspector-publisher>.
+
+## Commands
+
+```text
+dotnet build                      # whole solution
+dotnet test                       # all tests (no network, no live API calls)
+dotnet format                     # fix formatting; CI runs `dotnet format --verify-no-changes`
+dotnet pack -c Release -o artifacts
+```
+
+VS Code tasks (`Terminal > Run Task`) wrap these, plus `check` (format check + build + test). `/check` runs the same from Claude Code.
+Before finishing any change: `dotnet format`, then `dotnet test` must pass. CI builds with warnings as errors (`-p:CI=true` reproduces it).
+
+## Layout
+
+```text
+src/BatInspectorPublisher/
+  Core/            platform-neutral: Models/, InputSchema/, Results/, IObservationPublisher, ExportOrchestrator
+  Adapters/INaturalist/    OAuth, token store, API client, publisher (everything iNaturalist-specific)
+  Adapters/Naturgucker/    internal stub only
+tests/BatInspectorPublisher.Tests/   xunit; Fixtures/ = sanitized sample data
+tools/SmokeTest/   manual console host for live tests (not in the solution); reads git-ignored appsettings.local.json
+```
+
+## Rules that are decided - do not re-litigate
+
+- One package, one assembly. `Core` never references `Adapters`; adapters never reference each other (enforced by `ArchitectureTests`).
+- Each adapter owns its auth entirely. No shared auth abstraction in `Core`; do not assume OAuth outside `Adapters/INaturalist`.
+- naturgucker is blocked (no public API docs). Keep it a stub. Do not guess its shape or bend `IObservationPublisher` for it.
+- Input schema is BatInspector-specific, `SchemaVersion` is required. Additive changes only within a version.
+- `PublishOptions.Commit` defaults to false: publishing is public and irreversible, so dry run is the default.
+- Taxon resolution accepts only an exact name match. Never fall back to "first autocomplete hit".
+- The package ships no credentials and reads no config files or environment variables. The host passes `INaturalistOptions`.
+
+## Conventions
+
+- Code, comments, exceptions, logs, tests: English. User-visible content posted to a platform (observation description) is German and lives in `DescriptionBuilder`.
+- Docs are Markdown. User-facing docs are bilingual: English is the source (`README.md`, `docs/*.md`), German is `*.de.md`; change both together. Small files (`CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`) hold both languages in one file.
+- Library code never writes to the console. Use `ILogger` (optional, NullLogger default) and structured results.
+- Never log tokens or token-bearing response bodies.
+- Public API is minimal and fully XML-documented; wire models and the API client stay `internal`.
+- Tests use hand-written HTTP stubs (`StubHttpHandler`), never live APIs. Windows-only behavior uses `[WindowsOnlyFact]`.
+- Keep `CHANGELOG.md` (Keep a Changelog) updated under `[Unreleased]`.
+
+## Secrets and data - hard rules
+
+- Never read, print, copy or commit `*.local.json`, `.env*`, `local/` (real observation data), tokens or client secrets. Permissions deny reading them.
+- Fixtures in `tests/**/Fixtures` must be sanitized: no real coordinates, no real local paths.
+- Do not `git push` or commit unless the user explicitly asks. The remote is public.
+
+## Backlog and memory
+
+- `TODO.md` is the project backlog (open items, blocked items, dropped decisions). Read it at the start of a task, update it when something is decided, found or finished. English only.
+- `CLAUDE.md` (this file) holds standing rules; `docs/releasing.md` is the release runbook; the plan doc in `docs/` holds the design record. Claude's own auto-memory lives outside the repo and is per machine.
+- Internal docs (`CLAUDE.md`, `TODO.md`, `CHANGELOG.md`, the plan) are English only; user-facing docs are bilingual.
+
+## Frameworks
+
+The library multi-targets `net8.0;net10.0`, tests run on both (`dotnet test` does it). Do not use APIs that exist only on net10.0 without a `#if`.
+
+## Project stance
+
+One-person project: external code contributions are not solicited (bug reports are welcome, a contributed new platform adapter would be the exception). Keep community files minimal; do not add contributor-facing process.
+
+## Git rules
+
+- **No AI attribution.** Commit messages and PR descriptions must not mention Claude or AI and must not contain `Co-Authored-By: Claude` or "Generated with Claude Code" lines. Enforced by `"attribution": {"commit": "", "pr": ""}` in `.claude/settings.json`; if a session or tool still suggests such a line, leave it out.
+- Branches: `main` is the squash-merge target; do not commit on it directly. Work on a branch such as `tech/<topic>` and squash-merge into `main` when it is good.
+- Commit messages are English and explain **why**, not what (the diff shows what):
+  - Subject: imperative, at most 72 characters, no trailing period, no `feat:`/`fix:` prefix (the changelog is hand-written, nothing parses prefixes).
+  - Body (wrapped at 72): why the change exists (problem or constraint); the decisions taken and the alternatives rejected, with the reason; consequences and open ends (what is unverified, deferred or known to be imperfect). No file-by-file list.
+  - Issue references as trailers at the end: `Refs: #12` for related work, `Closes: #12` only on the squash commit that lands on `main`. Do not reference `TODO.md` sections (they get renamed); put the decision itself in the body. Once backlog items become issues, each TODO entry carries its issue number.
+  - The squash commit on `main` is the permanent record: write it carefully. Commits on `tech/*` branches are working history and may be shorter.
+  - Public repo: no tokens, real coordinates, local paths, usernames or e-mail addresses in a message.
+- The commit identity is configured repo-locally (`.git/config`): the owner's name and their GitHub noreply address. Never use or write the owner's real e-mail address anywhere. Do not touch `git config --global`.
+- Never `git push`, tag or commit without the owner's explicit OK (settings ask for confirmation).
+
+## Versioning
+
+The package version comes from the git tag via MinVer (`vX.Y.Z`); never add `<Version>` to the csproj. Release procedure and SemVer sizing: `docs/releasing.md`.
+Validate non-C# files with `scripts/validate-config.sh` (VS Code task "validate (config files)"; the tools come from the devcontainer) before finishing changes to workflows, YAML/JSON config, Markdown or the devcontainer.
+
+## Design notes (decisions that are not obvious from the code)
+
+- `IObservationPublisher` lives in `Core/` (no `Abstractions/` folder, no shared auth abstraction). `ExportOrchestrator` is thin: evidence pre-flight, failure isolation, progress. The resolve, duplicate-check, build, create and attach sequence lives inside `INaturalistPublisher`.
+- `PublishResult` is a plain in-memory type. A versioned serialized result schema is deferred until BatInspector needs to persist results.
+- Input `Date` is German local time without zone; only the date is sent to iNaturalist (v2 rejects `time_observed_at`).
+- `SpeciesTaxonMap` from the prototype was not ported: the new schema carries Latin names, not BatInspector codes.
+- The old prototypes (`INaturalistApiKeyExporter`, `INaturalistOAuthExporter`) live on in the owner's other repo; do not look for them here.

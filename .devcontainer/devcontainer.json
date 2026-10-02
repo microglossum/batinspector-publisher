@@ -1,0 +1,56 @@
+{
+  "name": "BatInspectorPublisher (.NET 10)",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "remoteUser": "vscode",
+
+  "features": {
+    "ghcr.io/devcontainers/features/dotnet:2": {
+      "version": "10.0",
+      "additionalVersions": "8.0"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers-extra/features/actionlint:1": {},
+    "ghcr.io/devcontainers-extra/features/npm-packages:1": {
+      "packages": "markdownlint-cli2,ajv-cli,ajv-formats"
+    }
+  },
+  "overrideFeatureInstallOrder": [
+    "ghcr.io/devcontainers/features/node",
+    "ghcr.io/devcontainers-extra/features/npm-packages"
+  ],
+
+  "mounts": [
+    "source=batinspector-publisher-claude,target=/home/vscode/.claude,type=volume",
+    "source=batinspector-publisher-nuget,target=/home/vscode/.nuget,type=volume"
+  ],
+
+  "forwardPorts": [45679],
+  "portsAttributes": {
+    "45679": {
+      "label": "iNaturalist OAuth callback",
+      "onAutoForward": "silent"
+    }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "ms-dotnettools.csdevkit",
+        "ms-dotnettools.csharp",
+        "editorconfig.editorconfig",
+        "davidanson.vscode-markdownlint"
+      ],
+      "settings": {
+        "dotnet.defaultSolution": "BatInspectorPublisher.sln"
+      }
+    }
+  },
+
+  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.claude /home/vscode/.nuget && dotnet restore"
+}
