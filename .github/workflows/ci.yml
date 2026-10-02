@@ -44,7 +44,7 @@ jobs:
             8.0.x
             10.0.x
       - run: dotnet pack src/BatInspectorPublisher -c Release -o artifacts
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: nuget-package
           path: artifacts/*
