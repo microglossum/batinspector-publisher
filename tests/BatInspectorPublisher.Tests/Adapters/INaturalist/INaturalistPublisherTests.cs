@@ -67,11 +67,97 @@ public class INaturalistPublisherTests
         Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
     }
 
+    private void ResolvesTo(string name, string rank, int id) => _http
+        .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, $$"""{ "results": [ { "id": {{id}}, "name": "{{name}}", "rank": "{{rank}}" } ] }""")
+        .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0, "results": [] }""")
+        .On("POST /v2/observations", HttpStatusCode.OK, """{ "total_results": 1, "results": [ { "id": 123, "uuid": "uuid-1" } ] }""")
+        .On("POST /v2/observation_photos", HttpStatusCode.OK, "{}")
+        .On("POST /v2/observation_sounds", HttpStatusCode.OK, "{}");
+
+    [Theory]
+    [InlineData("Nyctaloid", "Chiroptera", "order")]
+    [InlineData("Social", "Chiroptera", "order")]
+    [InlineData("?", "Chiroptera", "order")]
+    [InlineData("Mbart", "Myotis", "genus")]
+    public async Task Publish_UncertainCall_IsFiledUnderTheBroaderTaxonAndKeepsTheOriginalAsGuess(string call, string taxon, string rank)
+    {
+        ResolvesTo(taxon, rank, 42);
+
+        var result = await CreatePublisher().PublishAsync(Candidate() with { ScientificName = call }, Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.Created, result.Status);
+        Assert.Equal(taxon, result.TaxonName);
+        Assert.Contains($"q={Uri.EscapeDataString(taxon)}", _http.Requests[0].PathAndQuery);
+        using var doc = JsonDocument.Parse(_http.Requests.Single(r => r.Method == "POST" && r.Uri.AbsolutePath == "/v2/observations").Body);
+        var observation = doc.RootElement.GetProperty("observation");
+        Assert.Equal(42, observation.GetProperty("taxon_id").GetInt32());
+        Assert.Equal(call, observation.GetProperty("species_guess").GetString());
+    }
+
+    [Fact]
+    public async Task Publish_UncertainCall_DryRunSaysItIsFiledUnderTheBroaderTaxon()
+    {
+        ResolvesTo("Chiroptera", "order", 42);
+
+        var result = await CreatePublisher().PublishAsync(Candidate() with { ScientificName = "Nyctaloid" }, Evidence(), new PublishOptions());
+
+        Assert.Equal(PublishStatus.WouldCreate, result.Status);
+        Assert.Equal("Chiroptera", result.TaxonName);
+        Assert.Contains("Nyctaloid as Chiroptera", result.Message);
+    }
+
+    [Fact]
+    public async Task Publish_ExactMatch_ReportsTheTaxonName()
+    {
+        HappyPath();
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions());
+
+        Assert.Equal("Pipistrellus pipistrellus", result.TaxonName);
+        Assert.DoesNotContain(" as ", result.Message);
+    }
+
+    [Fact]
+    public async Task Publish_UncertainCall_WhenTheBroaderTaxonIsNotFound_IsSkipped()
+    {
+        _http.On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [] }""");
+
+        var result = await CreatePublisher().PublishAsync(Candidate() with { ScientificName = "Nyctaloid" }, Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.SkippedUnresolvedTaxon, result.Status);
+        Assert.Null(result.TaxonName);
+        Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
+    }
+
+    [Theory]
+    [InlineData("todo")]
+    [InlineData("TTEN")]
+    [InlineData("Eptesicus Serotinuss")]
+    public async Task Publish_NameThatIsNoTaxonAndNoKnownCall_IsSkippedNotFiledUnderBats(string name)
+    {
+        _http.On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [] }""");
+
+        var result = await CreatePublisher().PublishAsync(Candidate() with { ScientificName = name }, Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.SkippedUnresolvedTaxon, result.Status);
+        Assert.Single(_http.Requests);
+        Assert.Contains($"q={Uri.EscapeDataString(name)}", _http.Requests[0].PathAndQuery);
+    }
+
+    [Fact]
+    public async Task Publish_NameWithMoreThanTwoWords_IsSkippedWithoutAskingThePlatform()
+    {
+        var result = await CreatePublisher().PublishAsync(Candidate() with { ScientificName = "Myotis cf. daubentonii" }, Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.SkippedUnresolvedTaxon, result.Status);
+        Assert.Empty(_http.Requests);
+    }
+
     [Fact]
     public async Task Publish_ExistingObservation_IsSkippedAsDuplicate()
     {
         _http
-            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus" } ] }""")
+            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
             .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 1, "results": [ { "id": 1 } ] }""");
 
         var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
@@ -122,7 +208,7 @@ public class INaturalistPublisherTests
     public async Task Publish_AudioUploadFails_ReportsPartialFailureWithObservationId()
     {
         _http
-            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus" } ] }""")
+            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
             .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0 }""")
             .On("POST /v2/observations", HttpStatusCode.OK, """{ "results": [ { "id": 123, "uuid": "uuid-1" } ] }""")
             .On("POST /v2/observation_photos", HttpStatusCode.OK, "{}")
@@ -170,7 +256,7 @@ public class INaturalistPublisherTests
     {
         using var cts = new CancellationTokenSource();
         _http
-            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus" } ] }""")
+            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
             .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0 }""")
             .On("POST /v2/observations", HttpStatusCode.OK, """{ "results": [ { "id": 123, "uuid": "uuid-1" } ] }""")
             .On("POST /v2/observation_photos", HttpStatusCode.OK, "{}")
@@ -196,7 +282,7 @@ public class INaturalistPublisherTests
     {
         using var cts = new CancellationTokenSource();
         _http
-            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus" } ] }""")
+            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
             .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0 }""")
             .On("POST /v2/observations", () =>
             {
@@ -228,7 +314,7 @@ public class INaturalistPublisherTests
     public async Task Publish_CreateFails_NamesTheCreateStep()
     {
         _http
-            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus" } ] }""")
+            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
             .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0 }""")
             .On("POST /v2/observations", HttpStatusCode.InternalServerError, "kaputt");
 
@@ -260,7 +346,7 @@ public class INaturalistPublisherTests
     }
 
     private StubHttpHandler WithExisting(string searchResponse) => _http
-        .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus" } ] }""")
+        .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
         .On("GET /v1/observations", HttpStatusCode.OK, searchResponse)
         .On("POST /v2/observation_photos", HttpStatusCode.OK, "{}")
         .On("POST /v2/observation_sounds", HttpStatusCode.OK, "{}");
@@ -299,7 +385,7 @@ public class INaturalistPublisherTests
     public async Task Publish_ResumeFails_ReportsTheStepAndKeepsTheObservationId()
     {
         _http
-            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus" } ] }""")
+            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
             .On("GET /v1/observations", HttpStatusCode.OK, ExistingObservations(photos: "[]", sounds: "[]"))
             .On("POST /v2/observation_photos", HttpStatusCode.InternalServerError, "kaputt");
 
@@ -358,18 +444,6 @@ public class INaturalistPublisherTests
 
         Assert.Equal(PublishStatus.SkippedDuplicate, result.Status);
         Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
-    }
-
-    [Fact]
-    public async Task Publish_ResolvedTaxonIsCachedAcrossCandidates()
-    {
-        HappyPath();
-        var publisher = CreatePublisher();
-
-        await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions());
-        await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions());
-
-        Assert.Single(_http.Requests, r => r.PathAndQuery.StartsWith("/v2/taxa/autocomplete"));
     }
 
     [Fact]
@@ -445,6 +519,24 @@ public class INaturalistPublisherTests
         Assert.Contains("Luftfeuchte: 73,5 %.", description);
         Assert.Contains("Anmerkung zur Bestimmung: unsicher", description);
         Assert.StartsWith(TestData.Options().DescriptionPrefix, description);
+    }
+
+    [Fact]
+    public void BuildPayload_Description_NamesTheOriginalCallWhenFiledUnderABroaderTaxon()
+    {
+        var candidate = Candidate() with { ScientificName = "Nyctaloid" };
+
+        var description = CreatePublisher().BuildPayload(candidate, 42, "Chiroptera").Description!;
+
+        Assert.Contains("Bestimmung in BatInspector: \"Nyctaloid\" (keine sichere Artbestimmung), hier als Chiroptera eingetragen.", description);
+    }
+
+    [Fact]
+    public void BuildPayload_Description_HasNoBroaderTaxonLineForAnExactMatch()
+    {
+        var description = CreatePublisher().BuildPayload(Candidate(), 99, "Pipistrellus pipistrellus").Description!;
+
+        Assert.DoesNotContain("Bestimmung in BatInspector", description);
     }
 
     [Fact]

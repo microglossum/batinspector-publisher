@@ -1,37 +1,34 @@
 # TODO
 
 Project backlog, versioned with the code. English only (internal doc, no German twin).
-Workflow: read this before starting work; when an item is done move it to **Done** with the date and add a
-`CHANGELOG.md` line if users of the package notice it. Decisions already taken live in
-`CLAUDE.md`.
+It lists work that is still open or blocked, and nothing else: finished work is recorded by the commit and
+`CHANGELOG.md`, decisions against something live in `CLAUDE.md`. Read this before starting work and groom it
+before every commit (rules in `CLAUDE.md`).
 
-## Open
+## Open: code and design
 
-### Cross-platform token storage (remaining)
+### First live test against iNaturalist
 
-The documented minimum is done (see Done): owner-only file mode, atomic write, fail-fast `CanSave`, corrupt file as "no token". What is left waits until BatInspector runs off Windows:
+The publishing code (taxa, duplicate check, create, attach) was only tested against stubs; login, stored token and silent JWT renewal already work live (SmokeTest `login`, `whoami`, `renew`). Run a real dry run and then a single real observation (with a test account
+or one that may be deleted afterwards) before anything is released. Time handling is tracked under "Times and time zones".
 
-- Real secret storage per OS (macOS Keychain, Linux Secret Service / libsecret, kwallet): left to the host through `INaturalistTokenStore`; a Keychain / Secret Service package is deferred.
-- The stored OAuth token never expires, so it is a long-lived credential for the user's iNaturalist account (unlike the client secret, which a distributed app cannot keep confidential).
-- Do not design a shared "secure value store" abstraction from one adapter. Revisit once a second adapter (naturgucker) shows what it needs to store.
-- The host's own OAuth client ID/secret settings need a cross-OS home too, but that is the host's concern.
+Checklist for the live test (things stubs cannot prove):
 
-### Rethink taxon matching
+- When the response has only a uuid and no numeric id, `Url` stays null. Check whether `https://www.inaturalist.org/observations/{uuid}` resolves and use it if so.
+- Resume (new, written from memory of the v1 API, never seen live): the v1 `/observations` search results must carry `description`, `photos` and `sounds`, and `description` must come back as sent (the match ignores whitespace differences only).
+  If a field is missing the observation is deliberately left alone (`SkippedDuplicate`), so a wrong assumption fails safe but resume never triggers. Check with a real half-created observation (stop after the photo, or delete the sound in the web UI).
+  Also check that an observation with a not yet processed upload already lists its photo or sound.
+- The duplicate check sends `mine_only=true` to v1 `/observations`. Confirm the parameter exists and really restricts to the user's own observations; if it is ignored, the check matches other users' observations and reports false duplicates. Compare the result with and without it (and with `user_id` / `user_login` as the alternative).
 
-Today: exact case-insensitive name match on `/v2/taxa/autocomplete`; no match means `SkippedUnresolvedTaxon`; there is no
-fallback to the first hit (that would file observations under wrong species). Open questions:
+### Taxon matching: live verification
 
-- iNaturalist taxonomy versus German/EU bat checklists: synonyms, splits and lumps (Myotis mystacinus/brandtii,
-  Plecotus, ...). Does autocomplete return inactive or synonym taxa?
-- Genus-level and uncertain calls (BatInspector codes like "Nyctaloid" or "?"): how will they appear in `SpeciesLatin`,
-  and what should happen? Rank checks?
-- Several exact matches, a host-supplied name override map, regression fixtures from real responses.
-Decide the expected behavior with real BatInspector data before changing code.
+Needs the live API or BatInspector:
 
-### Retry and rate limiting
-
-Split off from the part-upload work (resume is done, see Done): a transient error (5xx, 429, network) still ends the candidate as `Failed` at once; the next run completes it through resume.
-Still open: retry with backoff for transient errors, and rate limiting against iNaturalist's API etiquette (check the documented request limits, and whether `Retry-After` is sent).
+- Live check of the autocomplete response: `rank`, `is_active` and `matched_term` must be present with `fields=id,name,rank,is_active,matched_term` (a missing rank is treated as a mismatch, so a wrong assumption fails safe but skips everything). Check that a synonym search returns the current taxon with `matched_term`, and that inactive taxa are not returned by default.
+- Homonyms: an exact genus name that also exists in another kingdom would be skipped as ambiguous. Check `Myotis`, `Plecotus`, `Pipistrellus`, `Eptesicus`, `Vespertilio`, `Chiroptera` live; if one is ambiguous, narrow the search to bats (for example by ancestor) instead of picking one.
+- Check that `Myotis oxygnatus` (BatInspector's spelling; the usual spelling is *oxygnathus*) and the other Latin names BatInspector exports (`BatInfo.cs` species list in the BatInspector repository) resolve; list the ones that do not.
+- BatInspector exports the raw filename abbreviation when it has no species entry (for example `TTEN`, Tadarida teniotis, which is in its regional lists but not its species list): such entries are skipped by design. The fix belongs into BatInspector's export, not here.
+- Check that `species_guess` keeps the original value (`Nyctaloid`) when `taxon_id` is Chiroptera, and how iNaturalist shows it.
 
 ### Dry run should preview duplicates
 
@@ -41,39 +38,56 @@ The dry run is the default and the only safety net, so it should be faithful:
 - Run the (read-only) duplicate check in the dry run too and report `SkippedDuplicate` (and `Resumed` as "would resume": the match logic is in `INaturalistPublisher`).
 - A dry run currently also needs a login for the JWT, although taxon autocomplete is a public endpoint. Check which calls really need auth; the duplicate check with `mine_only` does, so a dry run that previews duplicates needs the login anyway. Decide whether that is acceptable.
 
-### Test the Windows-only code (DPAPI) without a Windows machine
+### Retry and rate limiting
 
-`ProtectedFileTokenStore` uses DPAPI on Windows; the `[WindowsOnlyFact]` test (`Save_OnWindows_EncryptsTheFile`) is skipped on Linux, so the devcontainer never runs it. The CI matrix already has `windows-latest`, so every push is covered; what is missing is a local way to check it before pushing. Options to evaluate:
+A transient error (5xx, 429, network) ends the candidate as `Failed` at once; the next run completes it through resume. Open: retry with backoff for transient errors, and rate limiting against iNaturalist's API etiquette (check the documented request limits, and whether `Retry-After` is sent).
 
-- Wine in the devcontainer, running the Windows build of the test assembly (`dotnet test` with a win-x64 runtime under Wine). Open questions: does Wine's `crypt32` DPAPI (`CryptProtectData`) behave like Windows (per-user key, `Unprotect` failing for foreign data, which feeds the corrupt-file path)? Is a Windows .NET SDK/runtime usable under Wine at all, and is the setup worth its weight in the image?
-- A Windows container (needs a Windows host with Docker in Windows-container mode, so not an option for the Linux devcontainer) or a Windows VM.
-- Abstract DPAPI behind a small internal seam (`IDataProtector`-like) so the file logic (atomic write, corrupt file as "no token", fallbacks) is tested on Linux with a fake protector, and only the 5-line DPAPI call stays Windows-only. This is the cheapest and probably the best first step, independent of Wine.
-- Other Windows-only behavior to cover the same way: the `Process.Start` browser launch in the SmokeTest, and the Europe/Berlin time zone ID differences (`W. Europe Standard Time` vs IANA) if tz data ever differs on Windows.
+### iNaturalist upload limits (file size and format)
 
-Decide after trying the seam; use Wine only if a real gap remains. A CI-only check is acceptable if it does not.
+Evidence files are read completely into memory (one candidate at a time) and uploaded as is. Nothing checks size or format limits yet, so an oversized file only fails at the upload, after the observation was already created
+(the next run then completes it by resume).
 
-### GitHub Actions
+- Look up iNaturalist's limits for observation photos and sounds: maximum file size, accepted image and audio formats and sample rates, duration limits. Check the v2 API docs and the sound upload rules; confirm with a real upload in the live test.
+- Reject files over the limit in the adapter pre-flight (`Adapters/INaturalist`, not `Core`), before the observation is created, with a clear `SkippedInvalidEvidence` message. It also caps memory use.
+- Decide whether a too large spectrogram PNG should be re-encoded or left to the host, and what to do with WAV recordings over the sound limit (skip, or host provides a compressed copy).
+- Add the limits to `docs/inaturalist-setup.md`.
 
-`.github/workflows/ci.yml` ran green on the Dependabot PRs (2026-10-02: Ubuntu and Windows build/test, format, pack, gitleaks). To do:
+### Times and time zones
 
-- `tech/setup-repo` is currently the default branch and `main` does not exist on the remote, so Dependabot PRs target the working branch. Push `main`, make it the default, let Dependabot retarget;
-- the devcontainer node feature bump (1 -> 2) is still open as a Dependabot PR: rebuild the devcontainer locally before merging, CI does not cover it;
-- add a CI job that runs `scripts/validate-config.sh` (the tools are not on the runners yet);
-- release workflow per `docs/releasing.md`: checkout with `fetch-depth: 0` (MinVer reads the tag), pack, push to nuget.org, create the GitHub Release with notes extracted from `CHANGELOG.md`;
-- branch protection on `main`, Dependabot for NuGet and Actions.
+Needs the live test:
 
-### First NuGet release
+- **iNaturalist:** send the time as well, with the zone (the candidate now carries `TimeZoneId`), so the platform does not read it in the account's zone. Find out in the live test whether v2 accepts a time in `observed_on_string`, which zone parameter it expects (and in which name format),
+  and whether `time_observed_at` is really rejected. Then update the README sentence "iNaturalist receives only the calendar date" (both languages) and the input reference page.
 
-The package ID `BatInspectorPublisher` was free on nuget.org on 2026-10-02. Steps:
+### Input validation
 
-1. Create a nuget.org account (sign in with a Microsoft account) and enable 2FA.
-2. Optional: reserve the ID prefix `BatInspector*` (free request, gives the verified badge).
-3. Create an API key with Push scope, restricted to the glob `BatInspectorPublisher*`, with an expiry date.
-   Alternative: nuget.org trusted publishing via GitHub OIDC, which avoids a long-lived key (verify current availability).
-4. Store the key as the GitHub secret `NUGET_API_KEY`.
-5. Tag-triggered release workflow, see `docs/releasing.md`.
-6. First release as `0.1.0-preview.N`. Versions are immutable: they can be unlisted but not deleted.
-Prerequisites: live smoke test (below), CHANGELOG, README check.
+Principles for any new check: validate at the boundary, report every problem with its path, never alter data silently (except documented normalization such as species capitalization).
+Two levels: **error** (the entry is rejected) and **warning** (reported in `InputDocument.Warnings`, does not block). Publishing is public and irreversible, so anything doubtful that cannot be fixed afterwards is an error, not a warning.
+Platform limits belong in the adapter's pre-flight, not in `Core`.
+
+- Rejected entries have no `ObservationCandidate`, so they are not part of `PublishResult`s; the host has to show `InputDocument.Rejected` itself. Decide whether a combined report is worth it.
+- `Candidates` can be shorter than `DocumentFiles` and a candidate does not know its position in the file. If a host needs to map results back to entries, add the entry index to `ObservationCandidate`.
+- More warnings for `InputDocument.Warnings`: implausible temperature or humidity (omit the value from the description); a daytime timestamp for a bat; duplicate entries (same species, time and place; the remote duplicate check can lag); a name that is neither a binomial nor a genus.
+- The signature checks are not a full format validation (a file can start like a PNG and still be something else); decide whether that is enough.
+
+### OAuth login robustness (loopback listener)
+
+The login needs a local HTTP listener on `127.0.0.1` (RFC 8252 loopback redirect), which can fail where the host cannot open a port: port already in use,
+two sessions on one machine (terminal server), locked-down machines, a browser on another machine than the app (remote/VDI/SSH), sandboxed or packaged apps with loopback isolation.
+Facts found in iNaturalist's open source (Doorkeeper 5.6.6 on `main`, checked 2026-10-02; **not yet verified live**):
+
+- OAuth access tokens never expire and no refresh tokens are issued, so the login is needed once.
+- For loopback IP redirect URIs (`127.0.0.1`, `::1`, not `localhost`) the **port is ignored** when matching, and the registered redirect URI field accepts several URIs (one per line).
+  So an OS-assigned port should work with the one registered URI. Other apps use custom schemes (`myapp://callback`), so those are accepted too.
+
+To do:
+
+- Live check of the port fallback (fixed port first, then up to three OS-assigned ports): occupy port 45679 and run the SmokeTest login. The owner confirmed iNaturalist accepts a changed loopback port.
+  Open question: bind an OS-assigned port first (no collisions at all) instead of fixed-first? Not needed while the fallback works.
+- A host-pluggable receiver for the authorization response, next to `AuthorizationPrompt`: a manual "paste the redirected URL" fallback for blocked or remote environments, and a custom-scheme receiver for packaged desktop apps.
+- Distinct, actionable error types: port in use, timeout, denied by user, token rejected.
+- `OAuthFlow.WaitForAuthorizationCodeAsync` accepts only the first request on the listener. Any stray request (port scan, browser prefetch, another local program) ends the login with an error. Keep listening until a request carries a valid `state` or the timeout hits.
+- Document the environments where the loopback login does not work and what to do.
 
 ### Logging strategy
 
@@ -97,58 +111,6 @@ Open decisions:
 - Keep logs (diagnostics) separate from progress for a UI (`IProgress<PublishResult>`).
 - Optional later: `ActivitySource` and metrics.
 
-### Research: how to build really good NuGet packages
-
-Before the first release, research current best practice for publishing a high-quality package, then decide what to adopt. Starting points and topics:
-
-- Microsoft's guidance: the .NET library guidance (learn.microsoft.com/dotnet/standard/library-guidance) and NuGet's package authoring best practices.
-- Metadata and discoverability: README rendering on nuget.org, package icon, tags, description, license expression, release notes link, repository and SourceLink (done: MinVer, SourceLink, snupkg, deterministic CI builds).
-- API quality: public API tracking (`Microsoft.CodeAnalysis.PublicApiAnalyzers`), package validation with a baseline version (`EnablePackageValidation`) to catch breaking changes automatically, nullable annotations, XML docs coverage.
-- Compatibility: multi-targeting choices, minimum dependency versions, trimming and AOT annotations, minimal dependencies.
-- Supply chain: package signing, nuget.org trusted publishing (OIDC) instead of long-lived API keys, NuGet audit, SBOM, dependency update policy (Dependabot is set up).
-- Documentation: a docs site (DocFX on GitHub Pages) versus README only, samples, how a consumer discovers the BatInspector integration.
-- Release hygiene: pre-release flow (`-preview.N`, `-rc.N`), deprecation and unlisting policy, prefix reservation.
-- Look at well-regarded small packages and copy what works.
-
-Output: a short decision list in this file (adopt, later, skip) and the resulting items in CI and the csproj.
-
-### OAuth login robustness (loopback listener)
-
-The login needs a local HTTP listener on `127.0.0.1` (RFC 8252 loopback redirect), which can fail where the host cannot open a port: port already in use,
-two sessions on one machine (terminal server), locked-down machines, a browser on another machine than the app (remote/VDI/SSH), sandboxed or packaged apps with loopback isolation.
-Facts found in iNaturalist's open source (Doorkeeper 5.6.6 on `main`, checked 2026-10-02; **not yet verified live**):
-
-- OAuth access tokens never expire and no refresh tokens are issued, so the login is needed once. Done: the OAuth token is now stored and silently re-exchanged for the daily API JWT.
-- For loopback IP redirect URIs (`127.0.0.1`, `::1`, not `localhost`) the **port is ignored** when matching, and the registered redirect URI field accepts several URIs (one per line).
-  So an OS-assigned port should work with the one registered URI. Other apps use custom schemes (`myapp://callback`), so those are accepted too.
-
-To do:
-
-- Port fallback is done (fixed port first, then up to three OS-assigned ports, 2026-10-03). The owner confirmed iNaturalist accepts a changed loopback port. Still to check in the live run: occupy port 45679 and run the SmokeTest login.
-  Open question: bind an OS-assigned port first (no collisions at all) instead of fixed-first? Not needed while the fallback works.
-- A host-pluggable receiver for the authorization response, next to `AuthorizationPrompt`: a manual "paste the redirected URL" fallback for blocked or remote environments, and a custom-scheme receiver for packaged desktop apps.
-- Distinct, actionable error types: port in use, timeout, denied by user, token rejected.
-- `OAuthFlow.WaitForAuthorizationCodeAsync` accepts only the first request on the listener. Any stray request (port scan, browser prefetch, another local program) ends the login with an error. Keep listening until a request carries a valid `state` or the timeout hits.
-- Document the environments where the loopback login does not work and what to do.
-
-### Input validation: remaining work
-
-Principles for any new check: validate at the boundary, report every problem with its path, never alter data silently (except documented normalization such as species capitalization).
-Two levels: **error** (the entry is rejected) and **warning** (reported in `InputDocument.Warnings`, does not block). Publishing is public and irreversible, so anything doubtful that cannot be fixed afterwards is an error, not a warning.
-Platform limits belong in the adapter's pre-flight, not in `Core`.
-
-- Rejected entries have no `ObservationCandidate`, so they are not part of `PublishResult`s; the host has to show `InputDocument.Rejected` itself. Decide whether a combined report is worth it.
-- `Candidates` can be shorter than `DocumentFiles` and a candidate does not know its position in the file. If a host needs to map results back to entries, add the entry index to `ObservationCandidate`.
-- Warnings exist now (`InputDocument.Warnings`, first user: ambiguous autumn hour). More to add: implausible temperature or humidity (omit the value from the description); a daytime timestamp for a bat; duplicate entries (same species, time and place; the remote duplicate check can lag); a name that is neither a binomial nor a genus.
-- The signature checks are not a full format validation (a file can start like a PNG and still be something else); decide whether that is enough.
-
-### Times and time zones: remaining
-
-The offline part is done (2026-10-03, see Done). What is left needs the live test:
-
-- **iNaturalist:** send the time as well, with the zone (the candidate now carries `TimeZoneId`), so the platform does not read it in the account's zone. Find out in the live test whether v2 accepts a time in `observed_on_string`, which zone parameter it expects (and in which name format),
-  and whether `time_observed_at` is really rejected. Then update the README sentence "iNaturalist receives only the calendar date" (both languages) and the input reference page.
-
 ### Documentation: input file and per-platform mapping
 
 Two kinds of reference pages under `docs/`, each bilingual (English source, `*.de.md` twin), with diagrams where they help:
@@ -161,38 +123,65 @@ Two kinds of reference pages under `docs/`, each bilingual (English source, `*.d
   Prefer an SVG or Mermaid diagram that renders on GitHub. Check that `scripts/validate-config.sh` copes with it.
 - Keep `docs/inaturalist-setup.md` (registration and OAuth) separate and link the pages to each other.
 
-### iNaturalist upload limits (file size and format)
+### Test the Windows-only code (DPAPI) without a Windows machine
 
-Evidence files are read completely into memory (one candidate at a time) and uploaded as is. Nothing checks size or format limits yet, so an oversized file only fails at the upload, after the observation was already created
-(see "Rethink part-uploads").
+`ProtectedFileTokenStore` uses DPAPI on Windows; the `[WindowsOnlyFact]` test (`Save_OnWindows_EncryptsTheFile`) is skipped on Linux, so the devcontainer never runs it. The CI matrix already has `windows-latest`, so every push is covered; what is missing is a local way to check it before pushing. Options to evaluate:
 
-- Look up iNaturalist's limits for observation photos and sounds: maximum file size, accepted image and audio formats and sample rates, duration limits. Check the v2 API docs and the sound upload rules; confirm with a real upload in the live test.
-- Reject files over the limit in the adapter pre-flight (`Adapters/INaturalist`, not `Core`), before the observation is created, with a clear `SkippedInvalidEvidence` message. It also caps memory use.
-- Decide whether a too large spectrogram PNG should be re-encoded or left to the host, and what to do with WAV recordings over the sound limit (skip, or host provides a compressed copy).
-- Add the limits to `docs/inaturalist-setup.md`.
+- Wine in the devcontainer, running the Windows build of the test assembly (`dotnet test` with a win-x64 runtime under Wine). Open questions: does Wine's `crypt32` DPAPI (`CryptProtectData`) behave like Windows (per-user key, `Unprotect` failing for foreign data, which feeds the corrupt-file path)? Is a Windows .NET SDK/runtime usable under Wine at all, and is the setup worth its weight in the image?
+- A Windows container (needs a Windows host with Docker in Windows-container mode, so not an option for the Linux devcontainer) or a Windows VM.
+- Abstract DPAPI behind a small internal seam (`IDataProtector`-like) so the file logic (atomic write, corrupt file as "no token", fallbacks) is tested on Linux with a fake protector, and only the 5-line DPAPI call stays Windows-only. This is the cheapest and probably the best first step, independent of Wine.
+- Other Windows-only behavior to cover the same way: the `Process.Start` browser launch in the SmokeTest, and the Europe/Berlin time zone ID differences (`W. Europe Standard Time` vs IANA) if tz data ever differs on Windows.
 
-### First live test against iNaturalist
+Decide after trying the seam; use Wine only if a real gap remains. A CI-only check is acceptable if it does not.
 
-The ported code was only tested against stubs. Confirmed live (2026-10-03): interactive login, the stored token loads in a later process (`whoami`), and the silent re-exchange of the stored OAuth token for a new API JWT works without a browser (`renew`). Run a real dry run and then a single real observation (with a test account
-or one that may be deleted afterwards) before anything is released. Also verify whether `observed_on_string` with a time
-works on v2 (today only the date is sent; `time_observed_at` is rejected by v2).
+### Cross-platform token storage
 
-Checklist for the live test (things stubs cannot prove):
+Waits until BatInspector runs off Windows:
 
-- When the response has only a uuid and no numeric id, `Url` stays null. Check whether `https://www.inaturalist.org/observations/{uuid}` resolves and use it if so.
-- Resume (new, written from memory of the v1 API, never seen live): the v1 `/observations` search results must carry `description`, `photos` and `sounds`, and `description` must come back as sent (the match ignores whitespace differences only).
-  If a field is missing the observation is deliberately left alone (`SkippedDuplicate`), so a wrong assumption fails safe but resume never triggers. Check with a real half-created observation (stop after the photo, or delete the sound in the web UI).
-  Also check that an observation with a not yet processed upload already lists its photo or sound.
-- The duplicate check sends `mine_only=true` to v1 `/observations`. Confirm the parameter exists and really restricts to the user's own observations; if it is ignored, the check matches other users' observations and reports false duplicates. Compare the result with and without it (and with `user_id` / `user_login` as the alternative).
+- Real secret storage per OS (macOS Keychain, Linux Secret Service / libsecret, kwallet): left to the host through `INaturalistTokenStore`; a Keychain / Secret Service package is deferred.
+- The stored OAuth token never expires, so it is a long-lived credential for the user's iNaturalist account (unlike the client secret, which a distributed app cannot keep confidential).
+- Do not design a shared "secure value store" abstraction from one adapter. Revisit once a second adapter (naturgucker) shows what it needs to store.
+- The host's own OAuth client ID/secret settings need a cross-OS home too, but that is the host's concern.
 
-### Implement NABU|naturgucker integration
+## Open: release and repository
 
-Blocked: there is no public API documentation, so the auth and submission model is unknown.
+### GitHub Actions
 
-- Identify and contact NABU/naturgucker developers: API (REST?), auth (API key, OAuth, basic, manual file import?), rate limits,
-  terms for automated submission, whether this bat-monitoring use case is welcome.
-- Then implement `Adapters/Naturgucker` (currently an internal stub) with its own auth, and only then revisit
-  `IObservationPublisher` before 1.0. Do not guess its shape in the meantime.
+`.github/workflows/ci.yml` builds and tests on Ubuntu and Windows, checks format, packs and runs gitleaks. To do:
+
+- `tech/setup-repo` is currently the default branch and `main` does not exist on the remote, so Dependabot PRs target the working branch. Push `main`, make it the default, let Dependabot retarget;
+- the devcontainer node feature bump (1 -> 2) is still open as a Dependabot PR: rebuild the devcontainer locally before merging, CI does not cover it;
+- add a CI job that runs `scripts/validate-config.sh` (the tools are not on the runners yet);
+- release workflow per `docs/releasing.md`: checkout with `fetch-depth: 0` (MinVer reads the tag), pack, push to nuget.org, create the GitHub Release with notes extracted from `CHANGELOG.md`;
+- branch protection on `main`, Dependabot for NuGet and Actions.
+
+### First NuGet release
+
+The package ID `BatInspectorPublisher` was free on nuget.org on 2026-10-02. Steps:
+
+1. Create a nuget.org account (sign in with a Microsoft account) and enable 2FA.
+2. Optional: reserve the ID prefix `BatInspector*` (free request, gives the verified badge).
+3. Create an API key with Push scope, restricted to the glob `BatInspectorPublisher*`, with an expiry date.
+   Alternative: nuget.org trusted publishing via GitHub OIDC, which avoids a long-lived key (verify current availability).
+4. Store the key as the GitHub secret `NUGET_API_KEY`.
+5. Tag-triggered release workflow, see `docs/releasing.md`.
+6. First release as `0.1.0-preview.N`. Versions are immutable: they can be unlisted but not deleted.
+Prerequisites: the first live test (see above), CHANGELOG, README check.
+
+### Research: how to build really good NuGet packages
+
+Before the first release, research current best practice for publishing a high-quality package, then decide what to adopt. Starting points and topics:
+
+- Microsoft's guidance: the .NET library guidance (learn.microsoft.com/dotnet/standard/library-guidance) and NuGet's package authoring best practices.
+- Metadata and discoverability: README rendering on nuget.org, package icon, tags, description, license expression, release notes link, repository and SourceLink.
+- API quality: public API tracking (`Microsoft.CodeAnalysis.PublicApiAnalyzers`), package validation with a baseline version (`EnablePackageValidation`) to catch breaking changes automatically, nullable annotations, XML docs coverage.
+- Compatibility: multi-targeting choices, minimum dependency versions, trimming and AOT annotations, minimal dependencies.
+- Supply chain: package signing, nuget.org trusted publishing (OIDC) instead of long-lived API keys, NuGet audit, SBOM, dependency update policy (Dependabot is set up).
+- Documentation: a docs site (DocFX on GitHub Pages) versus README only, samples, how a consumer discovers the BatInspector integration.
+- Release hygiene: pre-release flow (`-preview.N`, `-rc.N`), deprecation and unlisting policy, prefix reservation.
+- Look at well-regarded small packages and copy what works.
+
+Output: a short decision list in this file (adopt, later, skip) and the resulting items in CI and the csproj.
 
 ### GitHub repository polish (settings on github.com, after the first push)
 
@@ -204,6 +193,17 @@ Files are in the repo (README badges, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `
 - After the first NuGet release: add the NuGet version and downloads badges to both READMEs.
 - Optional, later: API docs site on GitHub Pages generated with DocFX from the XML docs; `CITATION.cff` if the tool should be citable.
 
+## Blocked
+
+### Implement NABU|naturgucker integration
+
+Blocked: there is no public API documentation, so the auth and submission model is unknown.
+
+- Identify and contact NABU/naturgucker developers: API (REST?), auth (API key, OAuth, basic, manual file import?), rate limits,
+  terms for automated submission, whether this bat-monitoring use case is welcome.
+- Then implement `Adapters/Naturgucker` (currently an internal stub) with its own auth, and only then revisit
+  `IObservationPublisher` before 1.0. Do not guess its shape in the meantime.
+
 ## Later / carried over
 
 - `net8.0` stays for now (decided 2026-10-02). Revisit only if keeping it becomes a burden.
@@ -213,22 +213,3 @@ Files are in the repo (README badges, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `
 - Confirm BatInspector's license is compatible with MIT; add NOTICE if a dependency requires it.
 - JSON Schema file for the input format and a contract test, if BatInspector produces the file.
 - `CONTRIBUTING.md`, issue templates, deprecation policy for schema changes.
-
-## Dropped
-
-- Rolling back (deleting) an observation whose evidence could not be attached (decided 2026-10-03): deleting public data automatically is destructive and the failure may be transient. Resume completes it on the next run instead.
-- Geoprivacy / sensitive-species handling: iNaturalist obscures sensitive taxa itself, other platforms may not support it at all,
-  and the package cannot solve it (decided 2026-10-02).
-
-## Done
-
-- 2026-10-03: Live check of login, token persistence and silent JWT renewal with the SmokeTest (`login`, `whoami`, `renew`; the last two are new).
-- 2026-10-03: Token store hardening: `INaturalistTokenStore.CanSave` checked before the browser opens, `ProtectedFileTokenStore` writes atomically with mode `0600` on Unix and treats an unreadable file as "no token" (warning logged); tests for mode, corrupt, empty, stale temp file and failed move; Ubuntu CI leg already runs the Unix tests.
-- 2026-10-03: Part-uploads and cancellation: `PublishStatus.Cancelled` and `Resumed`, `PublishResult.InterruptedStep`, `RunAsync` returns the results so far on cancel instead of throwing; the duplicate check completes an own observation (same description) that lacks photo or sound;
-  `SkippedDuplicate` reports the existing id; the created id is logged at Information; an HTTP timeout is `Failed`, not an aborted run. Resume is unverified against the live API (see the live-test checklist).
-- 2026-10-03: Explicit zone in the input file: optional `TimeZone` (IANA id) per entry, additive within schema v1; `InputDocument.Warnings` with the ambiguous-hour warning; tests incl. foreign-zone gap and future check.
-- 2026-10-03: Times and time zones (offline part): `ObservedAt` is a `DateTimeOffset` (Europe/Berlin offset); spring-forward gap rejected, repeated hour read as standard time, no fallback without tz data (throws `TimeZoneNotFoundException`);
-  future check compares instants; duplicate check and `observed_on_string` use the local day; description shows MEZ/MESZ. Tests for gap, repeated hour, midnight crossing, zone suffix.
-- 2026-10-03: Input validation per entry (bad entries go to `InputDocument.Rejected`, the rest is published): absolute evidence paths with `.png` / `.wav` extension, latitude and longitude both 0, dates in the future (against Europe/Berlin time).
-  Evidence is read once per candidate, checked (exists, readable, non-empty, PNG / WAV signature) and the checked bytes are uploaded; new status `SkippedInvalidEvidence`.
-- 2026-10-02: Repository scaffold, Core, input schema v1 (`SchemaVersion`), iNaturalist adapter, tests, multi-targeting net8.0 + net10.0.

@@ -43,42 +43,104 @@ public class INaturalistApiClientTests
         Assert.False(observation.TryGetProperty("description", out _));
     }
 
+    private async Task<TaxonLookup> Resolve(string name, string rank, string responseBody)
+    {
+        _http.On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, responseBody);
+        return await Client().ResolveTaxonAsync(name, rank, "jwt", default);
+    }
+
     [Fact]
     public async Task ResolveTaxon_MatchesNameCaseInsensitively()
     {
-        _http.On("GET /v2/taxa/autocomplete", HttpStatusCode.OK,
-            """{ "results": [ { "id": 1, "name": "Pipistrellus" }, { "id": 2, "name": "Pipistrellus Pipistrellus" } ] }""");
+        var lookup = await Resolve("pipistrellus pipistrellus", "species",
+            """{ "results": [ { "id": 1, "name": "Pipistrellus", "rank": "genus" }, { "id": 2, "name": "Pipistrellus Pipistrellus", "rank": "species" } ] }""");
 
-        var taxon = await Client().ResolveTaxonAsync("pipistrellus pipistrellus", "jwt", default);
-
-        Assert.Equal(2, taxon!.Id);
+        Assert.Equal(2, lookup.Taxon!.Id);
     }
 
     [Fact]
     public async Task ResolveTaxon_GenusName_MatchesGenusEntry()
     {
-        _http.On("GET /v2/taxa/autocomplete", HttpStatusCode.OK,
-            """{ "results": [ { "id": 1, "name": "Myotis", "rank": "genus" }, { "id": 2, "name": "Myotis myotis" } ] }""");
+        var lookup = await Resolve("Myotis", "genus",
+            """{ "results": [ { "id": 1, "name": "Myotis", "rank": "genus" }, { "id": 2, "name": "Myotis myotis", "rank": "species" } ] }""");
 
-        Assert.Equal(1, (await Client().ResolveTaxonAsync("Myotis", "jwt", default))!.Id);
+        Assert.Equal(1, lookup.Taxon!.Id);
     }
 
     [Fact]
-    public async Task ResolveTaxon_NoExactMatch_ReturnsNull()
+    public async Task ResolveTaxon_NoExactMatch_ReportsNotFound()
     {
-        _http.On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 1, "name": "Something else" } ] }""");
+        var lookup = await Resolve("Nyctaloid", "genus", """{ "results": [ { "id": 1, "name": "Something else", "rank": "genus" } ] }""");
 
-        Assert.Null(await Client().ResolveTaxonAsync("Nyctaloid", "jwt", default));
+        Assert.Null(lookup.Taxon);
+        Assert.Contains("not found", lookup.Problem);
     }
 
     [Fact]
-    public async Task ResolveTaxon_EscapesTheQuery()
+    public async Task ResolveTaxon_WrongRank_IsRejected()
     {
-        _http.On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [] }""");
+        // A one-word name that is only a family or order on iNaturalist is no genus.
+        var lookup = await Resolve("Vespertilionidae", "genus", """{ "results": [ { "id": 1, "name": "Vespertilionidae", "rank": "family" } ] }""");
 
-        await Client().ResolveTaxonAsync("Pipistrellus pipistrellus", "jwt", default);
+        Assert.Null(lookup.Taxon);
+        Assert.Contains("family", lookup.Problem);
+    }
 
-        Assert.Contains("q=Pipistrellus%20pipistrellus", _http.Requests.Single().PathAndQuery);
+    [Fact]
+    public async Task ResolveTaxon_MissingRank_IsRejected()
+    {
+        var lookup = await Resolve("Myotis", "genus", """{ "results": [ { "id": 1, "name": "Myotis" } ] }""");
+
+        Assert.Null(lookup.Taxon);
+    }
+
+    [Fact]
+    public async Task ResolveTaxon_InactiveTaxon_IsRejected()
+    {
+        var lookup = await Resolve("Myotis oxygnathus", "species",
+            """{ "results": [ { "id": 1, "name": "Myotis oxygnathus", "rank": "species", "is_active": false } ] }""");
+
+        Assert.Null(lookup.Taxon);
+    }
+
+    [Fact]
+    public async Task ResolveTaxon_SeveralMatches_IsAmbiguousAndPicksNone()
+    {
+        var lookup = await Resolve("Plecotus", "genus",
+            """{ "results": [ { "id": 1, "name": "Plecotus", "rank": "genus" }, { "id": 2, "name": "Plecotus", "rank": "genus" } ] }""");
+
+        Assert.Null(lookup.Taxon);
+        Assert.Contains("ambiguous", lookup.Problem);
+        Assert.Contains("1, 2", lookup.Problem);
+    }
+
+    [Fact]
+    public async Task ResolveTaxon_SameTaxonListedTwice_IsNotAmbiguous()
+    {
+        var lookup = await Resolve("Myotis", "genus",
+            """{ "results": [ { "id": 1, "name": "Myotis", "rank": "genus" }, { "id": 1, "name": "Myotis", "rank": "genus" } ] }""");
+
+        Assert.Equal(1, lookup.Taxon!.Id);
+    }
+
+    [Fact]
+    public async Task ResolveTaxon_MatchedOnlyAsSynonym_NamesTheCurrentName()
+    {
+        var lookup = await Resolve("Pipistrellus pygmaeus", "species",
+            """{ "results": [ { "id": 7, "name": "Pipistrellus pygmaeus pygmaeus", "rank": "species", "matched_term": "Pipistrellus pygmaeus" } ] }""");
+
+        Assert.Null(lookup.Taxon);
+        Assert.Contains("lists it as 'Pipistrellus pygmaeus pygmaeus'", lookup.Problem);
+    }
+
+    [Fact]
+    public async Task ResolveTaxon_EscapesTheQuery_AndAsksForRankActivityAndMatchedTerm()
+    {
+        await Resolve("Pipistrellus pipistrellus", "species", """{ "results": [] }""");
+
+        var query = _http.Requests.Single().PathAndQuery;
+        Assert.Contains("q=Pipistrellus%20pipistrellus", query);
+        Assert.Contains("fields=id,name,rank,is_active,matched_term", query);
     }
 
     [Fact]

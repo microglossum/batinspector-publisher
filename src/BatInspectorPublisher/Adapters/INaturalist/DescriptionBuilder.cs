@@ -11,7 +11,7 @@ internal static class DescriptionBuilder
 {
     private static readonly NumberFormatInfo German = new() { NumberDecimalSeparator = "," };
 
-    public static string Build(ObservationCandidate candidate, string prefix)
+    public static string Build(ObservationCandidate candidate, string prefix, string? taxonName = null)
     {
         var parts = new List<string>();
         if (!string.IsNullOrWhiteSpace(prefix))
@@ -20,6 +20,12 @@ internal static class DescriptionBuilder
         }
 
         parts.Add($"Exemplarische Ruferkennung vom {candidate.ObservedAt.DateTime.ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.InvariantCulture)} Uhr {ZoneName(candidate)}.");
+
+        if (taxonName is not null && !string.Equals(taxonName, candidate.ScientificName, StringComparison.OrdinalIgnoreCase))
+        {
+            // An uncertain call filed under a broader taxon: say what BatInspector actually reported.
+            parts.Add($"Bestimmung in BatInspector: \"{candidate.ScientificName}\" (keine sichere Artbestimmung), hier als {taxonName} eingetragen.");
+        }
 
         if (candidate.TemperatureCelsius is { } temperature)
         {

@@ -35,7 +35,9 @@ tools/SmokeTest/   manual console host for live tests (not in the solution); rea
 - Input schema is BatInspector-specific, `SchemaVersion` is required. Additive changes only within a version.
 - Input validation is per entry: a bad entry is left out and listed in `InputDocument.Rejected`, the rest is still published; only a structurally unusable file throws. No strict/lenient switch. Re-runs rely on the duplicate check.
 - `PublishOptions.Commit` defaults to false: publishing is public and irreversible, so dry run is the default.
-- Taxon resolution accepts only an exact name match. Never fall back to "first autocomplete hit".
+- Taxon resolution accepts only an exact name match of an active taxon with the expected rank (binomial = species, one word = genus); several matches are skipped as ambiguous. Never fall back to "first autocomplete hit".
+  The one exception is a fixed table of BatInspector group/uncertain values (`Nyctaloid`, `Social`, `?` -> Chiroptera, `Mbart` -> Myotis), always on, no option; anything else that does not resolve (`todo`, typos, unknown codes) is skipped, never filed under a broader taxon.
+- Decided against: rolling back (deleting) an observation whose evidence could not be attached (2026-10-03: deleting public data automatically is destructive and the failure may be transient; resume completes it on the next run). Geoprivacy / sensitive-species handling (2026-10-02: iNaturalist obscures sensitive taxa itself, other platforms may not support it at all, the package cannot solve it).
 - The package ships no credentials and reads no config files or environment variables. The host passes `INaturalistOptions`.
 
 ## Conventions
@@ -56,7 +58,8 @@ tools/SmokeTest/   manual console host for live tests (not in the solution); rea
 
 ## Backlog and memory
 
-- `TODO.md` is the project backlog (open items, blocked items, dropped decisions). Read it at the start of a task, update it when something is decided, found or finished, and groom it before every commit (see Git rules). English only.
+- `TODO.md` is the project backlog: open and blocked work only, no list of finished items. Read it at the start of a task, update it when something is decided or found, and groom it before every commit (see Git rules). English only.
+  Finished work is recorded by the commit and `CHANGELOG.md`; a decision against something goes into the "decided" rules below, not into `TODO.md`.
 - `CLAUDE.md` (this file) holds standing rules; `docs/releasing.md` is the release runbook; the design notes below hold decisions that are not obvious from the code. Claude's own auto-memory lives outside the repo and is per machine.
 - Internal docs (`CLAUDE.md`, `TODO.md`, `CHANGELOG.md`) are English only; user-facing docs are bilingual.
 
@@ -80,7 +83,7 @@ One-person project: external code contributions are not solicited (bug reports a
   - Public repo: no tokens, real coordinates, local paths, usernames or e-mail addresses in a message.
 - The commit identity is configured repo-locally (`.git/config`): the owner's name and their GitHub noreply address. Never use or write the owner's real e-mail address anywhere. Do not touch `git config --global`.
 - Never `git push`, tag or commit without the owner's explicit OK (settings ask for confirmation).
-- **Before every commit, groom `TODO.md` - always, no exception.** Remove what the commit finishes from **Open** (leave at most a one-line, dated entry in **Done**), cut a section down to its remaining items when only part is done,
+- **Before every commit, groom `TODO.md` - always, no exception.** Remove what the commit finishes (there is no Done list: the commit and `CHANGELOG.md` are the record), cut a section down to its remaining items when only part is done and never describe finished work inside an open section,
   and add what was decided or found along the way. Do this before `git commit`, and say in the reply what changed in `TODO.md`. A commit with a stale `TODO.md` is not ready.
 
 ## Versioning
@@ -95,4 +98,7 @@ Validate non-C# files with `scripts/validate-config.sh` (VS Code task "validate 
 - Input `Date` is German local time without zone; only the date is sent to iNaturalist (v2 rejects `time_observed_at`).
 - The input file holds one reference recording (German: "Referenzaufnahme") per species, night and location, not every detection: the aim is to document presence of a species at a place and time, and one recording is usually enough. The duplicate check (taxon, calendar day, radius) relies on that and skips a second entry for the same key on purpose.
 - `SpeciesTaxonMap` from the prototype was not ported: the new schema carries Latin names, not BatInspector codes.
+- Uncertain calls filed under Chiroptera or Myotis (see the taxon rule above) are collapsed by the duplicate check (taxon, day, radius) when they share a night and place. Accepted on purpose: both are "a bat"; the description names the original call.
+- BatInspector (the producer of the input file) is open source: <https://github.com/chrmue44/BatInspector>. Look there to learn what it writes (field meanings, species list in `BatInfo.cs`, `BatSpeciesRegions.json`); `gh` is not logged in, so use `curl` on `api.github.com` / `raw.githubusercontent.com`.
+  The public code can lag behind: a feature or integration may sit on a non-`main` branch or not be pushed at all. If something is missing or unclear, say so and ask the owner instead of guessing. BatInspector is CC BY-NC 4.0: read it for facts, never copy its code into this MIT repo.
 - The old prototypes (`INaturalistApiKeyExporter`, `INaturalistOAuthExporter`) live on in the owner's other repo; do not look for them here.

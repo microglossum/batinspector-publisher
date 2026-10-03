@@ -101,8 +101,12 @@ config files and no environment variables.
 * Required: `Date`, `Latitude`, `Longitude`, `SpeciesLatin`, `PathToPng`, `PathToWav`.
   Optional: `SpeciesLocal`, `Temperature`, `Humidity`, `Comment`, `TimeZone`. Unknown properties are ignored.
 * `Date` (`dd.MM.yyyy HH:mm:ss`) carries no offset. It is read in the zone given by the optional `TimeZone` (an IANA id such as `Europe/Lisbon`; an unknown id rejects the entry), or as **German local time (Europe/Berlin)** when `TimeZone` is absent, including daylight saving time. It is stored with the offset of that zone on that date (`ObservationCandidate.ObservedAt` is a `DateTimeOffset`). This is never converted from the host's or the machine's time zone. A time that does not exist (the hour skipped when the clocks go forward) rejects the entry; a time in the repeated hour when the clocks go back is read as standard time and reported in `InputDocument.Warnings` (the entry is still published). An offset in the value (`Z`, `+02:00`) is a format error: name the zone with `TimeZone` instead. The duplicate check and the date sent to iNaturalist use the local calendar day of that zone. The future-date check compares instants. The host needs the time zone data for Europe/Berlin (the reader throws `TimeZoneNotFoundException` without it). iNaturalist receives only the calendar date, not the time.
-* Species names are normalized (`Eptesicus Serotinus` becomes `Eptesicus serotinus`). A name iNaturalist
-  cannot match exactly is skipped, never guessed.
+* Species names are normalized (`Eptesicus Serotinus` becomes `Eptesicus serotinus`). A two-word name must match an active iNaturalist species exactly, a one-word name an active genus (`Myotis`).
+  A name that matches nothing, matches only a synonym, has the wrong rank or is ambiguous is skipped with the reason in `PublishResult.Message`, never guessed. A name with three or more words (`Myotis cf. daubentonii`) is skipped too.
+* BatInspector's group and uncertain values are the one exception: `Nyctaloid`, `Social` and `?` are filed under the order Chiroptera, `Mbart` under the genus Myotis. The original value stays as the observation's species guess and is named in the (German) description; `PublishResult.TaxonName` reports the taxon used. The user can refine it on iNaturalist.
+  Other values that are no taxon name (`todo`, an unknown BatInspector code, a typo) are skipped, so a corrected re-run does not create a second observation.
+
+BatInspector is open source ([chrmue44/BatInspector](https://github.com/chrmue44/BatInspector)); its code is the reference for what a field or value means (for example the species list in `BatInfo.cs`). The export and its newest values may live on another branch than `main` or not be pushed yet, so the public code can lag behind what BatInspector actually writes.
 
 ## Results
 

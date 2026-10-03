@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Globalization;
 using BatInspectorPublisher.Core;
 using BatInspectorPublisher.Core.Models;
@@ -20,7 +19,20 @@ public sealed class INaturalistPublisher : IObservationPublisher
     private readonly INaturalistApiClient _api;
     private readonly Func<CancellationToken, Task<string>> _getAccessToken;
     private readonly ILogger _logger;
-    private readonly ConcurrentDictionary<string, Taxon> _taxonCache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// BatInspector group and uncertain-call values that are not taxon names, and the broader taxon each is filed under.
+    /// The original value stays in <c>species_guess</c> and is named in the description. Anything else that does not resolve is skipped, never
+    /// filed under a guess: a typo filed under Chiroptera would be public and a corrected re-run would create a second observation.
+    /// "todo" (not yet reviewed in BatInspector) is deliberately not listed.
+    /// </summary>
+    private static readonly Dictionary<string, (string Name, string Rank)> BroaderTaxa = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Nyctaloid"] = ("Chiroptera", "order"),
+        ["Social"] = ("Chiroptera", "order"),
+        ["?"] = ("Chiroptera", "order"),
+        ["Mbart"] = ("Myotis", "genus"),
+    };
 
     /// <inheritdoc />
     public string PlatformId => "inaturalist";
@@ -55,23 +67,26 @@ public sealed class INaturalistPublisher : IObservationPublisher
         string? url = null;
         var photoAttached = false;
         var soundAttached = false;
+        string? taxonName = null;
 
         try
         {
             var jwt = await _getAccessToken(ct);
 
-            var taxon = await ResolveTaxonAsync(candidate.ScientificName, jwt, ct);
-            if (taxon is null)
+            var lookup = await ResolveTaxonAsync(candidate.ScientificName, jwt, ct);
+            if (lookup.Taxon is not { } taxon)
             {
-                return Result(PublishStatus.SkippedUnresolvedTaxon, $"Taxon '{candidate.ScientificName}' not found on iNaturalist.");
+                return Result(PublishStatus.SkippedUnresolvedTaxon, lookup.Problem!);
             }
 
+            taxonName = taxon.Name;
+            var filedAs = SameName(taxon.Name, candidate.ScientificName) ? "" : $" as {taxon.Name}";
             if (!options.Commit)
             {
-                return Result(PublishStatus.WouldCreate, $"Dry run: would create an observation of {candidate.ScientificName} (taxon_id={taxon.Id}).");
+                return Result(PublishStatus.WouldCreate, $"Dry run: would create an observation of {candidate.ScientificName}{filedAs} (taxon_id={taxon.Id}).");
             }
 
-            var payload = BuildPayload(candidate, taxon.Id);
+            var payload = BuildPayload(candidate, taxon.Id, taxon.Name);
             var existing = await _api.FindExistingObservationsAsync(
                 taxon.Id, DateOnly.FromDateTime(candidate.ObservedAt.DateTime), candidate.Latitude, candidate.Longitude, jwt, ct);
 
@@ -156,6 +171,7 @@ public sealed class INaturalistPublisher : IObservationPublisher
             Candidate = candidate,
             PlatformId = PlatformId,
             Status = status,
+            TaxonName = taxonName,
             ObservationId = observationId,
             Url = url,
             SpectrogramAttached = photoAttached,
@@ -164,6 +180,22 @@ public sealed class INaturalistPublisher : IObservationPublisher
             Error = error,
             InterruptedStep = interruptedStep,
         };
+    }
+
+    private static bool SameName(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Species need a binomial, a genus a single word; anything else is no name this package files an observation under.</summary>
+    private async Task<TaxonLookup> ResolveTaxonAsync(string name, string jwt, CancellationToken ct)
+    {
+        if (BroaderTaxa.TryGetValue(name, out var broader))
+        {
+            return await _api.ResolveTaxonAsync(broader.Name, broader.Rank, jwt, ct);
+        }
+
+        var rank = name.Split(' ').Length switch { 1 => "genus", 2 => "species", _ => null };
+        return rank is null
+            ? new TaxonLookup(null, $"'{name}' is neither a species (two words) nor a genus (one word) name.")
+            : await _api.ResolveTaxonAsync(name, rank, jwt, ct);
     }
 
     private static (string? Id, string? Url) Identify(long id, string uuid) => id != 0
@@ -185,23 +217,7 @@ public sealed class INaturalistPublisher : IObservationPublisher
     private static string NormalizeText(string? text) =>
         string.Join(' ', (text ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
-    private async Task<Taxon?> ResolveTaxonAsync(string scientificName, string jwt, CancellationToken ct)
-    {
-        if (_taxonCache.TryGetValue(scientificName, out var cached))
-        {
-            return cached;
-        }
-
-        var taxon = await _api.ResolveTaxonAsync(scientificName, jwt, ct);
-        if (taxon is not null)
-        {
-            _taxonCache[scientificName] = taxon;
-        }
-
-        return taxon;
-    }
-
-    internal ObservationPayload BuildPayload(ObservationCandidate candidate, int taxonId) => new()
+    internal ObservationPayload BuildPayload(ObservationCandidate candidate, int taxonId, string? taxonName = null) => new()
     {
         TaxonId = taxonId,
         ObservedOnString = candidate.ObservedAt.DateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
@@ -210,7 +226,7 @@ public sealed class INaturalistPublisher : IObservationPublisher
         // Always a string: v2 rejects null. The input format has no place name, so use the coordinates.
         PlaceGuess = string.Create(CultureInfo.InvariantCulture, $"{candidate.Latitude:F5}, {candidate.Longitude:F5}"),
         SpeciesGuess = candidate.ScientificName,
-        Description = DescriptionBuilder.Build(candidate, _options.DescriptionPrefix),
+        Description = DescriptionBuilder.Build(candidate, _options.DescriptionPrefix, taxonName),
         TagList = _options.TagList,
     };
 }

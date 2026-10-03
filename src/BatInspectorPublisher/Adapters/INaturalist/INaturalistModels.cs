@@ -28,7 +28,18 @@ internal sealed class Taxon
 
     [JsonPropertyName("rank")]
     public string? Rank { get; set; }
+
+    /// <summary>Null when the response does not say; only an explicit false rules a taxon out.</summary>
+    [JsonPropertyName("is_active")]
+    public bool? IsActive { get; set; }
+
+    /// <summary>The name the search matched, which differs from <see cref="Name"/> when it matched a synonym.</summary>
+    [JsonPropertyName("matched_term")]
+    public string? MatchedTerm { get; set; }
 }
+
+/// <summary>Outcome of a taxon lookup: exactly one of <see cref="Taxon"/> and <see cref="Problem"/> is set.</summary>
+internal sealed record TaxonLookup(Taxon? Taxon, string? Problem);
 
 internal sealed class ObservationsSearchResponse
 {

@@ -71,6 +71,13 @@ public sealed record PublishResult
     public required PublishStatus Status { get; init; }
 
     /// <summary>
+    /// Name of the platform taxon the observation is filed under (or would be, in a dry run). It differs from
+    /// <see cref="ObservationCandidate.ScientificName"/> for an uncertain call that is filed under a broader taxon.
+    /// Null when no taxon was resolved.
+    /// </summary>
+    public string? TaxonName { get; init; }
+
+    /// <summary>
     /// Platform-side observation id. Also set when the observation was already created before the result
     /// became <see cref="PublishStatus.Failed"/> or <see cref="PublishStatus.Cancelled"/>, and for
     /// <see cref="PublishStatus.Resumed"/> and a <see cref="PublishStatus.SkippedDuplicate"/> whose existing observation is known.

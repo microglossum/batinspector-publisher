@@ -83,17 +83,42 @@ internal sealed class INaturalistApiClient
     }
 
     /// <summary>
-    /// Resolves a scientific name to a taxon. Only an exact (case-insensitive) name match is
-    /// accepted: silently falling back to the first autocomplete hit would file the observation
-    /// under a wrong species.
+    /// Resolves a scientific name to a taxon of the expected rank. Only an exact (case-insensitive)
+    /// name match of an active taxon is accepted: silently falling back to the first autocomplete hit
+    /// would file the observation under a wrong species. A rank that is missing from the response
+    /// counts as a mismatch, and so does more than one match: nothing is guessed.
     /// </summary>
-    public async Task<Taxon?> ResolveTaxonAsync(string scientificName, string jwt, CancellationToken ct)
+    public async Task<TaxonLookup> ResolveTaxonAsync(string scientificName, string expectedRank, string jwt, CancellationToken ct)
     {
-        var url = $"{_options.ApiBaseUrlV2}/taxa/autocomplete?q={Uri.EscapeDataString(scientificName)}&fields=id,name,rank";
+        var url = $"{_options.ApiBaseUrlV2}/taxa/autocomplete?q={Uri.EscapeDataString(scientificName)}&fields=id,name,rank,is_active,matched_term";
         var body = await SendAsync(NewRequest(HttpMethod.Get, url, jwt), "Taxon search", ct);
-        var result = JsonSerializer.Deserialize<TaxaAutocompleteResponse>(body);
-        return result?.Results.FirstOrDefault(t => string.Equals(t.Name, scientificName, StringComparison.OrdinalIgnoreCase));
+        var results = JsonSerializer.Deserialize<TaxaAutocompleteResponse>(body)?.Results ?? [];
+
+        var exact = results.Where(t => SameName(t.Name, scientificName) && t.IsActive != false).ToList();
+        var ofRank = exact.Where(t => string.Equals(t.Rank, expectedRank, StringComparison.OrdinalIgnoreCase)).DistinctBy(t => t.Id).ToList();
+        if (ofRank.Count == 1)
+        {
+            return new TaxonLookup(ofRank[0], null);
+        }
+
+        if (ofRank.Count > 1)
+        {
+            return new TaxonLookup(null, $"'{scientificName}' is ambiguous on iNaturalist (taxon ids {string.Join(", ", ofRank.Select(t => t.Id))}).");
+        }
+
+        if (exact.Count > 0)
+        {
+            var found = string.Join(", ", exact.Select(t => t.Rank ?? "unknown rank"));
+            return new TaxonLookup(null, $"'{scientificName}' exists on iNaturalist only with rank {found}, expected {expectedRank}.");
+        }
+
+        var synonym = results.FirstOrDefault(t => SameName(t.MatchedTerm, scientificName));
+        return new TaxonLookup(null, synonym is null
+            ? $"Taxon '{scientificName}' not found on iNaturalist."
+            : $"'{scientificName}' is not the current name on iNaturalist, which lists it as '{synonym.Name}'. Use that name in the input file.");
     }
+
+    private static bool SameName(string? a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The authenticated user's observations of this taxon on this date near these coordinates (total count plus the first page of details).</summary>
     public async Task<ObservationsSearchResponse> FindExistingObservationsAsync(int taxonId, DateOnly date, double lat, double lon, string jwt, CancellationToken ct)
