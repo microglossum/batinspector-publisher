@@ -99,24 +99,17 @@ public class INaturalistApiClientTests
     }
 
     [Fact]
-    public async Task Upload_SendsMultipartWithObservationUuidAndFileName()
+    public async Task Upload_SendsMultipartWithObservationUuidFileNameAndContent()
     {
-        var file = Path.GetTempFileName();
-        try
-        {
-            _http.On("POST /v2/observation_photos", HttpStatusCode.OK, "{}");
+        _http.On("POST /v2/observation_photos", HttpStatusCode.OK, "{}");
 
-            await Client().AttachPhotoAsync("uuid-9", file, "jwt", default);
+        await Client().AttachPhotoAsync("uuid-9", TestData.Evidence().Spectrogram, "jwt", default);
 
-            var body = _http.Requests.Single().Body;
-            Assert.Contains("observation_photo[observation_id]", body);
-            Assert.Contains("uuid-9", body);
-            Assert.Contains($"filename={Path.GetFileName(file)}", body);
-        }
-        finally
-        {
-            File.Delete(file);
-        }
+        var body = _http.Requests.Single().Body;
+        Assert.Contains("observation_photo[observation_id]", body);
+        Assert.Contains("uuid-9", body);
+        Assert.Contains("filename=spectrogram.png", body);
+        Assert.Contains("SPECTROGRAM-BYTES", body);
     }
 
     [Fact]

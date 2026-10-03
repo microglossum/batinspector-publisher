@@ -22,7 +22,7 @@ BatInspector export (JSON) ──► InputSchemaReader ──► ObservationCand
 ```
 
 * One observation per `DocumentFiles` entry: species, time, location, spectrogram (photo) and audio (sound).
-* Nothing is published without both evidence files.
+* Nothing is published without both evidence files. Each file is read once, checked (not empty, PNG / WAV signature) and the checked bytes are what gets uploaded.
 * Every adapter owns its own authentication, species resolution, duplicate check and upload.
   Authentication is **not** OAuth-only; OAuth is just what iNaturalist uses.
 
@@ -90,11 +90,13 @@ config files and no environment variables.
 ```
 
 * The JSON does not have to come from a file: `InputSchemaReader.Parse(string json)` and `InputSchemaReader.Read(Stream)` work the same as `ReadFile`. The evidence paths inside it must still point to files on disk.
+* Validation is per entry. A file that is not well-formed JSON, or has a missing or unsupported `SchemaVersion` or no `DocumentFiles` array, is rejected as a whole (`InputSchemaException`). A bad entry is left out of `InputDocument.Candidates` and listed with every problem in `InputDocument.Rejected`; the valid entries are still returned and can be published. Rejected entries are never published. Show `Rejected` to the user: the publish run does not report them. After fixing the file, run it again: entries that are already published are skipped as duplicates.
+* Entry errors: evidence paths must be absolute (Windows or Unix syntax) and end in `.png` / `.wav`; `Latitude` and `Longitude` both `0` (missing GPS) is rejected; a `Date` in the future (compared with current German time) is rejected.
 * The file is expected to hold one **reference recording** (*Referenzaufnahme*) per species, night and location, not every detection: the goal is to document that a species was present at a place and time, and one good recording is usually enough. The iNaturalist duplicate check (same taxon, same calendar day, within a radius of 100 m by default) skips a second entry for the same combination.
 * `SchemaVersion` is required. Newer versions than the library supports are rejected.
 * Required: `Date`, `Latitude`, `Longitude`, `SpeciesLatin`, `PathToPng`, `PathToWav`.
   Optional: `SpeciesLocal`, `Temperature`, `Humidity`, `Comment`. Unknown properties are ignored.
-* `Date` is German local time (`dd.MM.yyyy HH:mm:ss`, no time zone).
+* `Date` (`dd.MM.yyyy HH:mm:ss`) carries no time zone and is always interpreted as **German local time (Europe/Berlin)**, including daylight saving time. This is never converted from the host's or the machine's time zone. It is used for the future-date check (compared with the current Berlin time). iNaturalist receives only the calendar date, not the time.
 * Species names are normalized (`Eptesicus Serotinus` becomes `Eptesicus serotinus`). A name iNaturalist
   cannot match exactly is skipped, never guessed.
 
@@ -102,7 +104,7 @@ config files and no environment variables.
 
 `ExportOrchestrator.RunAsync` returns one `PublishResult` per candidate with a `PublishStatus`:
 `Created`, `WouldCreate` (dry run), `SkippedDuplicate`, `SkippedUnresolvedTaxon`,
-`SkippedMissingEvidence`, `Failed`. A failed result may be partial (observation created, evidence incomplete);
+`SkippedMissingEvidence`, `SkippedInvalidEvidence` (unreadable, empty, or not a PNG / WAV file), `Failed`. A failed result may be partial (observation created, evidence incomplete);
 then `ObservationId` is set.
 
 ## Development

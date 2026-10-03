@@ -33,6 +33,7 @@ tools/SmokeTest/   manual console host for live tests (not in the solution); rea
 - Each adapter owns its auth entirely. No shared auth abstraction in `Core`; do not assume OAuth outside `Adapters/INaturalist`.
 - naturgucker is blocked (no public API docs). Keep it a stub. Do not guess its shape or bend `IObservationPublisher` for it.
 - Input schema is BatInspector-specific, `SchemaVersion` is required. Additive changes only within a version.
+- Input validation is per entry: a bad entry is left out and listed in `InputDocument.Rejected`, the rest is still published; only a structurally unusable file throws. No strict/lenient switch. Re-runs rely on the duplicate check.
 - `PublishOptions.Commit` defaults to false: publishing is public and irreversible, so dry run is the default.
 - Taxon resolution accepts only an exact name match. Never fall back to "first autocomplete hit".
 - The package ships no credentials and reads no config files or environment variables. The host passes `INaturalistOptions`.
@@ -55,7 +56,7 @@ tools/SmokeTest/   manual console host for live tests (not in the solution); rea
 
 ## Backlog and memory
 
-- `TODO.md` is the project backlog (open items, blocked items, dropped decisions). Read it at the start of a task, update it when something is decided, found or finished. English only.
+- `TODO.md` is the project backlog (open items, blocked items, dropped decisions). Read it at the start of a task, update it when something is decided, found or finished, and groom it before every commit (see Git rules). English only.
 - `CLAUDE.md` (this file) holds standing rules; `docs/releasing.md` is the release runbook; the design notes below hold decisions that are not obvious from the code. Claude's own auto-memory lives outside the repo and is per machine.
 - Internal docs (`CLAUDE.md`, `TODO.md`, `CHANGELOG.md`) are English only; user-facing docs are bilingual.
 
@@ -79,6 +80,8 @@ One-person project: external code contributions are not solicited (bug reports a
   - Public repo: no tokens, real coordinates, local paths, usernames or e-mail addresses in a message.
 - The commit identity is configured repo-locally (`.git/config`): the owner's name and their GitHub noreply address. Never use or write the owner's real e-mail address anywhere. Do not touch `git config --global`.
 - Never `git push`, tag or commit without the owner's explicit OK (settings ask for confirmation).
+- **Before every commit, groom `TODO.md` - always, no exception.** Remove what the commit finishes from **Open** (leave at most a one-line, dated entry in **Done**), cut a section down to its remaining items when only part is done,
+  and add what was decided or found along the way. Do this before `git commit`, and say in the reply what changed in `TODO.md`. A commit with a stale `TODO.md` is not ready.
 
 ## Versioning
 

@@ -13,6 +13,6 @@ internal sealed class NaturguckerPublisher : IObservationPublisher
 {
     public string PlatformId => "naturgucker";
 
-    public Task<PublishResult> PublishAsync(ObservationCandidate candidate, PublishOptions options, CancellationToken ct = default) =>
+    public Task<PublishResult> PublishAsync(ObservationCandidate candidate, EvidenceFiles evidence, PublishOptions options, CancellationToken ct = default) =>
         throw new NotImplementedException("The naturgucker adapter is not implemented: waiting for API information from NABU.");
 }

@@ -7,25 +7,16 @@ using BatInspectorPublisher.Core.Results;
 
 namespace BatInspectorPublisher.Tests.Adapters.INaturalist;
 
-public class INaturalistPublisherTests : IDisposable
+public class INaturalistPublisherTests
 {
-    private readonly string _dir = Directory.CreateTempSubdirectory("inat-test-").FullName;
     private readonly StubHttpHandler _http = new();
-
-    public void Dispose() => Directory.Delete(_dir, recursive: true);
 
     private INaturalistPublisher CreatePublisher() =>
         new(TestData.Options(), new HttpClient(_http), _ => Task.FromResult("jwt-token"));
 
-    private ObservationCandidate Candidate() => TestData.Candidate(
-        spectrogram: WriteFile("s.png"), audio: WriteFile("a.wav"));
+    private static ObservationCandidate Candidate() => TestData.Candidate();
 
-    private string WriteFile(string name)
-    {
-        var path = Path.Combine(_dir, name);
-        File.WriteAllText(path, "data");
-        return path;
-    }
+    private static EvidenceFiles Evidence() => TestData.Evidence();
 
     private StubHttpHandler HappyPath() => _http
         .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK,
@@ -40,7 +31,7 @@ public class INaturalistPublisherTests : IDisposable
     {
         HappyPath();
 
-        var result = await CreatePublisher().PublishAsync(Candidate(), new PublishOptions { Commit = true });
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
 
         Assert.Equal(PublishStatus.Created, result.Status);
         Assert.Equal("123", result.ObservationId);
@@ -58,7 +49,7 @@ public class INaturalistPublisherTests : IDisposable
     {
         HappyPath();
 
-        var result = await CreatePublisher().PublishAsync(Candidate(), new PublishOptions());
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions());
 
         Assert.Equal(PublishStatus.WouldCreate, result.Status);
         Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
@@ -70,7 +61,7 @@ public class INaturalistPublisherTests : IDisposable
         _http.On("GET /v2/taxa/autocomplete", HttpStatusCode.OK,
             """{ "results": [ { "id": 5, "name": "Pipistrellus kuhlii", "rank": "species" } ] }""");
 
-        var result = await CreatePublisher().PublishAsync(Candidate(), new PublishOptions { Commit = true });
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
 
         Assert.Equal(PublishStatus.SkippedUnresolvedTaxon, result.Status);
         Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
@@ -83,7 +74,7 @@ public class INaturalistPublisherTests : IDisposable
             .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus" } ] }""")
             .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 1, "results": [ { "id": 1 } ] }""");
 
-        var result = await CreatePublisher().PublishAsync(Candidate(), new PublishOptions { Commit = true });
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
 
         Assert.Equal(PublishStatus.SkippedDuplicate, result.Status);
         Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
@@ -94,7 +85,7 @@ public class INaturalistPublisherTests : IDisposable
     {
         HappyPath();
 
-        await CreatePublisher().PublishAsync(Candidate(), new PublishOptions { Commit = true });
+        await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
 
         var query = _http.Requests.Single(r => r.PathAndQuery.StartsWith("/v1/observations")).PathAndQuery;
         Assert.Contains("taxon_id=99", query);
@@ -102,6 +93,17 @@ public class INaturalistPublisherTests : IDisposable
         Assert.Contains("lat=50.11&lng=8.682", query);
         Assert.Contains("radius=0.1", query);
         Assert.Contains("mine_only=true", query);
+    }
+
+    [Fact]
+    public async Task Publish_Commit_UploadsTheBytesItWasGiven()
+    {
+        HappyPath();
+
+        await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Contains("SPECTROGRAM-BYTES", _http.Requests.Single(r => r.PathAndQuery.StartsWith("/v2/observation_photos")).Body);
+        Assert.Contains("AUDIO-BYTES", _http.Requests.Single(r => r.PathAndQuery.StartsWith("/v2/observation_sounds")).Body);
     }
 
     [Fact]
@@ -114,7 +116,7 @@ public class INaturalistPublisherTests : IDisposable
             .On("POST /v2/observation_photos", HttpStatusCode.OK, "{}")
             .On("POST /v2/observation_sounds", HttpStatusCode.InternalServerError, "kaputt");
 
-        var result = await CreatePublisher().PublishAsync(Candidate(), new PublishOptions { Commit = true });
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
 
         Assert.Equal(PublishStatus.Failed, result.Status);
         Assert.Equal("123", result.ObservationId);
@@ -129,7 +131,7 @@ public class INaturalistPublisherTests : IDisposable
     {
         _http.On("GET /v2/taxa/autocomplete", HttpStatusCode.Unauthorized, "nope");
 
-        var result = await CreatePublisher().PublishAsync(Candidate(), new PublishOptions { Commit = true });
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
 
         Assert.Equal(PublishStatus.Failed, result.Status);
         Assert.Equal(HttpStatusCode.Unauthorized, ((INaturalistApiException)result.Error!).StatusCode);
@@ -142,7 +144,7 @@ public class INaturalistPublisherTests : IDisposable
         cts.Cancel();
         var publisher = new INaturalistPublisher(TestData.Options(), new HttpClient(_http), ct => Task.FromCanceled<string>(ct));
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => publisher.PublishAsync(Candidate(), new PublishOptions(), cts.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions(), cts.Token));
     }
 
     [Fact]
@@ -151,8 +153,8 @@ public class INaturalistPublisherTests : IDisposable
         HappyPath();
         var publisher = CreatePublisher();
 
-        await publisher.PublishAsync(Candidate(), new PublishOptions());
-        await publisher.PublishAsync(Candidate(), new PublishOptions());
+        await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions());
+        await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions());
 
         Assert.Single(_http.Requests, r => r.PathAndQuery.StartsWith("/v2/taxa/autocomplete"));
     }

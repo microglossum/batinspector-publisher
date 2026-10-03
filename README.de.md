@@ -22,7 +22,7 @@ BatInspector-Export (JSON) ──► InputSchemaReader ──► ObservationCand
 ```
 
 * Eine Beobachtung pro Eintrag in `DocumentFiles`: Art, Zeitpunkt, Ort, Spektrogramm (Foto) und Audio (Ton).
-* Ohne beide Belegdateien wird nichts veröffentlicht.
+* Ohne beide Belegdateien wird nichts veröffentlicht. Jede Datei wird einmal gelesen und geprüft (nicht leer, PNG- / WAV-Signatur); hochgeladen werden genau die geprüften Bytes.
 * Jeder Adapter verantwortet Anmeldung, Artauflösung, Duplikatprüfung und Upload selbst.
   Die Anmeldung ist **nicht** überall OAuth; OAuth ist nur das Verfahren von iNaturalist.
 
@@ -90,11 +90,13 @@ Konfigurationsdateien und keine Umgebungsvariablen.
 ```
 
 * Das JSON muss nicht aus einer Datei kommen: `InputSchemaReader.Parse(string json)` und `InputSchemaReader.Read(Stream)` funktionieren wie `ReadFile`. Die Belegpfade darin müssen weiterhin auf Dateien auf dem Datenträger zeigen.
+* Die Prüfung erfolgt pro Eintrag. Eine Datei, die kein wohlgeformtes JSON ist, deren `SchemaVersion` fehlt oder nicht unterstützt wird oder die kein `DocumentFiles`-Array hat, wird als Ganzes abgelehnt (`InputSchemaException`). Ein fehlerhafter Eintrag fehlt in `InputDocument.Candidates` und steht mit allen Problemen in `InputDocument.Rejected`; die gültigen Einträge werden trotzdem zurückgegeben und können veröffentlicht werden. Abgelehnte Einträge werden nie veröffentlicht. `Rejected` sollte dem Nutzer angezeigt werden: Der Veröffentlichungslauf meldet sie nicht. Nach dem Korrigieren der Datei kann der Lauf wiederholt werden: Bereits veröffentlichte Einträge werden als Duplikate übersprungen.
+* Fehler pro Eintrag: Belegpfade müssen absolut sein (Windows- oder Unix-Schreibweise) und auf `.png` / `.wav` enden; `Latitude` und `Longitude` beide `0` (fehlende GPS-Position) wird abgelehnt; ein `Date` in der Zukunft (verglichen mit der aktuellen deutschen Zeit) wird abgelehnt.
 * Die Datei soll eine **Referenzaufnahme** pro Art, Nacht und Standort enthalten, nicht jede Detektion: Es geht darum, eine Art an einem Ort zu einer Zeit nachzuweisen, und dafür reicht meist eine gute Aufnahme. Die Duplikatprüfung bei iNaturalist (gleiches Taxon, gleicher Kalendertag, standardmäßig im Umkreis von 100 m) überspringt einen zweiten Eintrag für dieselbe Kombination.
 * `SchemaVersion` ist Pflicht. Neuere Versionen als die der Bibliothek werden abgelehnt.
 * Pflicht: `Date`, `Latitude`, `Longitude`, `SpeciesLatin`, `PathToPng`, `PathToWav`.
   Optional: `SpeciesLocal`, `Temperature`, `Humidity`, `Comment`. Unbekannte Eigenschaften werden ignoriert.
-* `Date` ist deutsche Ortszeit (`dd.MM.yyyy HH:mm:ss`, ohne Zeitzone).
+* `Date` (`dd.MM.yyyy HH:mm:ss`) enthält keine Zeitzone und wird immer als **deutsche Ortszeit (Europe/Berlin)** gelesen, einschließlich Sommerzeit. Es wird nie aus der Zeitzone des Hosts oder des Rechners umgerechnet. Sie dient der Prüfung auf Zukunftsdaten (Vergleich mit der aktuellen Berliner Zeit). An iNaturalist wird nur das Kalenderdatum übertragen, nicht die Uhrzeit.
 * Artnamen werden normalisiert (`Eptesicus Serotinus` wird zu `Eptesicus serotinus`). Ein Name, den
   iNaturalist nicht exakt findet, wird übersprungen und nie geraten.
 
@@ -102,7 +104,7 @@ Konfigurationsdateien und keine Umgebungsvariablen.
 
 `ExportOrchestrator.RunAsync` liefert pro Kandidat ein `PublishResult` mit einem `PublishStatus`:
 `Created`, `WouldCreate` (Trockenlauf), `SkippedDuplicate`, `SkippedUnresolvedTaxon`,
-`SkippedMissingEvidence`, `Failed`. Ein fehlgeschlagenes Ergebnis kann teilweise erfolgt sein
+`SkippedMissingEvidence`, `SkippedInvalidEvidence` (nicht lesbar, leer oder keine PNG- / WAV-Datei), `Failed`. Ein fehlgeschlagenes Ergebnis kann teilweise erfolgt sein
 (Beobachtung angelegt, Belege unvollständig); dann ist `ObservationId` gesetzt.
 
 ## Entwicklung

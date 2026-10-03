@@ -50,6 +50,11 @@ switch (command)
         }
 
         var doc = InputSchemaReader.ReadFile(args[1]);
+        foreach (var rejected in doc.Rejected)
+        {
+            Console.WriteLine($"{"Rejected",-24} entry {rejected.Index}: {string.Join("; ", rejected.Issues)}");
+        }
+
         var publisher = new INaturalistPublisher(options, http, auth);
         var progress = new Progress<PublishResult>(r =>
             Console.WriteLine($"{r.Status,-24} {r.Candidate.ScientificName} {r.ObservationId} {r.Url} {r.Message}"));

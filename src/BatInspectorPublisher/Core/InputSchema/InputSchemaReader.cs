@@ -8,7 +8,13 @@ namespace BatInspectorPublisher.Core.InputSchema;
 /// Reads the BatInspector export file (<c>{ "SchemaVersion": 1, "DocumentFiles": [ ... ] }</c>).
 /// Strict about required fields and the version, tolerant of unknown properties (additive changes
 /// stay compatible within one schema version). Does not touch the file system for evidence files;
-/// existence of the referenced spectrogram/audio is checked at publish time.
+/// the referenced spectrogram/audio is read and checked once per candidate at publish time.
+/// <para>
+/// Validation is per entry. A file that is not well-formed, or has a missing or unsupported
+/// <c>SchemaVersion</c> or no <c>DocumentFiles</c> array, is rejected as a whole (an exception).
+/// An invalid entry is left out of <see cref="InputDocument.Candidates"/> and reported in
+/// <see cref="InputDocument.Rejected"/>; the valid entries are still returned.
+/// </para>
 /// </summary>
 public static class InputSchemaReader
 {
@@ -19,11 +25,11 @@ public static class InputSchemaReader
     internal const string DateFormat = "dd.MM.yyyy HH:mm:ss";
 
     /// <summary>Reads and validates a file.</summary>
-    /// <exception cref="InputSchemaException">The content is invalid.</exception>
+    /// <exception cref="InputSchemaException">The file is not well-formed JSON, or its structure or version is invalid.</exception>
     public static InputDocument ReadFile(string path) => Parse(File.ReadAllText(path));
 
     /// <summary>Reads and validates a stream (UTF-8 JSON).</summary>
-    /// <exception cref="InputSchemaException">The content is invalid.</exception>
+    /// <exception cref="InputSchemaException">The content is not well-formed JSON, or its structure or version is invalid.</exception>
     public static InputDocument Read(Stream stream)
     {
         using var reader = new StreamReader(stream);
@@ -31,8 +37,10 @@ public static class InputSchemaReader
     }
 
     /// <summary>Parses and validates a JSON string.</summary>
-    /// <exception cref="InputSchemaException">The content is invalid.</exception>
-    public static InputDocument Parse(string json)
+    /// <exception cref="InputSchemaException">The content is not well-formed JSON, or its structure or version is invalid.</exception>
+    public static InputDocument Parse(string json) => Parse(json, TimeProvider.System);
+
+    internal static InputDocument Parse(string json, TimeProvider time)
     {
         JsonDocument doc;
         try
@@ -59,13 +67,14 @@ public static class InputSchemaReader
                 throw new InputSchemaException(issues);
             }
 
-            var candidates = ReadCandidates(root, issues);
+            var rejected = new List<RejectedEntry>();
+            var candidates = ReadCandidates(root, issues, rejected, BerlinNow(time));
             if (issues.Count > 0)
             {
                 throw new InputSchemaException(issues);
             }
 
-            return new InputDocument(version.Value, candidates);
+            return new InputDocument(version.Value, candidates) { Rejected = rejected };
         }
     }
 
@@ -93,7 +102,9 @@ public static class InputSchemaReader
         return version;
     }
 
-    private static List<ObservationCandidate> ReadCandidates(JsonElement root, List<ValidationIssue> issues)
+    /// <summary>Reads all entries. Structural problems go to <paramref name="issues"/>, per-entry problems to <paramref name="rejected"/>.</summary>
+    private static List<ObservationCandidate> ReadCandidates(
+        JsonElement root, List<ValidationIssue> issues, List<RejectedEntry> rejected, DateTime berlinNow)
     {
         var candidates = new List<ObservationCandidate>();
         if (!root.TryGetProperty("DocumentFiles", out var files) || files.ValueKind != JsonValueKind.Array)
@@ -102,30 +113,36 @@ public static class InputSchemaReader
             return candidates;
         }
 
-        var index = 0;
+        var index = -1;
         foreach (var entry in files.EnumerateArray())
         {
-            var path = $"DocumentFiles[{index++}]";
+            index++;
+            var path = $"DocumentFiles[{index}]";
+            var entryIssues = new List<ValidationIssue>();
             if (entry.ValueKind != JsonValueKind.Object)
             {
-                issues.Add(new(path, "Must be an object."));
+                rejected.Add(new(index, [new(path, "Must be an object.")]));
                 continue;
             }
 
-            var before = issues.Count;
-            var species = RequiredString(entry, "SpeciesLatin", path, issues);
-            var observedAt = RequiredDate(entry, "Date", path, issues);
-            var lat = RequiredCoordinate(entry, "Latitude", 90, path, issues);
-            var lon = RequiredCoordinate(entry, "Longitude", 180, path, issues);
-            var png = RequiredString(entry, "PathToPng", path, issues);
-            var wav = RequiredString(entry, "PathToWav", path, issues);
-            var temperature = OptionalNumber(entry, "Temperature", path, issues);
-            var humidity = OptionalNumber(entry, "Humidity", path, issues);
-            var local = OptionalString(entry, "SpeciesLocal", path, issues);
-            var comment = OptionalString(entry, "Comment", path, issues);
+            var species = RequiredString(entry, "SpeciesLatin", path, entryIssues);
+            var observedAt = RequiredDate(entry, "Date", path, entryIssues);
+            var lat = RequiredCoordinate(entry, "Latitude", 90, path, entryIssues);
+            var lon = RequiredCoordinate(entry, "Longitude", 180, path, entryIssues);
+            var png = RequiredString(entry, "PathToPng", path, entryIssues);
+            var wav = RequiredString(entry, "PathToWav", path, entryIssues);
+            var temperature = OptionalNumber(entry, "Temperature", path, entryIssues);
+            var humidity = OptionalNumber(entry, "Humidity", path, entryIssues);
+            var local = OptionalString(entry, "SpeciesLocal", path, entryIssues);
+            var comment = OptionalString(entry, "Comment", path, entryIssues);
 
-            if (issues.Count > before)
+            CheckEvidencePath(png, "PathToPng", ".png", path, entryIssues);
+            CheckEvidencePath(wav, "PathToWav", ".wav", path, entryIssues);
+            CheckPlausible(observedAt, lat, lon, path, berlinNow, entryIssues);
+
+            if (entryIssues.Count > 0)
             {
+                rejected.Add(new(index, entryIssues));
                 continue;
             }
 
@@ -145,6 +162,70 @@ public static class InputSchemaReader
         }
 
         return candidates;
+    }
+
+    private static DateTime BerlinNow(TimeProvider time)
+    {
+        foreach (var id in new[] { "Europe/Berlin", "W. Europe Standard Time" })
+        {
+            try
+            {
+                return TimeZoneInfo.ConvertTimeFromUtc(time.GetUtcNow().UtcDateTime, TimeZoneInfo.FindSystemTimeZoneById(id));
+            }
+            catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
+            {
+            }
+        }
+
+        // No time zone data: the most lenient clock (UTC+14), so that valid entries are never rejected as "future".
+        return time.GetUtcNow().UtcDateTime.AddHours(14);
+    }
+
+    /// <summary>
+    /// Evidence paths are uploaded to a public service, so they must be explicit: absolute (never resolved against the
+    /// process working directory) and of the expected type. Content is checked when the file is read at publish time.
+    /// The syntax check accepts Windows and Unix absolute paths on every OS (the file may be written on another OS).
+    /// </summary>
+    private static void CheckEvidencePath(string? value, string name, string extension, string path, List<ValidationIssue> issues)
+    {
+        if (value is null)
+        {
+            return;
+        }
+
+        if (!IsAbsolutePath(value))
+        {
+            issues.Add(new($"{path}.{name}", $"'{value}' is not an absolute path."));
+        }
+
+        if (!HasExtension(value, extension))
+        {
+            issues.Add(new($"{path}.{name}", $"'{value}' must be a {extension} file."));
+        }
+    }
+
+    private static bool IsAbsolutePath(string value) =>
+        value.StartsWith('/')
+        || value.StartsWith(@"\\", StringComparison.Ordinal)
+        || (value.Length >= 3 && char.IsAsciiLetter(value[0]) && value[1] == ':' && value[2] is '\\' or '/');
+
+    private static bool HasExtension(string value, string extension)
+    {
+        var name = value[(value.LastIndexOfAny(['/', '\\']) + 1)..];
+        return name.EndsWith(extension, StringComparison.OrdinalIgnoreCase) && name.Length > extension.Length;
+    }
+
+    private static void CheckPlausible(DateTime? observedAt, double? lat, double? lon, string path, DateTime berlinNow, List<ValidationIssue> issues)
+    {
+        if (lat == 0 && lon == 0)
+        {
+            issues.Add(new($"{path}.Latitude", "Latitude and Longitude are both 0: the GPS position is missing."));
+        }
+
+        if (observedAt > berlinNow)
+        {
+            issues.Add(new($"{path}.Date", $"{observedAt:dd.MM.yyyy HH:mm:ss} is in the future."));
+        }
     }
 
     private static string? RequiredString(JsonElement obj, string name, string path, List<ValidationIssue> issues)

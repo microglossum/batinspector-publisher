@@ -6,8 +6,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace BatInspectorPublisher.Core;
 
 /// <summary>
-/// Platform-agnostic control flow: pre-flight evidence check, one publisher call per candidate,
-/// failure isolation, progress reporting. Everything platform-specific lives in the publisher.
+/// Platform-agnostic control flow: per candidate, read and check the evidence once, then one publisher
+/// call, with failure isolation and progress reporting. Everything platform-specific lives in the publisher.
 /// </summary>
 public sealed class ExportOrchestrator
 {
@@ -52,21 +52,21 @@ public sealed class ExportOrchestrator
 
     private async Task<PublishResult> PublishOneAsync(ObservationCandidate candidate, PublishOptions options, CancellationToken ct)
     {
-        var missing = MissingEvidence(candidate);
-        if (missing is not null)
-        {
-            return new PublishResult
-            {
-                Candidate = candidate,
-                PlatformId = _publisher.PlatformId,
-                Status = PublishStatus.SkippedMissingEvidence,
-                Message = $"Evidence file not found: {missing}",
-            };
-        }
-
         try
         {
-            return await _publisher.PublishAsync(candidate, options, ct);
+            var evidence = await EvidenceLoader.LoadAsync(candidate, ct);
+            if (evidence.Files is null)
+            {
+                return new PublishResult
+                {
+                    Candidate = candidate,
+                    PlatformId = _publisher.PlatformId,
+                    Status = evidence.Status,
+                    Message = evidence.Message,
+                };
+            }
+
+            return await _publisher.PublishAsync(candidate, evidence.Files, options, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -80,9 +80,4 @@ public sealed class ExportOrchestrator
             };
         }
     }
-
-    private static string? MissingEvidence(ObservationCandidate candidate) =>
-        !File.Exists(candidate.SpectrogramPath) ? candidate.SpectrogramPath
-        : !File.Exists(candidate.AudioPath) ? candidate.AudioPath
-        : null;
 }

@@ -20,6 +20,9 @@ public enum PublishStatus
     /// <summary>The spectrogram or audio file does not exist; nothing is published without evidence.</summary>
     SkippedMissingEvidence,
 
+    /// <summary>The spectrogram or audio file is unreadable, empty, or not a PNG / WAV file; nothing is published.</summary>
+    SkippedInvalidEvidence,
+
     /// <summary>Publishing failed; see <see cref="PublishResult.Error"/>. May be partial, see <see cref="PublishResult.ObservationId"/>.</summary>
     Failed,
 }

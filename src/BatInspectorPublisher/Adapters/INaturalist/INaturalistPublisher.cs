@@ -47,7 +47,7 @@ public sealed class INaturalistPublisher : IObservationPublisher
     }
 
     /// <inheritdoc />
-    public async Task<PublishResult> PublishAsync(ObservationCandidate candidate, PublishOptions options, CancellationToken ct = default)
+    public async Task<PublishResult> PublishAsync(ObservationCandidate candidate, EvidenceFiles evidence, PublishOptions options, CancellationToken ct = default)
     {
         string? observationId = null;
         string? url = null;
@@ -79,9 +79,9 @@ public sealed class INaturalistPublisher : IObservationPublisher
             observationId = created.Id != 0 ? created.Id.ToString(CultureInfo.InvariantCulture) : created.Uuid;
             url = created.Id != 0 ? $"https://www.inaturalist.org/observations/{created.Id}" : null;
 
-            await _api.AttachPhotoAsync(created.Uuid, candidate.SpectrogramPath, jwt, ct);
+            await _api.AttachPhotoAsync(created.Uuid, evidence.Spectrogram, jwt, ct);
             photoAttached = true;
-            await _api.AttachSoundAsync(created.Uuid, candidate.AudioPath, jwt, ct);
+            await _api.AttachSoundAsync(created.Uuid, evidence.Audio, jwt, ct);
             soundAttached = true;
 
             return Result(PublishStatus.Created, $"Created observation {observationId}.");

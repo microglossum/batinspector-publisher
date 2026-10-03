@@ -84,6 +84,10 @@ internal static class TestData
         AudioPath = audio ?? "audio.wav",
     };
 
+    public static EvidenceFiles Evidence() => new(
+        new EvidenceFile("spectrogram.png", "SPECTROGRAM-BYTES"u8.ToArray()),
+        new EvidenceFile("audio.wav", "AUDIO-BYTES"u8.ToArray()));
+
     public static int FreeTcpPort()
     {
         var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);

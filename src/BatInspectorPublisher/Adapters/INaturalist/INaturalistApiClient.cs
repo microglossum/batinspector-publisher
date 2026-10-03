@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using BatInspectorPublisher.Core.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -129,21 +130,20 @@ internal sealed class INaturalistApiClient
     }
 
     /// <summary>Uploads a photo and links it to the observation in one multipart request.</summary>
-    public Task AttachPhotoAsync(string observationUuid, string filePath, string jwt, CancellationToken ct) =>
-        UploadAsync($"{_options.ApiBaseUrlV2}/observation_photos", "observation_photo[observation_id]", observationUuid, filePath, "Attaching the spectrogram", jwt, ct);
+    public Task AttachPhotoAsync(string observationUuid, EvidenceFile file, string jwt, CancellationToken ct) =>
+        UploadAsync($"{_options.ApiBaseUrlV2}/observation_photos", "observation_photo[observation_id]", observationUuid, file, "Attaching the spectrogram", jwt, ct);
 
     /// <summary>Uploads a sound and links it to the observation in one multipart request.</summary>
-    public Task AttachSoundAsync(string observationUuid, string filePath, string jwt, CancellationToken ct) =>
-        UploadAsync($"{_options.ApiBaseUrlV2}/observation_sounds", "observation_sound[observation_id]", observationUuid, filePath, "Attaching the audio", jwt, ct);
+    public Task AttachSoundAsync(string observationUuid, EvidenceFile file, string jwt, CancellationToken ct) =>
+        UploadAsync($"{_options.ApiBaseUrlV2}/observation_sounds", "observation_sound[observation_id]", observationUuid, file, "Attaching the audio", jwt, ct);
 
-    private async Task UploadAsync(string url, string idField, string observationUuid, string filePath, string operation, string jwt, CancellationToken ct)
+    private async Task UploadAsync(string url, string idField, string observationUuid, EvidenceFile file, string operation, string jwt, CancellationToken ct)
     {
         // The two-step flow (upload, then link by id) was rejected by the real API with "No photo
         // specified"; the combined multipart upload+link from the v2 OpenAPI spec works.
         using var content = new MultipartFormDataContent();
         content.Add(new StringContent(observationUuid), idField);
-        await using var file = File.OpenRead(filePath);
-        content.Add(new StreamContent(file), "file", Path.GetFileName(filePath));
+        content.Add(new ByteArrayContent(file.Content), "file", file.FileName);
         await SendAsync(NewRequest(HttpMethod.Post, url, jwt, content), operation, ct);
     }
 }

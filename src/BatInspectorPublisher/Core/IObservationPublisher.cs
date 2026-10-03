@@ -18,7 +18,11 @@ public interface IObservationPublisher
     /// HTTP errors) are reported as a <see cref="PublishResult"/>, not thrown. Cancellation is
     /// reported by throwing <see cref="OperationCanceledException"/>.
     /// </summary>
-    Task<PublishResult> PublishAsync(ObservationCandidate candidate, PublishOptions options, CancellationToken ct = default);
+    /// <param name="candidate">The observation to publish.</param>
+    /// <param name="evidence">The candidate's evidence, already read and checked. Upload exactly these bytes; do not re-read the files.</param>
+    /// <param name="options">Publish options.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<PublishResult> PublishAsync(ObservationCandidate candidate, EvidenceFiles evidence, PublishOptions options, CancellationToken ct = default);
 }
 
 /// <summary>Options for a publish call.</summary>

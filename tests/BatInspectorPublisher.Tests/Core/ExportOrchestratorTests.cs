@@ -10,14 +10,17 @@ public class ExportOrchestratorTests : IDisposable
 
     public void Dispose() => Directory.Delete(_dir, recursive: true);
 
-    private ObservationCandidate Candidate(string species, bool withEvidence = true)
+    private static readonly byte[] PngBytes = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3];
+    private static readonly byte[] WavBytes = [.. "RIFF"u8, 4, 0, 0, 0, .. "WAVE"u8, 1, 2];
+
+    private ObservationCandidate Candidate(string species, bool withEvidence = true, byte[]? png = null, byte[]? wav = null)
     {
-        var png = Path.Combine(_dir, species + ".png");
-        var wav = Path.Combine(_dir, species + ".wav");
+        var pngPath = Path.Combine(_dir, species + ".png");
+        var wavPath = Path.Combine(_dir, species + ".wav");
         if (withEvidence)
         {
-            File.WriteAllText(png, "png");
-            File.WriteAllText(wav, "wav");
+            File.WriteAllBytes(pngPath, png ?? PngBytes);
+            File.WriteAllBytes(wavPath, wav ?? WavBytes);
         }
 
         return new ObservationCandidate
@@ -26,19 +29,19 @@ public class ExportOrchestratorTests : IDisposable
             ObservedAt = new DateTime(2026, 6, 13, 4, 0, 0),
             Latitude = 50,
             Longitude = 8,
-            SpectrogramPath = png,
-            AudioPath = wav,
+            SpectrogramPath = pngPath,
+            AudioPath = wavPath,
         };
     }
 
     private sealed class FakePublisher(Func<ObservationCandidate, PublishOptions, CancellationToken, PublishResult> publish) : IObservationPublisher
     {
-        public List<(ObservationCandidate Candidate, PublishOptions Options)> Calls { get; } = [];
+        public List<(ObservationCandidate Candidate, EvidenceFiles Evidence, PublishOptions Options)> Calls { get; } = [];
         public string PlatformId => "fake";
 
-        public Task<PublishResult> PublishAsync(ObservationCandidate candidate, PublishOptions options, CancellationToken ct = default)
+        public Task<PublishResult> PublishAsync(ObservationCandidate candidate, EvidenceFiles evidence, PublishOptions options, CancellationToken ct = default)
         {
-            Calls.Add((candidate, options));
+            Calls.Add((candidate, evidence, options));
             return Task.FromResult(publish(candidate, options, ct));
         }
     }
@@ -77,6 +80,45 @@ public class ExportOrchestratorTests : IDisposable
 
         Assert.Equal(PublishStatus.SkippedMissingEvidence, results.Single().Status);
         Assert.Empty(publisher.Calls);
+    }
+
+    [Fact]
+    public async Task RunAsync_HandsTheValidatedBytesAndFileNamesToThePublisher()
+    {
+        var publisher = new FakePublisher((c, _, _) => Created(c));
+
+        await new ExportOrchestrator(publisher).RunAsync([Candidate("A a")], new PublishOptions());
+
+        var evidence = publisher.Calls.Single().Evidence;
+        Assert.Equal(PngBytes, evidence.Spectrogram.Content);
+        Assert.Equal("A a.png", evidence.Spectrogram.FileName);
+        Assert.Equal(WavBytes, evidence.Audio.Content);
+        Assert.Equal("A a.wav", evidence.Audio.FileName);
+    }
+
+    public static TheoryData<string, byte[]?, byte[]?> InvalidEvidence => new()
+    {
+        { "empty spectrogram", Array.Empty<byte>(), null },
+        { "empty audio", null, Array.Empty<byte>() },
+        { "spectrogram is not a PNG", "not a png"u8.ToArray(), null },
+        { "audio is not a WAV", null, "not a wav"u8.ToArray() },
+        { "audio is a PNG", null, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] },
+        { "RIFF but not WAVE", null, [.. "RIFF"u8, 4, 0, 0, 0, .. "AVI "u8] },
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidEvidence))]
+    public async Task RunAsync_InvalidEvidence_IsSkippedWithoutCallingPublisher(string _, byte[]? png, byte[]? wav)
+    {
+        var publisher = new FakePublisher((c, _, _) => Created(c));
+
+        var results = await new ExportOrchestrator(publisher).RunAsync(
+            [Candidate("A a", png: png, wav: wav), Candidate("B b")], new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.SkippedInvalidEvidence, results[0].Status);
+        Assert.Contains(_dir, results[0].Message);
+        Assert.Equal(PublishStatus.Created, results[1].Status);
+        Assert.Equal("B b", publisher.Calls.Single().Candidate.ScientificName);
     }
 
     [Fact]
