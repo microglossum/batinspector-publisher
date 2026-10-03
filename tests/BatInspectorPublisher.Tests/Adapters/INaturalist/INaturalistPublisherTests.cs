@@ -96,6 +96,18 @@ public class INaturalistPublisherTests
     }
 
     [Fact]
+    public async Task Publish_DuplicateCheck_UsesTheLocalDayForANightAfterMidnight()
+    {
+        HappyPath();
+        var candidate = Candidate() with { ObservedAt = new DateTimeOffset(2026, 6, 12, 0, 30, 0, TimeSpan.FromHours(2)) };
+
+        await CreatePublisher().PublishAsync(candidate, Evidence(), new PublishOptions { Commit = true });
+
+        // 22:30 UTC on the 11th, but the 12th in Berlin.
+        Assert.Contains("d1=2026-06-12&d2=2026-06-12", _http.Requests.Single(r => r.PathAndQuery.StartsWith("/v1/observations")).PathAndQuery);
+    }
+
+    [Fact]
     public async Task Publish_Commit_UploadsTheBytesItWasGiven()
     {
         HappyPath();
@@ -186,6 +198,40 @@ public class INaturalistPublisherTests
         Assert.Equal("2026-06-11", payload.ObservedOnString);
         Assert.Equal("Pipistrellus pipistrellus", payload.SpeciesGuess);
         Assert.Equal("bat,acoustic-monitoring,batinspector", payload.TagList);
+    }
+
+    [Fact]
+    public void BuildPayload_NightAfterMidnightInBerlin_UsesTheLocalDate()
+    {
+        // 22:30 UTC on 13.06. is 00:30 on 14.06. in Berlin; the platform must see the 14th.
+        var candidate = TestData.Candidate() with { ObservedAt = new DateTimeOffset(2026, 6, 14, 0, 30, 0, TimeSpan.FromHours(2)) };
+
+        Assert.Equal("2026-06-14", CreatePublisher().BuildPayload(candidate, 1).ObservedOnString);
+    }
+
+    [Theory]
+    [InlineData(1, "MEZ")]
+    [InlineData(2, "MESZ")]
+    public void BuildPayload_Description_NamesTheGermanZone(int offsetHours, string zone)
+    {
+        var candidate = TestData.Candidate() with { ObservedAt = new DateTimeOffset(2026, 6, 11, 21, 37, 49, TimeSpan.FromHours(offsetHours)) };
+
+        Assert.Contains($"21:37:49 Uhr {zone}.", CreatePublisher().BuildPayload(candidate, 1).Description);
+    }
+
+    [Fact]
+    public void BuildPayload_Description_NamesAForeignZoneExplicitly()
+    {
+        var candidate = TestData.Candidate() with
+        {
+            TimeZoneId = "Europe/Lisbon",
+            ObservedAt = new DateTimeOffset(2026, 6, 11, 21, 37, 49, TimeSpan.FromHours(1)),
+        };
+
+        var description = CreatePublisher().BuildPayload(candidate, 1).Description;
+
+        Assert.Contains("21:37:49 Uhr (Zeitzone Europe/Lisbon, UTC+01:00).", description);
+        Assert.DoesNotContain("MEZ", description);
     }
 
     [Fact]

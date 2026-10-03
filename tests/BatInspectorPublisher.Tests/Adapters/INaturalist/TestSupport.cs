@@ -74,7 +74,7 @@ internal static class TestData
     {
         ScientificName = "Pipistrellus pipistrellus",
         LocalName = "Zwergfledermaus",
-        ObservedAt = new DateTime(2026, 6, 11, 21, 37, 49),
+        ObservedAt = new DateTimeOffset(2026, 6, 11, 21, 37, 49, TimeSpan.FromHours(2)),
         Latitude = 50.11,
         Longitude = 8.682,
         TemperatureCelsius = 18.944397,

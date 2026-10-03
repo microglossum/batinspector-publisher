@@ -26,10 +26,12 @@ public static class InputSchemaReader
 
     /// <summary>Reads and validates a file.</summary>
     /// <exception cref="InputSchemaException">The file is not well-formed JSON, or its structure or version is invalid.</exception>
+    /// <exception cref="TimeZoneNotFoundException">The host has no Europe/Berlin time zone data.</exception>
     public static InputDocument ReadFile(string path) => Parse(File.ReadAllText(path));
 
     /// <summary>Reads and validates a stream (UTF-8 JSON).</summary>
     /// <exception cref="InputSchemaException">The content is not well-formed JSON, or its structure or version is invalid.</exception>
+    /// <exception cref="TimeZoneNotFoundException">The host has no Europe/Berlin time zone data.</exception>
     public static InputDocument Read(Stream stream)
     {
         using var reader = new StreamReader(stream);
@@ -38,6 +40,7 @@ public static class InputSchemaReader
 
     /// <summary>Parses and validates a JSON string.</summary>
     /// <exception cref="InputSchemaException">The content is not well-formed JSON, or its structure or version is invalid.</exception>
+    /// <exception cref="TimeZoneNotFoundException">The host has no Europe/Berlin time zone data.</exception>
     public static InputDocument Parse(string json) => Parse(json, TimeProvider.System);
 
     internal static InputDocument Parse(string json, TimeProvider time)
@@ -68,13 +71,14 @@ public static class InputSchemaReader
             }
 
             var rejected = new List<RejectedEntry>();
-            var candidates = ReadCandidates(root, issues, rejected, BerlinNow(time));
+            var warnings = new List<EntryWarning>();
+            var candidates = ReadCandidates(root, issues, rejected, warnings, new ZoneResolver(), time.GetUtcNow());
             if (issues.Count > 0)
             {
                 throw new InputSchemaException(issues);
             }
 
-            return new InputDocument(version.Value, candidates) { Rejected = rejected };
+            return new InputDocument(version.Value, candidates) { Rejected = rejected, Warnings = warnings };
         }
     }
 
@@ -104,7 +108,7 @@ public static class InputSchemaReader
 
     /// <summary>Reads all entries. Structural problems go to <paramref name="issues"/>, per-entry problems to <paramref name="rejected"/>.</summary>
     private static List<ObservationCandidate> ReadCandidates(
-        JsonElement root, List<ValidationIssue> issues, List<RejectedEntry> rejected, DateTime berlinNow)
+        JsonElement root, List<ValidationIssue> issues, List<RejectedEntry> rejected, List<EntryWarning> warnings, ZoneResolver zones, DateTimeOffset now)
     {
         var candidates = new List<ObservationCandidate>();
         if (!root.TryGetProperty("DocumentFiles", out var files) || files.ValueKind != JsonValueKind.Array)
@@ -126,7 +130,9 @@ public static class InputSchemaReader
             }
 
             var species = RequiredString(entry, "SpeciesLatin", path, entryIssues);
-            var observedAt = RequiredDate(entry, "Date", path, entryIssues);
+            var entryWarnings = new List<ValidationIssue>();
+            var zone = OptionalZone(entry, zones, path, entryIssues);
+            var observedAt = RequiredDate(entry, "Date", zone?.Zone, path, entryIssues, entryWarnings);
             var lat = RequiredCoordinate(entry, "Latitude", 90, path, entryIssues);
             var lon = RequiredCoordinate(entry, "Longitude", 180, path, entryIssues);
             var png = RequiredString(entry, "PathToPng", path, entryIssues);
@@ -138,7 +144,7 @@ public static class InputSchemaReader
 
             CheckEvidencePath(png, "PathToPng", ".png", path, entryIssues);
             CheckEvidencePath(wav, "PathToWav", ".wav", path, entryIssues);
-            CheckPlausible(observedAt, lat, lon, path, berlinNow, entryIssues);
+            CheckPlausible(observedAt, lat, lon, path, now, entryIssues);
 
             if (entryIssues.Count > 0)
             {
@@ -146,11 +152,13 @@ public static class InputSchemaReader
                 continue;
             }
 
+            warnings.AddRange(entryWarnings.Select(w => new EntryWarning(index, w)));
             candidates.Add(new ObservationCandidate
             {
                 ScientificName = ScientificName.Normalize(species!),
                 LocalName = local,
                 ObservedAt = observedAt!.Value,
+                TimeZoneId = zone!.Value.Id,
                 Latitude = lat!.Value,
                 Longitude = lon!.Value,
                 TemperatureCelsius = temperature,
@@ -162,23 +170,6 @@ public static class InputSchemaReader
         }
 
         return candidates;
-    }
-
-    private static DateTime BerlinNow(TimeProvider time)
-    {
-        foreach (var id in new[] { "Europe/Berlin", "W. Europe Standard Time" })
-        {
-            try
-            {
-                return TimeZoneInfo.ConvertTimeFromUtc(time.GetUtcNow().UtcDateTime, TimeZoneInfo.FindSystemTimeZoneById(id));
-            }
-            catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
-            {
-            }
-        }
-
-        // No time zone data: the most lenient clock (UTC+14), so that valid entries are never rejected as "future".
-        return time.GetUtcNow().UtcDateTime.AddHours(14);
     }
 
     /// <summary>
@@ -215,16 +206,16 @@ public static class InputSchemaReader
         return name.EndsWith(extension, StringComparison.OrdinalIgnoreCase) && name.Length > extension.Length;
     }
 
-    private static void CheckPlausible(DateTime? observedAt, double? lat, double? lon, string path, DateTime berlinNow, List<ValidationIssue> issues)
+    private static void CheckPlausible(DateTimeOffset? observedAt, double? lat, double? lon, string path, DateTimeOffset now, List<ValidationIssue> issues)
     {
         if (lat == 0 && lon == 0)
         {
             issues.Add(new($"{path}.Latitude", "Latitude and Longitude are both 0: the GPS position is missing."));
         }
 
-        if (observedAt > berlinNow)
+        if (observedAt > now)
         {
-            issues.Add(new($"{path}.Date", $"{observedAt:dd.MM.yyyy HH:mm:ss} is in the future."));
+            issues.Add(new($"{path}.Date", $"{observedAt.Value:dd.MM.yyyy HH:mm:ss} is in the future."));
         }
     }
 
@@ -261,10 +252,11 @@ public static class InputSchemaReader
         return value;
     }
 
-    private static DateTime? RequiredDate(JsonElement obj, string name, string path, List<ValidationIssue> issues)
+    private static DateTimeOffset? RequiredDate(
+        JsonElement obj, string name, TimeZoneInfo? zone, string path, List<ValidationIssue> issues, List<ValidationIssue> warnings)
     {
         var text = RequiredString(obj, name, path, issues);
-        if (text is null)
+        if (text is null || zone is null)
         {
             return null;
         }
@@ -275,7 +267,56 @@ public static class InputSchemaReader
             return null;
         }
 
-        return date;
+        if (BerlinTime.TryConvert(zone, date, out var observedAt) is { } problem)
+        {
+            issues.Add(new($"{path}.{name}", $"'{text}' {problem}"));
+            return null;
+        }
+
+        if (zone.IsAmbiguousTime(date))
+        {
+            warnings.Add(new($"{path}.{name}",
+                $"'{text}' happens twice in {zone.Id} (clocks go back); read as standard time. Check the time."));
+        }
+
+        return observedAt;
+    }
+
+    /// <summary>Reads the optional <c>TimeZone</c> (IANA id); without it the entry is German local time.</summary>
+    private static (TimeZoneInfo Zone, string Id)? OptionalZone(JsonElement entry, ZoneResolver zones, string path, List<ValidationIssue> issues)
+    {
+        var id = OptionalString(entry, "TimeZone", path, issues);
+        if (id is null)
+        {
+            return issues.Any(i => i.Path == $"{path}.TimeZone") ? null : (zones.Default, BerlinTime.DefaultZoneId);
+        }
+
+        var zone = zones.Find(id);
+        if (zone is null)
+        {
+            issues.Add(new($"{path}.TimeZone", $"'{id}' is not a known time zone. Use an IANA id such as Europe/Berlin."));
+        }
+
+        return zone is null ? null : (zone, id);
+    }
+
+    /// <summary>Looks zones up once per file; the default zone is only required when an entry needs it.</summary>
+    private sealed class ZoneResolver
+    {
+        private readonly Dictionary<string, TimeZoneInfo?> _byId = new(StringComparer.Ordinal);
+        private TimeZoneInfo? _default;
+
+        public TimeZoneInfo Default => _default ??= BerlinTime.FindZone();
+
+        public TimeZoneInfo? Find(string id)
+        {
+            if (!_byId.TryGetValue(id, out var zone))
+            {
+                _byId[id] = zone = BerlinTime.TryFindZone(id);
+            }
+
+            return zone;
+        }
     }
 
     private static double? OptionalNumber(JsonElement obj, string name, string path, List<ValidationIssue> issues)

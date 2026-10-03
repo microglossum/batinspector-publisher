@@ -37,8 +37,8 @@ public class InputSchemaReaderTests
         var first = doc.Candidates[0];
         Assert.Equal("Pipistrellus nathusii", first.ScientificName);
         Assert.Equal("Rauhautfledermaus", first.LocalName);
-        Assert.Equal(new DateTime(2026, 6, 13, 4, 26, 34), first.ObservedAt);
-        Assert.Equal(DateTimeKind.Unspecified, first.ObservedAt.Kind);
+        Assert.Equal(new DateTimeOffset(2026, 6, 13, 4, 26, 34, TimeSpan.FromHours(2)), first.ObservedAt);
+        Assert.Equal(TimeSpan.FromHours(2), first.ObservedAt.Offset);
         Assert.Equal(50.11, first.Latitude);
         Assert.Equal(8.682, first.Longitude);
         Assert.Equal(20.052185, first.TemperatureCelsius);
@@ -297,6 +297,152 @@ public class InputSchemaReaderTests
             Assert.Empty(doc.Candidates);
             Assert.Equal("DocumentFiles[0].Date", Assert.Single(Assert.Single(doc.Rejected).Issues).Path);
         }
+    }
+
+    [Theory]
+    [InlineData("15.01.2026 12:00:00", 1)]
+    [InlineData("15.07.2026 12:00:00", 2)]
+    public void Parse_Date_GetsTheBerlinOffsetOfThatDate(string date, int offsetHours)
+    {
+        var candidate = Assert.Single(InputSchemaReader.Parse(Doc(Entry(date)), new FixedTime(DateTimeOffset.Parse("2027-01-01T00:00:00Z", CultureInfo.InvariantCulture))).Candidates);
+
+        Assert.Equal(TimeSpan.FromHours(offsetHours), candidate.ObservedAt.Offset);
+        Assert.Equal(12, candidate.ObservedAt.Hour);
+    }
+
+    [Fact]
+    public void Parse_TimeInSpringForwardGap_IsRejected()
+    {
+        // 29.03.2026: 02:00 jumps to 03:00 in Berlin, so 02:30 never existed.
+        var issue = Assert.Single(RejectedIssues(Doc(Entry("29.03.2026 02:30:00"))));
+
+        Assert.Equal("DocumentFiles[0].Date", issue.Path);
+        Assert.Contains("does not exist", issue.Message);
+    }
+
+    [Theory]
+    [InlineData("29.03.2026 01:59:59", 1)]
+    [InlineData("29.03.2026 03:00:00", 2)]
+    public void Parse_TimesAroundSpringForwardGap_AreValid(string date, int offsetHours)
+    {
+        var candidate = Assert.Single(InputSchemaReader.Parse(Doc(Entry(date)), new FixedTime(DateTimeOffset.Parse("2027-01-01T00:00:00Z", CultureInfo.InvariantCulture))).Candidates);
+
+        Assert.Equal(TimeSpan.FromHours(offsetHours), candidate.ObservedAt.Offset);
+    }
+
+    [Theory]
+    [InlineData("01.01.0001 00:00:00", "Europe/Berlin")]
+    [InlineData("01.01.0001 00:30:00", "Asia/Tokyo")]
+    [InlineData("31.12.9999 23:59:59", "America/New_York")]
+    public void Parse_DateAtTheEdgeOfTheSupportedRange_IsRejectedNotThrown(string date, string zone)
+    {
+        var doc = InputSchemaReader.Parse(Doc(Entry(date, extra: $$""", "TimeZone": "{{zone}}" """)), Later);
+
+        Assert.Empty(doc.Candidates);
+        Assert.Equal("DocumentFiles[0].Date", Assert.Single(Assert.Single(doc.Rejected).Issues).Path);
+    }
+
+    [Fact]
+    public void Parse_TimeInRepeatedAutumnHour_IsReadAsStandardTime()
+    {
+        // 25.10.2026: 03:00 CEST falls back to 02:00 CET, so 02:30 happens twice. The standard-time reading is documented.
+        var candidate = Assert.Single(InputSchemaReader.Parse(Doc(Entry("25.10.2026 02:30:00")), new FixedTime(DateTimeOffset.Parse("2027-01-01T00:00:00Z", CultureInfo.InvariantCulture))).Candidates);
+
+        Assert.Equal(TimeSpan.FromHours(1), candidate.ObservedAt.Offset);
+    }
+
+    [Fact]
+    public void Parse_NightAcrossMidnight_UsesTheBerlinDateNotTheUtcDate()
+    {
+        // 22:30 UTC is 00:30 Berlin (CEST) on the next day.
+        var candidate = Assert.Single(InputSchemaReader.Parse(Doc(Entry("14.06.2026 00:30:00"))).Candidates);
+
+        Assert.Equal(new DateTime(2026, 6, 14), candidate.ObservedAt.Date);
+        Assert.Equal(new DateTime(2026, 6, 13, 22, 30, 0), candidate.ObservedAt.UtcDateTime);
+    }
+
+    [Theory]
+    [InlineData("13.06.2026 04:26:34Z")]
+    [InlineData("13.06.2026 04:26:34 +02:00")]
+    [InlineData("2026-06-13T04:26:34+02:00")]
+    public void Parse_DateWithZone_IsRejectedAsFormatError(string date)
+    {
+        var issue = Assert.Single(RejectedIssues(Doc(Entry(date))));
+
+        Assert.Equal("DocumentFiles[0].Date", issue.Path);
+        Assert.Contains("format", issue.Message);
+    }
+
+    private static readonly FixedTime Later = new(DateTimeOffset.Parse("2027-01-01T00:00:00Z", CultureInfo.InvariantCulture));
+
+    [Fact]
+    public void Parse_TimeZoneField_IsUsedInsteadOfBerlin()
+    {
+        var candidate = Assert.Single(InputSchemaReader.Parse(Doc(Entry("15.07.2026 23:30:00", extra: """, "TimeZone": "Europe/Lisbon" """)), Later).Candidates);
+
+        Assert.Equal(TimeSpan.FromHours(1), candidate.ObservedAt.Offset);
+        Assert.Equal("Europe/Lisbon", candidate.TimeZoneId);
+        Assert.Equal(new DateTime(2026, 7, 15, 22, 30, 0), candidate.ObservedAt.UtcDateTime);
+    }
+
+    [Fact]
+    public void Parse_WithoutTimeZoneField_IsBerlin()
+    {
+        var candidate = Assert.Single(InputSchemaReader.Parse(Doc(Entry()), Later).Candidates);
+
+        Assert.Equal("Europe/Berlin", candidate.TimeZoneId);
+    }
+
+    [Theory]
+    [InlineData("Mars/Olympus")]
+    [InlineData("+02:00")]
+    [InlineData("../etc/passwd")]
+    public void Parse_UnknownTimeZone_IsRejected(string zone)
+    {
+        var issue = Assert.Single(RejectedIssues(Doc(Entry(extra: $$""", "TimeZone": "{{zone}}" """))));
+
+        Assert.Equal("DocumentFiles[0].TimeZone", issue.Path);
+    }
+
+    [Fact]
+    public void Parse_TimeZoneNotAString_IsRejected()
+    {
+        var issue = Assert.Single(RejectedIssues(Doc(Entry(extra: ", \"TimeZone\": 2"))));
+
+        Assert.Equal("DocumentFiles[0].TimeZone", issue.Path);
+    }
+
+    [Fact]
+    public void Parse_GapAndFutureAreChecked_InTheNamedZone()
+    {
+        // Lisbon changes the clocks on 29.03.2026 at 01:00, so 01:30 does not exist there (it does in Berlin as CET).
+        var gap = Assert.Single(RejectedIssues(Doc(Entry("29.03.2026 01:30:00", extra: """, "TimeZone": "Europe/Lisbon" """))));
+        Assert.Contains("does not exist", gap.Message);
+
+        // 12:30 in Auckland (NZDT, UTC+13) on 01.01.2027 is 23:30 UTC on 31.12., after 23:00 UTC.
+        var future = new FixedTime(DateTimeOffset.Parse("2026-12-31T23:00:00Z", CultureInfo.InvariantCulture));
+        var doc = InputSchemaReader.Parse(Doc(Entry("01.01.2027 12:30:00", extra: """, "TimeZone": "Pacific/Auckland" """)), future);
+        Assert.Empty(doc.Candidates);
+    }
+
+    [Fact]
+    public void Parse_AmbiguousAutumnHour_AcceptedWithWarning()
+    {
+        var doc = InputSchemaReader.Parse(Doc(Entry("25.10.2026 02:30:00") + "," + Entry("25.10.2026 04:00:00")), Later);
+
+        Assert.Equal(2, doc.Candidates.Count);
+        var warning = Assert.Single(doc.Warnings);
+        Assert.Equal(0, warning.Index);
+        Assert.Equal("DocumentFiles[0].Date", warning.Issue.Path);
+    }
+
+    [Fact]
+    public void Parse_RejectedEntry_HasNoWarning()
+    {
+        var doc = InputSchemaReader.Parse(Doc(Entry("25.10.2026 02:30:00", lat: "0", lon: "0")), Later);
+
+        Assert.Empty(doc.Warnings);
+        Assert.Single(doc.Rejected);
     }
 
     [Fact]

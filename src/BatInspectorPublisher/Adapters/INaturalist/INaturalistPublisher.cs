@@ -70,7 +70,7 @@ public sealed class INaturalistPublisher : IObservationPublisher
             }
 
             if (await _api.HasExistingObservationAsync(
-                    taxon.Id, DateOnly.FromDateTime(candidate.ObservedAt), candidate.Latitude, candidate.Longitude, jwt, ct))
+                    taxon.Id, DateOnly.FromDateTime(candidate.ObservedAt.DateTime), candidate.Latitude, candidate.Longitude, jwt, ct))
             {
                 return Result(PublishStatus.SkippedDuplicate, "An equivalent observation already exists on iNaturalist.");
             }
@@ -125,7 +125,7 @@ public sealed class INaturalistPublisher : IObservationPublisher
     internal ObservationPayload BuildPayload(ObservationCandidate candidate, int taxonId) => new()
     {
         TaxonId = taxonId,
-        ObservedOnString = candidate.ObservedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        ObservedOnString = candidate.ObservedAt.DateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
         Latitude = candidate.Latitude,
         Longitude = candidate.Longitude,
         // Always a string: v2 rejects null. The input format has no place name, so use the coordinates.

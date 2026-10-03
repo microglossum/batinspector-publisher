@@ -13,10 +13,17 @@ public sealed record ObservationCandidate
     public string? LocalName { get; init; }
 
     /// <summary>
-    /// When the recording was made, as German local wall-clock time (Europe/Berlin). The input
-    /// format carries no time zone, so <see cref="DateTime.Kind"/> is <see cref="DateTimeKind.Unspecified"/>.
+    /// When the recording was made. The input time carries no offset; the reader reads it as German
+    /// local time (Europe/Berlin, or the zone the entry names) and stores it with the offset of that zone on that date.
+    /// <see cref="DateTimeOffset.DateTime"/> is the local wall-clock time and its date the local calendar day at the site.
     /// </summary>
-    public required DateTime ObservedAt { get; init; }
+    public required DateTimeOffset ObservedAt { get; init; }
+
+    /// <summary>
+    /// IANA id of the time zone <see cref="ObservedAt"/> was read in (the zone of the site). Defaults to
+    /// <c>Europe/Berlin</c>, the zone of an input entry that names none.
+    /// </summary>
+    public string TimeZoneId { get; init; } = "Europe/Berlin";
 
     /// <summary>WGS84 latitude in degrees.</summary>
     public required double Latitude { get; init; }

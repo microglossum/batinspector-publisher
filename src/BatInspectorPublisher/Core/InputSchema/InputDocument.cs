@@ -12,7 +12,18 @@ public sealed record InputDocument(int SchemaVersion, IReadOnlyList<ObservationC
     /// published. Hosts should show them: the run itself does not report them.
     /// </summary>
     public IReadOnlyList<RejectedEntry> Rejected { get; init; } = [];
+
+    /// <summary>
+    /// Doubtful but accepted entries, in file order. These entries are in <see cref="Candidates"/> and are published;
+    /// the warning tells the host something it may want to show (for example an ambiguous local time).
+    /// </summary>
+    public IReadOnlyList<EntryWarning> Warnings { get; init; } = [];
 }
+
+/// <summary>A remark about a <c>DocumentFiles</c> entry that was accepted.</summary>
+/// <param name="Index">Zero-based position of the entry in <c>DocumentFiles</c>.</param>
+/// <param name="Issue">What is doubtful.</param>
+public sealed record EntryWarning(int Index, ValidationIssue Issue);
 
 /// <summary>A <c>DocumentFiles</c> entry that failed validation and was left out of the candidates.</summary>
 /// <param name="Index">Zero-based position of the entry in <c>DocumentFiles</c>.</param>

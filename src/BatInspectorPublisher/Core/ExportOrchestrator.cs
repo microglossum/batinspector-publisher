@@ -41,7 +41,7 @@ public sealed class ExportOrchestrator
         {
             ct.ThrowIfCancellationRequested();
             var result = await PublishOneAsync(candidate, options, ct);
-            _logger.LogInformation("{Platform}: {Species} @ {ObservedAt:yyyy-MM-dd HH:mm:ss} -> {Status}",
+            _logger.LogInformation("{Platform}: {Species} @ {ObservedAt:yyyy-MM-dd HH:mm:ss zzz} -> {Status}",
                 result.PlatformId, candidate.ScientificName, candidate.ObservedAt, result.Status);
             results.Add(result);
             progress?.Report(result);

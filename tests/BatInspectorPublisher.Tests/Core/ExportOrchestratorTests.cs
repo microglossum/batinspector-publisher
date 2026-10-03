@@ -26,7 +26,7 @@ public class ExportOrchestratorTests : IDisposable
         return new ObservationCandidate
         {
             ScientificName = species,
-            ObservedAt = new DateTime(2026, 6, 13, 4, 0, 0),
+            ObservedAt = new DateTimeOffset(2026, 6, 13, 4, 0, 0, TimeSpan.FromHours(2)),
             Latitude = 50,
             Longitude = 8,
             SpectrogramPath = pngPath,

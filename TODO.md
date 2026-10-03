@@ -156,34 +156,20 @@ To do:
 ### Input validation: remaining work
 
 Principles for any new check: validate at the boundary, report every problem with its path, never alter data silently (except documented normalization such as species capitalization).
-Two levels: **error** (the entry is rejected) and **warning** (reported, does not block; not implemented yet). Publishing is public and irreversible, so anything doubtful that cannot be fixed afterwards is an error, not a warning.
+Two levels: **error** (the entry is rejected) and **warning** (reported in `InputDocument.Warnings`, does not block). Publishing is public and irreversible, so anything doubtful that cannot be fixed afterwards is an error, not a warning.
 Platform limits belong in the adapter's pre-flight, not in `Core`.
 
 - Rejected entries have no `ObservationCandidate`, so they are not part of `PublishResult`s; the host has to show `InputDocument.Rejected` itself. Decide whether a combined report is worth it.
 - `Candidates` can be shorter than `DocumentFiles` and a candidate does not know its position in the file. If a host needs to map results back to entries, add the entry index to `ObservationCandidate`.
-- Warnings: implausible temperature or humidity (omit the value from the description); a daytime timestamp for a bat; duplicate entries (same species, time and place; the remote duplicate check can lag); a name that is neither a binomial nor a genus. Expose them through a report-style result next to `Rejected`.
+- Warnings exist now (`InputDocument.Warnings`, first user: ambiguous autumn hour). More to add: implausible temperature or humidity (omit the value from the description); a daytime timestamp for a bat; duplicate entries (same species, time and place; the remote duplicate check can lag); a name that is neither a binomial nor a genus.
 - The signature checks are not a full format validation (a file can start like a PNG and still be something else); decide whether that is enough.
 
-### Times and time zones
+### Times and time zones: remaining
 
-Today `ObservationCandidate.ObservedAt` is an unzoned `DateTime` (`Kind = Unspecified`) that means Europe/Berlin local time by convention, the reader accepts only `dd.MM.yyyy HH:mm:ss` (a value with a zone suffix is rejected as a format error),
-and iNaturalist receives only the calendar date (`observed_on_string`; the code comment says v2 rejected `time_observed_at`, which is not re-verified). The time of day is relevant evidence for a bat record, so be exact about times and zones from here on.
+The offline part is done (2026-10-03, see Done). What is left needs the live test:
 
-Approach:
-
-- **Model:** use `DateTimeOffset` for the observation time in `ObservationCandidate` (public API change, free before the first release). All internal code treats times as zoned.
-- **Input without a zone:** interpret it as Europe/Berlin (documented in the READMEs) and convert it to a `DateTimeOffset` with the right offset for that date.
-  - Time in the spring-forward gap (does not exist, e.g. 02:30 on the last Sunday of March): reject the entry with a clear message, never shift it silently.
-  - Time in the repeated autumn hour (02:00 to 03:00 on the last Sunday of October): ambiguous. Decide which reading to use (the standard-time one is what `TimeZoneInfo` picks), document it, and consider a warning once warnings exist.
-  - Time zone data missing on the host: today the future-date check falls back to a lenient UTC+14 clock. Decide whether the interpretation itself may fall back at all, or must fail instead.
-- **Future check:** plain instant comparison.
-- **Duplicate check:** "same calendar day" must be the local date at the observation site, not the UTC date. A night observation around midnight (22:30 UTC is 00:30 Berlin the next day) must land on the same day the platform shows.
-- **iNaturalist:** send the time as well, with the zone, so the platform does not read it in the account's zone. Find out in the live test whether v2 accepts a time in `observed_on_string`, which zone parameter it expects (and in which name format),
+- **iNaturalist:** send the time as well, with the zone (the candidate now carries `TimeZoneId`), so the platform does not read it in the account's zone. Find out in the live test whether v2 accepts a time in `observed_on_string`, which zone parameter it expects (and in which name format),
   and whether `time_observed_at` is really rejected. Then update the README sentence "iNaturalist receives only the calendar date" (both languages) and the input reference page.
-- **`DescriptionBuilder`:** check how the German description shows the date and time (local time with an explicit "MEZ/MESZ" or "Europe/Berlin" hint).
-- **Explicit zone in the input file:** a separate decision. A zone in the file raises the midnight-crossing question (which local date counts) and the question which zone applies at a non-German site (from coordinates, or given explicitly). Do it only if BatInspector exports zoned timestamps or non-German sites become relevant;
-  it needs a documented format and probably a schema version or an additive optional field. Until then zoned values stay rejected, pinned by a test.
-- **Tests:** DST gap and repeated hour, a night crossing midnight in UTC versus Berlin, the duplicate-check day, the format with a zone suffix being rejected, and a fixed `TimeProvider` as already used for the future check.
 
 ### Documentation: input file and per-platform mapping
 
@@ -254,6 +240,9 @@ Files are in the repo (README badges, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `
 
 ## Done
 
+- 2026-10-03: Explicit zone in the input file: optional `TimeZone` (IANA id) per entry, additive within schema v1; `InputDocument.Warnings` with the ambiguous-hour warning; tests incl. foreign-zone gap and future check.
+- 2026-10-03: Times and time zones (offline part): `ObservedAt` is a `DateTimeOffset` (Europe/Berlin offset); spring-forward gap rejected, repeated hour read as standard time, no fallback without tz data (throws `TimeZoneNotFoundException`);
+  future check compares instants; duplicate check and `observed_on_string` use the local day; description shows MEZ/MESZ. Tests for gap, repeated hour, midnight crossing, zone suffix.
 - 2026-10-03: Input validation per entry (bad entries go to `InputDocument.Rejected`, the rest is published): absolute evidence paths with `.png` / `.wav` extension, latitude and longitude both 0, dates in the future (against Europe/Berlin time).
   Evidence is read once per candidate, checked (exists, readable, non-empty, PNG / WAV signature) and the checked bytes are uploaded; new status `SkippedInvalidEvidence`.
 - 2026-10-02: Repository scaffold, Core, input schema v1 (`SchemaVersion`), iNaturalist adapter, tests, multi-targeting net8.0 + net10.0.
