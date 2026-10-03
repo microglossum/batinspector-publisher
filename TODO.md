@@ -125,7 +125,7 @@ Two kinds of reference pages under `docs/`, each bilingual (English source, `*.d
 
 ### Test the Windows-only code (DPAPI) without a Windows machine
 
-`ProtectedFileTokenStore` uses DPAPI on Windows; the `[WindowsOnlyFact]` test (`Save_OnWindows_EncryptsTheFile`) is skipped on Linux, so the devcontainer never runs it. The CI matrix already has `windows-latest`, so every push is covered; what is missing is a local way to check it before pushing. Options to evaluate:
+`ProtectedFileTokenStore` uses DPAPI on Windows; the `[WindowsOnlyFact]` test (`Save_OnWindows_EncryptsTheFile`) is skipped on Linux, so the devcontainer never runs it. The CI matrix already has a Windows leg, so every push is covered; what is missing is a local way to check it before pushing. Options to evaluate:
 
 - Wine in the devcontainer, running the Windows build of the test assembly (`dotnet test` with a win-x64 runtime under Wine). Open questions: does Wine's `crypt32` DPAPI (`CryptProtectData`) behave like Windows (per-user key, `Unprotect` failing for foreign data, which feeds the corrupt-file path)? Is a Windows .NET SDK/runtime usable under Wine at all, and is the setup worth its weight in the image?
 - A Windows container (needs a Windows host with Docker in Windows-container mode, so not an option for the Linux devcontainer) or a Windows VM.
@@ -147,13 +147,14 @@ Waits until BatInspector runs off Windows:
 
 ### GitHub Actions
 
-`.github/workflows/ci.yml` builds and tests on Ubuntu and Windows, checks format, packs and runs gitleaks. To do:
+`.github/workflows/ci.yml` builds and tests on Ubuntu 26.04 and Windows Server 2025 (both pinned, no `-latest`), checks format, validates config files, packs and runs gitleaks. To do:
 
 - `tech/setup-repo` is currently the default branch and `main` does not exist on the remote, so Dependabot PRs target the working branch. Push `main`, make it the default, let Dependabot retarget;
-- the devcontainer node feature bump (1 -> 2) is still open as a Dependabot PR: rebuild the devcontainer locally before merging, CI does not cover it;
-- add a CI job that runs `scripts/validate-config.sh` (the tools are not on the runners yet);
 - release workflow per `docs/releasing.md`: checkout with `fetch-depth: 0` (MinVer reads the tag), pack, push to nuget.org, create the GitHub Release with notes extracted from `CHANGELOG.md`;
-- branch protection on `main`, Dependabot for NuGet and Actions.
+- harden the workflow: pin actions to commit SHAs (Dependabot keeps them current) and set `permissions: contents: read` at the top (check what gitleaks needs on pull requests);
+- optional: a musl test leg in an Alpine job container (`mcr.microsoft.com/dotnet/sdk:10.0-alpine`), only if a consumer runs on Alpine;
+- remove `.github/actionlint.yaml` once a released actionlint knows the `ubuntu-26.04` label;
+- the actionlint version in the `validate-config` job is pinned by hand (Dependabot does not see it): bump it together with the devcontainer feature now and then.
 
 ### First NuGet release
 
@@ -212,4 +213,4 @@ Blocked: there is no public API documentation, so the auth and submission model 
 - Re-check iNaturalist API terms and etiquette for automated submission.
 - Confirm BatInspector's license is compatible with MIT; add NOTICE if a dependency requires it.
 - JSON Schema file for the input format and a contract test, if BatInspector produces the file.
-- `CONTRIBUTING.md`, issue templates, deprecation policy for schema changes.
+- Deprecation policy for schema changes.
