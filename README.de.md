@@ -67,7 +67,12 @@ Konfigurationsdateien und keine Umgebungsvariablen.
 
 * Eine vertrauliche Anwendung nutzt `ClientSecret`; bei einer öffentlichen (nicht vertraulichen) Anwendung bleibt es leer.
 * Tokens speichert ein `INaturalistTokenStore`. Der Standard `ProtectedFileTokenStore` verschlüsselt mit
-  Windows-DPAPI und schreibt auf anderen Plattformen keinen Klartext, außer man stimmt ausdrücklich zu.
+  Windows-DPAPI und schreibt auf anderen Plattformen keinen Klartext, außer man stimmt ausdrücklich zu
+  (`allowPlaintextOnNonWindows: true`). Die Klartextdatei wird mit Modus `0600` angelegt und atomar geschrieben;
+  das schützt nur vor anderen lokalen Benutzern, nicht vor anderen Prozessen desselben Benutzers. Für echte sichere
+  Speicherung unter Linux oder macOS einen `INaturalistTokenStore` auf Basis des Schlüsselbunds des Betriebssystems
+  implementieren. Kann ein Store nicht speichern (`CanSave` ist false), schlägt die Anmeldung fehl, bevor sich der
+  Browser öffnet. Eine unlesbare Token-Datei gilt als „kein Token“.
 * Die Anmelde-URL wird über den Callback `AuthorizationPrompt` angezeigt; standardmäßig wird der Systembrowser geöffnet.
 
 ## Eingabeformat

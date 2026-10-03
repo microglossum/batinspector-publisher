@@ -55,6 +55,7 @@ internal sealed record RecordedRequest(string Method, Uri Uri, string? BearerTok
 internal sealed class InMemoryTokenStore : INaturalistTokenStore
 {
     public INaturalistToken? Token { get; set; }
+    public bool CanSave { get; set; } = true;
     public INaturalistToken? Load() => Token;
     public void Save(INaturalistToken token) => Token = token;
     public void Clear() => Token = null;
@@ -67,6 +68,17 @@ internal sealed class WindowsOnlyFactAttribute : FactAttribute
         if (!OperatingSystem.IsWindows())
         {
             Skip = "Windows only (DPAPI).";
+        }
+    }
+}
+
+internal sealed class UnixOnlyFactAttribute : FactAttribute
+{
+    public UnixOnlyFactAttribute()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Skip = "Unix file modes only.";
         }
     }
 }

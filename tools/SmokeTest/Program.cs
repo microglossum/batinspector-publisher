@@ -2,6 +2,8 @@
 // Credentials come from appsettings.local.json (git-ignored; copy appsettings.example.json). Never commit them.
 // Usage (run from tools/SmokeTest):
 //   dotnet run -- login                       interactive browser login, stores the token
+//   dotnet run -- whoami                      uses the stored token only, never opens a browser (tests the token store)
+//   dotnet run -- renew                       ages the stored API token by 2 days, then renews it silently from the stored OAuth token
 //   dotnet run -- dry-run <input.json>        resolve + duplicate check, writes nothing
 //   dotnet run -- publish <input.json>        REAL, public, irreversible; asks for confirmation
 // Keep real observation data (input files, evidence) under local/, which is git-ignored.
@@ -26,13 +28,41 @@ using var http = new HttpClient();
 // DPAPI only exists on Windows; on Linux/macOS the dev token is kept in plaintext (smoke test only).
 INaturalistTokenStore store = new ProtectedFileTokenStore(allowPlaintextOnNonWindows: !OperatingSystem.IsWindows());
 
-var auth = new INaturalistAuthenticator(options, http, store, prompt: ShowLoginUrl);
+// whoami and renew must never start a login: a prompt that throws proves no browser was needed.
+AuthorizationPrompt prompt = command is "whoami" or "renew"
+    ? (_, _) => throw new InvalidOperationException("A browser login would be needed, but this command must not start one.")
+    : ShowLoginUrl;
+
+var auth = new INaturalistAuthenticator(options, http, store, prompt);
 
 switch (command)
 {
     case "login":
         var token = await auth.LoginAsync();
         Console.WriteLine($"Logged in as {token.Username}.");
+        return 0;
+
+    case "whoami":
+        Console.WriteLine($"Stored token: {auth.HasStoredToken}, user: {auth.StoredUsername ?? "-"}");
+        if (auth.HasStoredToken)
+        {
+            await auth.EnsureAuthenticatedAsync();
+            Console.WriteLine("Authenticated without a browser login.");
+        }
+
+        return auth.HasStoredToken ? 0 : 1;
+
+    case "renew":
+        if (store.Load() is not { } stored)
+        {
+            Console.Error.WriteLine("No stored token; run login first.");
+            return 1;
+        }
+
+        // Pretend the 24 h API JWT is old, so the silent OAuth-to-JWT exchange must run (no browser).
+        store.Save(stored with { ObtainedAtUtc = DateTimeOffset.UtcNow.AddDays(-2) });
+        await auth.EnsureAuthenticatedAsync();
+        Console.WriteLine($"Renewed silently; stored token obtained at {store.Load()!.ObtainedAtUtc:u}.");
         return 0;
 
     case "dry-run":
@@ -63,7 +93,7 @@ switch (command)
         return 0;
 
     default:
-        Console.Error.WriteLine("Usage: login | dry-run <input.json> | publish <input.json>");
+        Console.Error.WriteLine("Usage: login | whoami | renew | dry-run <input.json> | publish <input.json>");
         return 2;
 }
 

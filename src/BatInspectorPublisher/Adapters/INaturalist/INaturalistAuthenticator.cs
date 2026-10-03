@@ -37,7 +37,7 @@ public sealed class INaturalistAuthenticator
         _logger = logger ?? NullLogger<INaturalistAuthenticator>.Instance;
         _api = new INaturalistApiClient(options, httpClient, _logger);
         _flow = new OAuthFlow(options, httpClient, prompt, _logger);
-        _store = tokenStore ?? new ProtectedFileTokenStore();
+        _store = tokenStore ?? new ProtectedFileTokenStore(logger: _logger);
     }
 
     /// <summary>True if a login is stored (it may still need a refresh).</summary>
@@ -135,6 +135,13 @@ public sealed class INaturalistAuthenticator
 
     private async Task<INaturalistToken> LoginCoreAsync(CancellationToken ct)
     {
+        // Fail before the browser opens: a login that cannot be stored would be authorized for nothing.
+        if (!_store.CanSave)
+        {
+            throw new PlatformNotSupportedException(
+                "The token store cannot save a login, so signing in would be pointless. For ProtectedFileTokenStore on a non-Windows platform pass allowPlaintextOnNonWindows: true, or supply your own INaturalistTokenStore.");
+        }
+
         var oauth = await _flow.AuthorizeAsync(ct);
         var jwt = await _api.ExchangeOAuthTokenForJwtAsync(oauth.AccessToken, ct);
         var username = await _api.GetAuthenticatedUsernameAsync(jwt, ct);

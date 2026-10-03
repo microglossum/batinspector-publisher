@@ -80,6 +80,17 @@ public class INaturalistAuthenticatorTests
     private static readonly AuthorizationPrompt NeverPrompt = (_, _) => throw new InvalidOperationException("The browser login must not be started.");
 
     [Fact]
+    public async Task Login_StoreCannotSave_FailsBeforeTheBrowserOpens()
+    {
+        _store.CanSave = false;
+        var auth = Create(NeverPrompt);
+
+        await Assert.ThrowsAsync<PlatformNotSupportedException>(() => auth.LoginAsync());
+        await Assert.ThrowsAsync<PlatformNotSupportedException>(() => auth.EnsureAuthenticatedAsync());
+        Assert.Empty(_http.Requests);
+    }
+
+    [Fact]
     public async Task EnsureAuthenticated_ExpiredJwtWithStoredOAuthToken_RenewsSilentlyWithoutBrowser()
     {
         // iNaturalist OAuth tokens never expire and no refresh token is issued, so this is the normal daily case.

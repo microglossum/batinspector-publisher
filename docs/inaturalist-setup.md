@@ -112,5 +112,6 @@ undocumented in the official API reference.
 | `InvalidOperationException` "cannot listen on port" on login | Port in use and no fallback port could be opened, see [Port 45679](#port-45679). |
 | iNaturalist error page after clicking Authorize | The registered redirect URI differs from `INaturalistOptions.RedirectUri`. |
 | `TimeoutException` on login | Nobody completed the browser login within `AuthorizationTimeout`. |
-| `PlatformNotSupportedException` when saving the token | Not Windows. Pass `allowPlaintextOnNonWindows: true` or supply your own `INaturalistTokenStore`. |
+| `PlatformNotSupportedException` when logging in or saving the token | Not Windows. The check runs before the browser opens. Pass `allowPlaintextOnNonWindows: true` (file mode `0600`, protects against other local users only) or supply your own `INaturalistTokenStore`. |
+| Login asked again although you logged in before | The token file could not be read (corrupt, or encrypted by another Windows user); a warning is logged and the file is replaced by the next login. |
 | 401/403 during the JWT exchange | See [Why there is an extra JWT exchange](#why-there-is-an-extra-jwt-exchange); check the application registration at <https://www.inaturalist.org/oauth/applications>. |

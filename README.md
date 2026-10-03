@@ -67,7 +67,11 @@ config files and no environment variables.
 
 * A confidential application uses `ClientSecret`; a public (non-confidential) application leaves it empty.
 * Tokens are stored by an `INaturalistTokenStore`. The default `ProtectedFileTokenStore` encrypts with
-  Windows DPAPI and refuses to write plain text on other platforms unless you opt in.
+  Windows DPAPI and refuses to write plain text on other platforms unless you opt in
+  (`allowPlaintextOnNonWindows: true`). The plaintext file is created with mode `0600` and written atomically,
+  which protects against other local users only, not against other processes of the same user. For real secure
+  storage on Linux or macOS, implement `INaturalistTokenStore` on top of the OS keychain. A store that cannot save
+  (`CanSave` is false) makes the login fail before the browser opens. An unreadable token file counts as "no token".
 * The login URL is shown through an `AuthorizationPrompt` callback; by default the system browser is opened.
 
 ## Input format

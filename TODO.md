@@ -7,23 +7,14 @@ Workflow: read this before starting work; when an item is done move it to **Done
 
 ## Open
 
-### Cross-platform token storage
+### Cross-platform token storage (remaining)
 
-BatInspector is Windows-only today, so `ProtectedFileTokenStore` (DPAPI) is enough. On other platforms it refuses
-to write the iNaturalist token unless `allowPlaintextOnNonWindows: true` is passed. When BatInspector becomes
-OS-independent, the local secret storage needs a real answer per OS:
+The documented minimum is done (see Done): owner-only file mode, atomic write, fail-fast `CanSave`, corrupt file as "no token". What is left waits until BatInspector runs off Windows:
 
-- macOS Keychain, Linux Secret Service / libsecret (or kwallet), Windows DPAPI or Credential Manager; or a cross-platform
-  library; or leave it to the host through the existing `INaturalistTokenStore` seam.
-- Decided direction (2026-10-03): leave real secure storage to the host through `INaturalistTokenStore`, and ship a documented minimum for the opt-in plaintext case:
-  create the token file with owner-only permissions (`UnixCreateMode = UserRead | UserWrite`, mode `0600`) and write it atomically (temp file, then move).
-  Mention in the docs that this protects against other local users only, not against other processes of the same user. A Keychain / Secret Service package is deferred until BatInspector runs off Windows.
+- Real secret storage per OS (macOS Keychain, Linux Secret Service / libsecret, kwallet): left to the host through `INaturalistTokenStore`; a Keychain / Secret Service package is deferred.
 - The stored OAuth token never expires, so it is a long-lived credential for the user's iNaturalist account (unlike the client secret, which a distributed app cannot keep confidential).
-- Do not design a shared "secure value store" abstraction from one adapter. Revisit once a second adapter
-  (naturgucker) shows what it needs to store.
-- See also "Token store hardening" for fail-fast on stores that cannot save and for corrupt token files.
+- Do not design a shared "secure value store" abstraction from one adapter. Revisit once a second adapter (naturgucker) shows what it needs to store.
 - The host's own OAuth client ID/secret settings need a cross-OS home too, but that is the host's concern.
-- Needs a Linux/macOS CI leg that exercises the new store.
 
 ### Rethink taxon matching
 
@@ -50,15 +41,16 @@ The dry run is the default and the only safety net, so it should be faithful:
 - Run the (read-only) duplicate check in the dry run too and report `SkippedDuplicate` (and `Resumed` as "would resume": the match logic is in `INaturalistPublisher`).
 - A dry run currently also needs a login for the JWT, although taxon autocomplete is a public endpoint. Check which calls really need auth; the duplicate check with `mine_only` does, so a dry run that previews duplicates needs the login anyway. Decide whether that is acceptable.
 
-### Token store hardening
+### Test the Windows-only code (DPAPI) without a Windows machine
 
-Small, concrete fixes next to "Cross-platform token storage":
+`ProtectedFileTokenStore` uses DPAPI on Windows; the `[WindowsOnlyFact]` test (`Save_OnWindows_EncryptsTheFile`) is skipped on Linux, so the devcontainer never runs it. The CI matrix already has `windows-latest`, so every push is covered; what is missing is a local way to check it before pushing. Options to evaluate:
 
-- Fail fast: `INaturalistAuthenticator` should refuse a store that cannot save before it opens the browser. Today `LoginCoreAsync` runs the whole login and only then `_store.Save` throws
-  `PlatformNotSupportedException` on non-Windows, so the user authorizes for nothing. Options: a `CanSave` check on the store, or a check in the authenticator constructor.
-- `ProtectedFileTokenStore.Load` throws on a corrupt or undecryptable file (crash during write, other Windows user). Every candidate then fails until `Logout()`. Treat an unreadable file as "no token" and log a warning.
-- Owner-only file mode and atomic write: see "Cross-platform token storage".
-- Tests: file mode on Linux/macOS, corrupt file, interrupted write.
+- Wine in the devcontainer, running the Windows build of the test assembly (`dotnet test` with a win-x64 runtime under Wine). Open questions: does Wine's `crypt32` DPAPI (`CryptProtectData`) behave like Windows (per-user key, `Unprotect` failing for foreign data, which feeds the corrupt-file path)? Is a Windows .NET SDK/runtime usable under Wine at all, and is the setup worth its weight in the image?
+- A Windows container (needs a Windows host with Docker in Windows-container mode, so not an option for the Linux devcontainer) or a Windows VM.
+- Abstract DPAPI behind a small internal seam (`IDataProtector`-like) so the file logic (atomic write, corrupt file as "no token", fallbacks) is tested on Linux with a fake protector, and only the 5-line DPAPI call stays Windows-only. This is the cheapest and probably the best first step, independent of Wine.
+- Other Windows-only behavior to cover the same way: the `Process.Start` browser launch in the SmokeTest, and the Europe/Berlin time zone ID differences (`W. Europe Standard Time` vs IANA) if tz data ever differs on Windows.
+
+Decide after trying the seam; use Wine only if a real gap remains. A CI-only check is acceptable if it does not.
 
 ### GitHub Actions
 
@@ -181,7 +173,7 @@ Evidence files are read completely into memory (one candidate at a time) and upl
 
 ### First live test against iNaturalist
 
-The ported code was only tested against stubs. Also confirm that the silent re-exchange of the stored OAuth token for a new API JWT works (no browser the second day). Run a real dry run and then a single real observation (with a test account
+The ported code was only tested against stubs. Confirmed live (2026-10-03): interactive login, the stored token loads in a later process (`whoami`), and the silent re-exchange of the stored OAuth token for a new API JWT works without a browser (`renew`). Run a real dry run and then a single real observation (with a test account
 or one that may be deleted afterwards) before anything is released. Also verify whether `observed_on_string` with a time
 works on v2 (today only the date is sent; `time_observed_at` is rejected by v2).
 
@@ -230,6 +222,8 @@ Files are in the repo (README badges, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `
 
 ## Done
 
+- 2026-10-03: Live check of login, token persistence and silent JWT renewal with the SmokeTest (`login`, `whoami`, `renew`; the last two are new).
+- 2026-10-03: Token store hardening: `INaturalistTokenStore.CanSave` checked before the browser opens, `ProtectedFileTokenStore` writes atomically with mode `0600` on Unix and treats an unreadable file as "no token" (warning logged); tests for mode, corrupt, empty, stale temp file and failed move; Ubuntu CI leg already runs the Unix tests.
 - 2026-10-03: Part-uploads and cancellation: `PublishStatus.Cancelled` and `Resumed`, `PublishResult.InterruptedStep`, `RunAsync` returns the results so far on cancel instead of throwing; the duplicate check completes an own observation (same description) that lacks photo or sound;
   `SkippedDuplicate` reports the existing id; the created id is logged at Information; an HTTP timeout is `Failed`, not an aborted run. Resume is unverified against the live API (see the live-test checklist).
 - 2026-10-03: Explicit zone in the input file: optional `TimeZone` (IANA id) per entry, additive within schema v1; `InputDocument.Warnings` with the ambiguous-hour warning; tests incl. foreign-zone gap and future check.
