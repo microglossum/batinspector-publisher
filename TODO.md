@@ -15,8 +15,13 @@ OS-independent, the local secret storage needs a real answer per OS:
 
 - macOS Keychain, Linux Secret Service / libsecret (or kwallet), Windows DPAPI or Credential Manager; or a cross-platform
   library; or leave it to the host through the existing `INaturalistTokenStore` seam.
+- Decided direction (2026-10-03): leave real secure storage to the host through `INaturalistTokenStore`, and ship a documented minimum for the opt-in plaintext case:
+  create the token file with owner-only permissions (`UnixCreateMode = UserRead | UserWrite`, mode `0600`) and write it atomically (temp file, then move).
+  Mention in the docs that this protects against other local users only, not against other processes of the same user. A Keychain / Secret Service package is deferred until BatInspector runs off Windows.
+- The stored OAuth token never expires, so it is a long-lived credential for the user's iNaturalist account (unlike the client secret, which a distributed app cannot keep confidential).
 - Do not design a shared "secure value store" abstraction from one adapter. Revisit once a second adapter
   (naturgucker) shows what it needs to store.
+- See also "Token store hardening" for fail-fast on stores that cannot save and for corrupt token files.
 - The host's own OAuth client ID/secret settings need a cross-OS home too, but that is the host's concern.
 - Needs a Linux/macOS CI leg that exercises the new store.
 
@@ -29,7 +34,7 @@ fallback to the first hit (that would file observations under wrong species). Op
   Plecotus, ...). Does autocomplete return inactive or synonym taxa?
 - Genus-level and uncertain calls (BatInspector codes like "Nyctaloid" or "?"): how will they appear in `SpeciesLatin`,
   and what should happen? Rank checks?
-- Several exact matches, a host-supplied name override map, caching misses, regression fixtures from real responses.
+- Several exact matches, a host-supplied name override map, regression fixtures from real responses.
 Decide the expected behavior with real BatInspector data before changing code.
 
 ### Rethink part-uploads
@@ -42,6 +47,33 @@ half-created observation and reports `SkippedDuplicate`, so its evidence is neve
 - roll back: delete the observation if evidence cannot be attached (check what the API allows);
 - retry with backoff for transient errors, and rate limiting against iNaturalist's API etiquette;
 - upload order, and what `PublishResult` should say about partial states (ties into a versioned result schema).
+
+### Dry run should preview duplicates
+
+`INaturalistPublisher` returns `WouldCreate` before the duplicate check, so a dry run reports "would create" for observations that a commit run skips as `SkippedDuplicate`.
+The dry run is the default and the only safety net, so it should be faithful:
+
+- Run the (read-only) duplicate check in the dry run too and report `SkippedDuplicate`.
+- A dry run currently also needs a login for the JWT, although taxon autocomplete is a public endpoint. Check which calls really need auth; the duplicate check with `mine_only` does, so a dry run that previews duplicates needs the login anyway. Decide whether that is acceptable.
+
+### Cancellation and partial state
+
+- `OperationCanceledException` is rethrown by `INaturalistPublisher` and `ExportOrchestrator.RunAsync` discards the whole result list. A cancel after the observation was created loses its ID,
+  and the next run reports `SkippedDuplicate` without ever completing the evidence. Hosts that do not use `IProgress<PublishResult>` lose everything that was already published.
+- Decided (2026-10-03): add a `Cancelled` status to `PublishStatus`. The cancelled result carries everything that is known about what was already created, as detailed as possible
+  (observation ID and URL, which evidence was attached, the step that was interrupted). Still to design: whether `RunAsync` then returns the results so far instead of throwing, and the exact payload shape.
+- Independent of that: `INaturalistPublisher` should log the created observation ID at Information right after creation, so a trail exists even if everything after it fails.
+- Ties into "Rethink part-uploads" (resume) and the versioned result schema.
+
+### Token store hardening
+
+Small, concrete fixes next to "Cross-platform token storage":
+
+- Fail fast: `INaturalistAuthenticator` should refuse a store that cannot save before it opens the browser. Today `LoginCoreAsync` runs the whole login and only then `_store.Save` throws
+  `PlatformNotSupportedException` on non-Windows, so the user authorizes for nothing. Options: a `CanSave` check on the store, or a check in the authenticator constructor.
+- `ProtectedFileTokenStore.Load` throws on a corrupt or undecryptable file (crash during write, other Windows user). Every candidate then fails until `Logout()`. Treat an unreadable file as "no token" and log a warning.
+- Owner-only file mode and atomic write: see "Cross-platform token storage".
+- Tests: file mode on Linux/macOS, corrupt file, interrupted write.
 
 ### GitHub Actions
 
@@ -83,6 +115,7 @@ Open decisions:
 - Stable event IDs and message templates: they become part of what hosts can filter and alert on.
 - What may be logged: never tokens or secrets (a test with a capturing logger should prove it). Decide about Debug response bodies (they can contain observation data such as coordinates), file paths and species.
   Define the level policy (Debug: HTTP; Information: outcomes; Warning: fallbacks; Error: only the unexpected).
+- `INaturalistApiException.Message` contains the response body and ends up in `PublishResult.Message` and host UIs. Decide whether error bodies may be shown there or only kept in `ResponseBody`.
 - Document how a host without DI (BatInspector) plugs in a logger, with a console and a file example.
 - Keep logs (diagnostics) separate from progress for a UI (`IProgress<PublishResult>`).
 - Optional later: `ActivitySource` and metrics.
@@ -117,6 +150,7 @@ To do:
 - Live test (needs the approved app): does an ephemeral port work? If yes, bind a free OS-assigned port (no collisions) and keep the fixed port as fallback.
 - A host-pluggable receiver for the authorization response, next to `AuthorizationPrompt`: a manual "paste the redirected URL" fallback for blocked or remote environments, and a custom-scheme receiver for packaged desktop apps.
 - Distinct, actionable error types: port in use, timeout, denied by user, token rejected.
+- `OAuthFlow.WaitForAuthorizationCodeAsync` accepts only the first request on the listener. Any stray request (port scan, browser prefetch, another local program) ends the login with an error. Keep listening until a request carries a valid `state` or the timeout hits.
 - Document the environments where the loopback login does not work and what to do.
 
 ### Input validation criteria
@@ -128,6 +162,10 @@ All-or-nothing is the decided behavior (one bad entry rejects the file). Princip
 - Two levels: **error** (the whole file is rejected: decided 2026-10-02, all-or-nothing, single bad entries are not skipped) and **warning** (reported, does not block).
 - Publishing is public and irreversible, so anything doubtful that cannot be fixed afterwards is an error, not a warning.
 - Platform limits belong in the adapter's pre-flight, not in `Core`.
+
+Priority: the evidence checks come first. `PathToPng` and `PathToWav` are only tested with `File.Exists` before the file is uploaded to a public service, so a crafted input file could publish any readable file.
+The input comes from the host and is trusted today, but extension and signature checks are the guard against exfiltration, not just tidiness.
+Decided (2026-10-03): evidence paths must be absolute; a relative path is an input error at the boundary (today they resolve against the process working directory).
 
 Candidate checks:
 
@@ -141,6 +179,11 @@ Candidate checks:
 The ported code was only tested against stubs. Also confirm that the silent re-exchange of the stored OAuth token for a new API JWT works (no browser the second day). Run a real dry run and then a single real observation (with a test account
 or one that may be deleted afterwards) before anything is released. Also verify whether `observed_on_string` with a time
 works on v2 (today only the date is sent; `time_observed_at` is rejected by v2).
+
+Checklist for the live test (things stubs cannot prove):
+
+- When the response has only a uuid and no numeric id, `Url` stays null. Check whether `https://www.inaturalist.org/observations/{uuid}` resolves and use it if so.
+- The duplicate check sends `mine_only=true` to v1 `/observations`. Confirm the parameter exists and really restricts to the user's own observations; if it is ignored, the check matches other users' observations and reports false duplicates. Compare the result with and without it (and with `user_id` / `user_login` as the alternative).
 
 ### Implement NABU|naturgucker integration
 
@@ -164,7 +207,7 @@ Files are in the repo (README badges, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `
 ## Later / carried over
 
 - `net8.0` stays for now (decided 2026-10-02). Revisit only if keeping it becomes a burden.
-- Versioned serialized result schema (plan section 2.3): only when BatInspector wants to persist results.
+- Versioned serialized result schema: only when BatInspector wants to persist results.
 - Decide whether to register the iNaturalist OAuth application as public (no secret) if BatInspector is distributed to others.
 - Re-check iNaturalist API terms and etiquette for automated submission.
 - Confirm BatInspector's license is compatible with MIT; add NOTICE if a dependency requires it.

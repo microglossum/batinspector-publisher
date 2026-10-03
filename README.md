@@ -90,6 +90,7 @@ config files and no environment variables.
 ```
 
 * The JSON does not have to come from a file: `InputSchemaReader.Parse(string json)` and `InputSchemaReader.Read(Stream)` work the same as `ReadFile`. The evidence paths inside it must still point to files on disk.
+* The file is expected to hold one **reference recording** (*Referenzaufnahme*) per species, night and location, not every detection: the goal is to document that a species was present at a place and time, and one good recording is usually enough. The iNaturalist duplicate check (same taxon, same calendar day, within a radius of 100 m by default) skips a second entry for the same combination.
 * `SchemaVersion` is required. Newer versions than the library supports are rejected.
 * Required: `Date`, `Latitude`, `Longitude`, `SpeciesLatin`, `PathToPng`, `PathToWav`.
   Optional: `SpeciesLocal`, `Temperature`, `Humidity`, `Comment`. Unknown properties are ignored.

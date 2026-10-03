@@ -56,8 +56,8 @@ tools/SmokeTest/   manual console host for live tests (not in the solution); rea
 ## Backlog and memory
 
 - `TODO.md` is the project backlog (open items, blocked items, dropped decisions). Read it at the start of a task, update it when something is decided, found or finished. English only.
-- `CLAUDE.md` (this file) holds standing rules; `docs/releasing.md` is the release runbook; the plan doc in `docs/` holds the design record. Claude's own auto-memory lives outside the repo and is per machine.
-- Internal docs (`CLAUDE.md`, `TODO.md`, `CHANGELOG.md`, the plan) are English only; user-facing docs are bilingual.
+- `CLAUDE.md` (this file) holds standing rules; `docs/releasing.md` is the release runbook; the design notes below hold decisions that are not obvious from the code. Claude's own auto-memory lives outside the repo and is per machine.
+- Internal docs (`CLAUDE.md`, `TODO.md`, `CHANGELOG.md`) are English only; user-facing docs are bilingual.
 
 ## Frameworks
 
@@ -90,5 +90,6 @@ Validate non-C# files with `scripts/validate-config.sh` (VS Code task "validate 
 - `IObservationPublisher` lives in `Core/` (no `Abstractions/` folder, no shared auth abstraction). `ExportOrchestrator` is thin: evidence pre-flight, failure isolation, progress. The resolve, duplicate-check, build, create and attach sequence lives inside `INaturalistPublisher`.
 - `PublishResult` is a plain in-memory type. A versioned serialized result schema is deferred until BatInspector needs to persist results.
 - Input `Date` is German local time without zone; only the date is sent to iNaturalist (v2 rejects `time_observed_at`).
+- The input file holds one reference recording (German: "Referenzaufnahme") per species, night and location, not every detection: the aim is to document presence of a species at a place and time, and one recording is usually enough. The duplicate check (taxon, calendar day, radius) relies on that and skips a second entry for the same key on purpose.
 - `SpeciesTaxonMap` from the prototype was not ported: the new schema carries Latin names, not BatInspector codes.
 - The old prototypes (`INaturalistApiKeyExporter`, `INaturalistOAuthExporter`) live on in the owner's other repo; do not look for them here.
