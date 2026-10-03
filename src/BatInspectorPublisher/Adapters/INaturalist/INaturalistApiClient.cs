@@ -95,15 +95,15 @@ internal sealed class INaturalistApiClient
         return result?.Results.FirstOrDefault(t => string.Equals(t.Name, scientificName, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>Does the authenticated user already have an observation of this taxon on this date near these coordinates?</summary>
-    public async Task<bool> HasExistingObservationAsync(int taxonId, DateOnly date, double lat, double lon, string jwt, CancellationToken ct)
+    /// <summary>The authenticated user's observations of this taxon on this date near these coordinates (total count plus the first page of details).</summary>
+    public async Task<ObservationsSearchResponse> FindExistingObservationsAsync(int taxonId, DateOnly date, double lat, double lon, string jwt, CancellationToken ct)
     {
         var inv = CultureInfo.InvariantCulture;
         var url = $"{_options.ApiBaseUrlV1}/observations?taxon_id={taxonId}" +
                   $"&d1={date.ToString("yyyy-MM-dd", inv)}&d2={date.ToString("yyyy-MM-dd", inv)}" +
                   $"&lat={lat.ToString(inv)}&lng={lon.ToString(inv)}&radius={_options.DuplicateCheckRadiusKm.ToString(inv)}&mine_only=true";
         var body = await SendAsync(NewRequest(HttpMethod.Get, url, jwt), "Duplicate check", ct);
-        return (JsonSerializer.Deserialize<ObservationsSearchResponse>(body)?.TotalResults ?? 0) > 0;
+        return JsonSerializer.Deserialize<ObservationsSearchResponse>(body) ?? new ObservationsSearchResponse();
     }
 
     public async Task<CreateObservationResult> CreateObservationAsync(ObservationPayload payload, string jwt, CancellationToken ct)

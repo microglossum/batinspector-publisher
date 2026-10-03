@@ -21,6 +21,16 @@ internal sealed class StubHttpHandler : HttpMessageHandler
         return this;
     }
 
+    /// <summary>Routes to a callback that may have side effects or throw, e.g. to cancel mid-request.</summary>
+    public StubHttpHandler On(string methodAndPathPrefix, Func<HttpResponseMessage> respond)
+    {
+        var (method, path) = (methodAndPathPrefix.Split(' ')[0], methodAndPathPrefix.Split(' ')[1]);
+        _routes.Add((
+            r => r.Method.Method == method && r.RequestUri!.PathAndQuery.StartsWith(path, StringComparison.Ordinal),
+            _ => respond()));
+        return this;
+    }
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var content = request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken);

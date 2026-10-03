@@ -15,8 +15,10 @@ public interface IObservationPublisher
 
     /// <summary>
     /// Publishes one candidate. Expected per-candidate problems (unknown species, duplicate,
-    /// HTTP errors) are reported as a <see cref="PublishResult"/>, not thrown. Cancellation is
-    /// reported by throwing <see cref="OperationCanceledException"/>.
+    /// HTTP errors) are reported as a <see cref="PublishResult"/>, not thrown. Cancellation through
+    /// <paramref name="ct"/> is reported as <see cref="PublishStatus.Cancelled"/> carrying whatever was
+    /// already created on the platform; a publisher that throws <see cref="OperationCanceledException"/>
+    /// instead is tolerated by <see cref="ExportOrchestrator"/>, but then that information is lost.
     /// </summary>
     /// <param name="candidate">The observation to publish.</param>
     /// <param name="evidence">The candidate's evidence, already read and checked. Upload exactly these bytes; do not re-read the files.</param>

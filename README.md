@@ -104,8 +104,15 @@ config files and no environment variables.
 
 `ExportOrchestrator.RunAsync` returns one `PublishResult` per candidate with a `PublishStatus`:
 `Created`, `WouldCreate` (dry run), `SkippedDuplicate`, `SkippedUnresolvedTaxon`,
-`SkippedMissingEvidence`, `SkippedInvalidEvidence` (unreadable, empty, or not a PNG / WAV file), `Failed`. A failed result may be partial (observation created, evidence incomplete);
-then `ObservationId` is set.
+`SkippedMissingEvidence`, `SkippedInvalidEvidence` (unreadable, empty, or not a PNG / WAV file), `Resumed`, `Failed`, `Cancelled`.
+
+A failed or cancelled result may be partial (observation created, evidence incomplete): then `ObservationId` is set, `SpectrogramAttached` / `AudioAttached` say what is there,
+and `InterruptedStep` names the stage that stopped. If the stop came while the observation was being created, its existence is unknown; the next run finds out.
+
+**Cancelling** does not throw. `RunAsync` stops and returns the results so far; the candidate that was interrupted is the last result, with status `Cancelled`. Candidates not yet started get no result. Check your own token to tell a cancelled run from a finished one.
+
+**Re-running after a partial result:** the duplicate check normally skips an observation that already exists (`SkippedDuplicate`). If the existing observation is one this package created for the same entry
+(identical description) and it still lacks the spectrogram or the audio, the run attaches the missing evidence instead and reports `Resumed`. Any other observation of yours is left untouched. Nothing is ever deleted.
 
 ## Development
 

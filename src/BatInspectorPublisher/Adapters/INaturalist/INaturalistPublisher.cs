@@ -11,7 +11,8 @@ namespace BatInspectorPublisher.Adapters.INaturalist;
 /// <summary>
 /// Publishes candidates to iNaturalist: resolve taxon, duplicate check, create the observation,
 /// attach spectrogram (photo) and audio (sound). A dry run (the default) resolves the taxon but
-/// writes nothing.
+/// writes nothing. An observation that an earlier run left without its full evidence is completed
+/// instead of being reported as a duplicate.
 /// </summary>
 public sealed class INaturalistPublisher : IObservationPublisher
 {
@@ -49,6 +50,7 @@ public sealed class INaturalistPublisher : IObservationPublisher
     /// <inheritdoc />
     public async Task<PublishResult> PublishAsync(ObservationCandidate candidate, EvidenceFiles evidence, PublishOptions options, CancellationToken ct = default)
     {
+        var step = PublishStep.Preparation;
         string? observationId = null;
         string? url = null;
         var photoAttached = false;
@@ -69,30 +71,87 @@ public sealed class INaturalistPublisher : IObservationPublisher
                 return Result(PublishStatus.WouldCreate, $"Dry run: would create an observation of {candidate.ScientificName} (taxon_id={taxon.Id}).");
             }
 
-            if (await _api.HasExistingObservationAsync(
-                    taxon.Id, DateOnly.FromDateTime(candidate.ObservedAt.DateTime), candidate.Latitude, candidate.Longitude, jwt, ct))
+            var payload = BuildPayload(candidate, taxon.Id);
+            var existing = await _api.FindExistingObservationsAsync(
+                taxon.Id, DateOnly.FromDateTime(candidate.ObservedAt.DateTime), candidate.Latitude, candidate.Longitude, jwt, ct);
+
+            string uuid;
+            var resumed = false;
+            if (existing.TotalResults > 0)
             {
-                return Result(PublishStatus.SkippedDuplicate, "An equivalent observation already exists on iNaturalist.");
+                var match = existing.Results.FirstOrDefault(o => IsIncompleteOwnObservation(o, payload.Description));
+                if (match is null)
+                {
+                    var known = existing.Results.FirstOrDefault(o => o.Id != 0 || o.Uuid.Length > 0);
+                    if (known is not null)
+                    {
+                        (observationId, url) = Identify(known.Id, known.Uuid);
+                        photoAttached = known.Photos is { Count: > 0 };
+                        soundAttached = known.Sounds is { Count: > 0 };
+                    }
+
+                    return Result(PublishStatus.SkippedDuplicate, "An equivalent observation already exists on iNaturalist.");
+                }
+
+                // An earlier run created this observation and stopped before its evidence was complete.
+                // Only an observation whose description is exactly what this entry produces is completed;
+                // anything else of the user's stays untouched.
+                (observationId, url) = Identify(match.Id, match.Uuid);
+                uuid = match.Uuid;
+                photoAttached = match.Photos is { Count: > 0 };
+                soundAttached = match.Sounds is { Count: > 0 };
+                resumed = true;
+                _logger.LogInformation("Completing the incomplete iNaturalist observation {ObservationId} of {Species}", observationId, candidate.ScientificName);
+            }
+            else
+            {
+                step = PublishStep.CreateObservation;
+                var created = await _api.CreateObservationAsync(payload, jwt, ct);
+                uuid = created.Uuid;
+                (observationId, url) = Identify(created.Id, created.Uuid);
+                // Logged at once: if anything after this fails, this line is the trail to the observation.
+                _logger.LogInformation("Created iNaturalist observation {ObservationId} of {Species}", observationId, candidate.ScientificName);
             }
 
-            var created = await _api.CreateObservationAsync(BuildPayload(candidate, taxon.Id), jwt, ct);
-            observationId = created.Id != 0 ? created.Id.ToString(CultureInfo.InvariantCulture) : created.Uuid;
-            url = created.Id != 0 ? $"https://www.inaturalist.org/observations/{created.Id}" : null;
+            if (!photoAttached)
+            {
+                step = PublishStep.AttachSpectrogram;
+                await _api.AttachPhotoAsync(uuid, evidence.Spectrogram, jwt, ct);
+                photoAttached = true;
+            }
 
-            await _api.AttachPhotoAsync(created.Uuid, evidence.Spectrogram, jwt, ct);
-            photoAttached = true;
-            await _api.AttachSoundAsync(created.Uuid, evidence.Audio, jwt, ct);
-            soundAttached = true;
+            if (!soundAttached)
+            {
+                step = PublishStep.AttachAudio;
+                await _api.AttachSoundAsync(uuid, evidence.Audio, jwt, ct);
+                soundAttached = true;
+            }
 
-            return Result(PublishStatus.Created, $"Created observation {observationId}.");
+            return resumed
+                ? Result(PublishStatus.Resumed, $"Completed the incomplete observation {observationId}.")
+                : Result(PublishStatus.Created, $"Created observation {observationId}.");
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            var partial = observationId is null ? "" : $" The observation {observationId} was already created; its evidence is incomplete.";
-            return Result(PublishStatus.Failed, ex.Message + partial, ex);
+            return Result(PublishStatus.Cancelled, Interrupted("Cancelled"), interruptedStep: step);
+        }
+        catch (Exception ex)
+        {
+            // Includes an OperationCanceledException that is not the caller's, such as an HttpClient timeout.
+            return Result(PublishStatus.Failed, ex.Message + Partial(), ex, step);
         }
 
-        PublishResult Result(PublishStatus status, string message, Exception? error = null) => new()
+        string Interrupted(string what) => observationId is not null
+            ? $"{what} during {step}.{Partial()}"
+            : step == PublishStep.CreateObservation
+                ? $"{what} while the observation was being created; it may or may not exist on iNaturalist."
+                : $"{what} during {step}; nothing was created.";
+
+        string Partial() => observationId is null
+            ? ""
+            : $" The observation {observationId} was already created; its evidence is incomplete.";
+
+        PublishResult Result(PublishStatus status, string message, Exception? error = null, PublishStep? interruptedStep = null) => new()
         {
             Candidate = candidate,
             PlatformId = PlatformId,
@@ -103,8 +162,28 @@ public sealed class INaturalistPublisher : IObservationPublisher
             AudioAttached = soundAttached,
             Message = message,
             Error = error,
+            InterruptedStep = interruptedStep,
         };
     }
+
+    private static (string? Id, string? Url) Identify(long id, string uuid) => id != 0
+        ? (id.ToString(CultureInfo.InvariantCulture), $"https://www.inaturalist.org/observations/{id}")
+        : (uuid.Length > 0 ? uuid : null, null);
+
+    /// <summary>
+    /// True for an observation this package evidently created for the same entry (identical description,
+    /// which includes the exact time, measurements and comment) that still lacks its spectrogram or audio.
+    /// When photos or sounds are not reported, the state is unknown and nothing is touched.
+    /// </summary>
+    private static bool IsIncompleteOwnObservation(ExistingObservation observation, string? description) =>
+        observation.Uuid.Length > 0
+        && observation.Photos is not null
+        && observation.Sounds is not null
+        && (observation.Photos.Count == 0 || observation.Sounds.Count == 0)
+        && NormalizeText(observation.Description) == NormalizeText(description);
+
+    private static string NormalizeText(string? text) =>
+        string.Join(' ', (text ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     private async Task<Taxon?> ResolveTaxonAsync(string scientificName, string jwt, CancellationToken ct)
     {

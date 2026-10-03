@@ -37,33 +37,18 @@ fallback to the first hit (that would file observations under wrong species). Op
 - Several exact matches, a host-supplied name override map, regression fixtures from real responses.
 Decide the expected behavior with real BatInspector data before changing code.
 
-### Rethink part-uploads
+### Retry and rate limiting
 
-Today: create observation, then attach spectrogram, then audio. If an attachment fails the result is `Failed` with
-`ObservationId` and the attached flags set. Nothing retries or cleans up, and the next run's duplicate check finds the
-half-created observation and reports `SkippedDuplicate`, so its evidence is never completed. Options to evaluate:
-
-- resume: attach missing evidence to an existing observation id; make the duplicate check aware of missing evidence;
-- roll back: delete the observation if evidence cannot be attached (check what the API allows);
-- retry with backoff for transient errors, and rate limiting against iNaturalist's API etiquette;
-- upload order, and what `PublishResult` should say about partial states (ties into a versioned result schema).
+Split off from the part-upload work (resume is done, see Done): a transient error (5xx, 429, network) still ends the candidate as `Failed` at once; the next run completes it through resume.
+Still open: retry with backoff for transient errors, and rate limiting against iNaturalist's API etiquette (check the documented request limits, and whether `Retry-After` is sent).
 
 ### Dry run should preview duplicates
 
 `INaturalistPublisher` returns `WouldCreate` before the duplicate check, so a dry run reports "would create" for observations that a commit run skips as `SkippedDuplicate`.
 The dry run is the default and the only safety net, so it should be faithful:
 
-- Run the (read-only) duplicate check in the dry run too and report `SkippedDuplicate`.
+- Run the (read-only) duplicate check in the dry run too and report `SkippedDuplicate` (and `Resumed` as "would resume": the match logic is in `INaturalistPublisher`).
 - A dry run currently also needs a login for the JWT, although taxon autocomplete is a public endpoint. Check which calls really need auth; the duplicate check with `mine_only` does, so a dry run that previews duplicates needs the login anyway. Decide whether that is acceptable.
-
-### Cancellation and partial state
-
-- `OperationCanceledException` is rethrown by `INaturalistPublisher` and `ExportOrchestrator.RunAsync` discards the whole result list. A cancel after the observation was created loses its ID,
-  and the next run reports `SkippedDuplicate` without ever completing the evidence. Hosts that do not use `IProgress<PublishResult>` lose everything that was already published.
-- Decided (2026-10-03): add a `Cancelled` status to `PublishStatus`. The cancelled result carries everything that is known about what was already created, as detailed as possible
-  (observation ID and URL, which evidence was attached, the step that was interrupted). Still to design: whether `RunAsync` then returns the results so far instead of throwing, and the exact payload shape.
-- Independent of that: `INaturalistPublisher` should log the created observation ID at Information right after creation, so a trail exists even if everything after it fails.
-- Ties into "Rethink part-uploads" (resume) and the versioned result schema.
 
 ### Token store hardening
 
@@ -202,6 +187,9 @@ works on v2 (today only the date is sent; `time_observed_at` is rejected by v2).
 Checklist for the live test (things stubs cannot prove):
 
 - When the response has only a uuid and no numeric id, `Url` stays null. Check whether `https://www.inaturalist.org/observations/{uuid}` resolves and use it if so.
+- Resume (new, written from memory of the v1 API, never seen live): the v1 `/observations` search results must carry `description`, `photos` and `sounds`, and `description` must come back as sent (the match ignores whitespace differences only).
+  If a field is missing the observation is deliberately left alone (`SkippedDuplicate`), so a wrong assumption fails safe but resume never triggers. Check with a real half-created observation (stop after the photo, or delete the sound in the web UI).
+  Also check that an observation with a not yet processed upload already lists its photo or sound.
 - The duplicate check sends `mine_only=true` to v1 `/observations`. Confirm the parameter exists and really restricts to the user's own observations; if it is ignored, the check matches other users' observations and reports false duplicates. Compare the result with and without it (and with `user_id` / `user_login` as the alternative).
 
 ### Implement NABU|naturgucker integration
@@ -235,11 +223,14 @@ Files are in the repo (README badges, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `
 
 ## Dropped
 
+- Rolling back (deleting) an observation whose evidence could not be attached (decided 2026-10-03): deleting public data automatically is destructive and the failure may be transient. Resume completes it on the next run instead.
 - Geoprivacy / sensitive-species handling: iNaturalist obscures sensitive taxa itself, other platforms may not support it at all,
   and the package cannot solve it (decided 2026-10-02).
 
 ## Done
 
+- 2026-10-03: Part-uploads and cancellation: `PublishStatus.Cancelled` and `Resumed`, `PublishResult.InterruptedStep`, `RunAsync` returns the results so far on cancel instead of throwing; the duplicate check completes an own observation (same description) that lacks photo or sound;
+  `SkippedDuplicate` reports the existing id; the created id is logged at Information; an HTTP timeout is `Failed`, not an aborted run. Resume is unverified against the live API (see the live-test checklist).
 - 2026-10-03: Explicit zone in the input file: optional `TimeZone` (IANA id) per entry, additive within schema v1; `InputDocument.Warnings` with the ambiguous-hour warning; tests incl. foreign-zone gap and future check.
 - 2026-10-03: Times and time zones (offline part): `ObservedAt` is a `DateTimeOffset` (Europe/Berlin offset); spring-forward gap rejected, repeated hour read as standard time, no fallback without tz data (throws `TimeZoneNotFoundException`);
   future check compares instants; duplicate check and `observed_on_string` use the local day; description shows MEZ/MESZ. Tests for gap, repeated hour, midnight crossing, zone suffix.

@@ -136,6 +136,7 @@ public class INaturalistPublisherTests
         Assert.False(result.AudioAttached);
         Assert.IsType<INaturalistApiException>(result.Error);
         Assert.Contains("already created", result.Message);
+        Assert.Equal(PublishStep.AttachAudio, result.InterruptedStep);
     }
 
     [Fact]
@@ -150,13 +151,213 @@ public class INaturalistPublisherTests
     }
 
     [Fact]
-    public async Task Publish_Cancellation_Propagates()
+    public async Task Publish_CancelledBeforeAnythingWasCreated_ReportsCancelledWithoutObservation()
     {
         using var cts = new CancellationTokenSource();
         cts.Cancel();
         var publisher = new INaturalistPublisher(TestData.Options(), new HttpClient(_http), ct => Task.FromCanceled<string>(ct));
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions(), cts.Token));
+        var result = await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions(), cts.Token);
+
+        Assert.Equal(PublishStatus.Cancelled, result.Status);
+        Assert.Equal(PublishStep.Preparation, result.InterruptedStep);
+        Assert.Null(result.ObservationId);
+        Assert.Contains("nothing was created", result.Message);
+    }
+
+    [Fact]
+    public async Task Publish_CancelledWhileAttachingAudio_KeepsWhatWasAlreadyCreated()
+    {
+        using var cts = new CancellationTokenSource();
+        _http
+            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus" } ] }""")
+            .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0 }""")
+            .On("POST /v2/observations", HttpStatusCode.OK, """{ "results": [ { "id": 123, "uuid": "uuid-1" } ] }""")
+            .On("POST /v2/observation_photos", HttpStatusCode.OK, "{}")
+            .On("POST /v2/observation_sounds", () =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(cts.Token);
+            });
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true }, cts.Token);
+
+        Assert.Equal(PublishStatus.Cancelled, result.Status);
+        Assert.Equal(PublishStep.AttachAudio, result.InterruptedStep);
+        Assert.Equal("123", result.ObservationId);
+        Assert.Equal("https://www.inaturalist.org/observations/123", result.Url);
+        Assert.True(result.SpectrogramAttached);
+        Assert.False(result.AudioAttached);
+        Assert.Contains("already created", result.Message);
+    }
+
+    [Fact]
+    public async Task Publish_CancelledWhileCreating_SaysTheOutcomeIsUnknown()
+    {
+        using var cts = new CancellationTokenSource();
+        _http
+            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus" } ] }""")
+            .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0 }""")
+            .On("POST /v2/observations", () =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(cts.Token);
+            });
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true }, cts.Token);
+
+        Assert.Equal(PublishStatus.Cancelled, result.Status);
+        Assert.Equal(PublishStep.CreateObservation, result.InterruptedStep);
+        Assert.Null(result.ObservationId);
+        Assert.Contains("may or may not exist", result.Message);
+    }
+
+    [Fact]
+    public async Task Publish_HttpTimeoutWithoutCallerCancellation_IsFailedNotCancelled()
+    {
+        _http.On("GET /v2/taxa/autocomplete", () => throw new TaskCanceledException("The request timed out."));
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.Failed, result.Status);
+        Assert.Equal(PublishStep.Preparation, result.InterruptedStep);
+        Assert.IsType<TaskCanceledException>(result.Error);
+    }
+
+    [Fact]
+    public async Task Publish_CreateFails_NamesTheCreateStep()
+    {
+        _http
+            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus" } ] }""")
+            .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0 }""")
+            .On("POST /v2/observations", HttpStatusCode.InternalServerError, "kaputt");
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.Failed, result.Status);
+        Assert.Equal(PublishStep.CreateObservation, result.InterruptedStep);
+        Assert.Null(result.ObservationId);
+    }
+
+    [Fact]
+    public async Task Publish_Created_LogsTheObservationIdAtInformation()
+    {
+        HappyPath();
+        var logger = new CapturingLogger();
+        var publisher = new INaturalistPublisher(TestData.Options(), new HttpClient(_http), _ => Task.FromResult("jwt-token"), logger);
+
+        await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Contains(logger.Entries, e => e.Level == Microsoft.Extensions.Logging.LogLevel.Information && e.Message.Contains("123"));
+    }
+
+    private string ExistingObservations(string photos, string sounds, string? description = null)
+    {
+        description ??= CreatePublisher().BuildPayload(Candidate(), 99).Description;
+        return $$"""
+            { "total_results": 1, "results": [ { "id": 123, "uuid": "uuid-1", "description": {{JsonSerializer.Serialize(description)}}, "photos": {{photos}}, "sounds": {{sounds}} } ] }
+            """;
+    }
+
+    private StubHttpHandler WithExisting(string searchResponse) => _http
+        .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus" } ] }""")
+        .On("GET /v1/observations", HttpStatusCode.OK, searchResponse)
+        .On("POST /v2/observation_photos", HttpStatusCode.OK, "{}")
+        .On("POST /v2/observation_sounds", HttpStatusCode.OK, "{}");
+
+    [Fact]
+    public async Task Publish_OwnObservationWithoutSound_AttachesOnlyTheMissingSound()
+    {
+        WithExisting(ExistingObservations(photos: "[ { \"id\": 1 } ]", sounds: "[]"));
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.Resumed, result.Status);
+        Assert.Equal("123", result.ObservationId);
+        Assert.True(result.SpectrogramAttached);
+        Assert.True(result.AudioAttached);
+        Assert.Equal(
+            ["GET /v2/taxa/autocomplete", "GET /v1/observations", "POST /v2/observation_sounds"],
+            _http.Requests.Select(r => $"{r.Method} {r.Uri.AbsolutePath}"));
+        Assert.Contains("uuid-1", _http.Requests.Last().Body);
+    }
+
+    [Fact]
+    public async Task Publish_OwnObservationWithoutAnyEvidence_AttachesBothAndCreatesNothing()
+    {
+        WithExisting(ExistingObservations(photos: "[]", sounds: "[]"));
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.Resumed, result.Status);
+        Assert.DoesNotContain(_http.Requests, r => r.PathAndQuery.StartsWith("/v2/observations"));
+        Assert.Single(_http.Requests, r => r.PathAndQuery.StartsWith("/v2/observation_photos"));
+        Assert.Single(_http.Requests, r => r.PathAndQuery.StartsWith("/v2/observation_sounds"));
+    }
+
+    [Fact]
+    public async Task Publish_ResumeFails_ReportsTheStepAndKeepsTheObservationId()
+    {
+        _http
+            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus" } ] }""")
+            .On("GET /v1/observations", HttpStatusCode.OK, ExistingObservations(photos: "[]", sounds: "[]"))
+            .On("POST /v2/observation_photos", HttpStatusCode.InternalServerError, "kaputt");
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.Failed, result.Status);
+        Assert.Equal(PublishStep.AttachSpectrogram, result.InterruptedStep);
+        Assert.Equal("123", result.ObservationId);
+        Assert.False(result.SpectrogramAttached);
+    }
+
+    [Fact]
+    public async Task Publish_OwnObservationWithBothEvidenceFiles_IsADuplicateAndReportsTheExistingObservation()
+    {
+        WithExisting(ExistingObservations(photos: "[ { \"id\": 1 } ]", sounds: "[ { \"id\": 2 } ]"));
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.SkippedDuplicate, result.Status);
+        Assert.Equal("123", result.ObservationId);
+        Assert.True(result.SpectrogramAttached);
+        Assert.True(result.AudioAttached);
+        Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
+    }
+
+    [Fact]
+    public async Task Publish_IncompleteObservationWithADifferentDescription_IsLeftAlone()
+    {
+        WithExisting(ExistingObservations(photos: "[]", sounds: "[]", description: "Selbst eingetragen, ohne Belege."));
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.SkippedDuplicate, result.Status);
+        Assert.Equal("123", result.ObservationId);
+        Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
+    }
+
+    [Fact]
+    public async Task Publish_IncompleteObservationIgnoringWhitespaceDifferences_IsStillRecognized()
+    {
+        var description = CreatePublisher().BuildPayload(Candidate(), 99).Description!.Replace(" ", "  ") + "\n";
+        WithExisting(ExistingObservations(photos: "[]", sounds: "[]", description: description));
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.Resumed, result.Status);
+    }
+
+    [Fact]
+    public async Task Publish_ExistingObservationWithUnreportedMedia_IsNeverTouched()
+    {
+        var description = JsonSerializer.Serialize(CreatePublisher().BuildPayload(Candidate(), 99).Description);
+        WithExisting($$"""{ "total_results": 1, "results": [ { "id": 123, "uuid": "uuid-1", "description": {{description}} } ] }""");
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.SkippedDuplicate, result.Status);
+        Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
     }
 
     [Fact]
@@ -257,4 +458,16 @@ public class INaturalistPublisherTests
         Assert.DoesNotContain("Luftfeuchte", description);
         Assert.DoesNotContain("Anmerkung", description);
     }
+}
+
+internal sealed class CapturingLogger : Microsoft.Extensions.Logging.ILogger
+{
+    public List<(Microsoft.Extensions.Logging.LogLevel Level, string Message)> Entries { get; } = [];
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+    public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+    public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+        Entries.Add((logLevel, formatter(state, exception)));
 }

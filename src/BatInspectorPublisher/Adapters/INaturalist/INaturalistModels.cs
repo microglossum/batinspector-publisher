@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace BatInspectorPublisher.Adapters.INaturalist;
@@ -33,6 +34,28 @@ internal sealed class ObservationsSearchResponse
 {
     [JsonPropertyName("total_results")]
     public int TotalResults { get; set; }
+
+    [JsonPropertyName("results")]
+    public List<ExistingObservation> Results { get; set; } = [];
+}
+
+/// <summary>An observation returned by the v1 search. Photos and sounds stay null when the response does not say, so "unknown" is never read as "none".</summary>
+internal sealed class ExistingObservation
+{
+    [JsonPropertyName("id")]
+    public long Id { get; set; }
+
+    [JsonPropertyName("uuid")]
+    public string Uuid { get; set; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("photos")]
+    public List<JsonElement>? Photos { get; set; }
+
+    [JsonPropertyName("sounds")]
+    public List<JsonElement>? Sounds { get; set; }
 }
 
 internal sealed class CreateObservationRequest

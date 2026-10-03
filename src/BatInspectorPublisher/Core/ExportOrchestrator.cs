@@ -23,7 +23,11 @@ public sealed class ExportOrchestrator
 
     /// <summary>
     /// Publishes all candidates in order and returns one result per candidate. One failing candidate
-    /// never stops the run. Cancellation throws <see cref="OperationCanceledException"/>.
+    /// never stops the run.
+    /// Cancellation does not throw: the run stops and returns the results so far, so nothing that was
+    /// already published is lost. A candidate interrupted mid-way is the last result, with status
+    /// <see cref="PublishStatus.Cancelled"/> and whatever was already created; candidates not yet started get no result.
+    /// Check <paramref name="ct"/> to tell a cancelled run from a finished one.
     /// </summary>
     /// <param name="candidates">Candidates to publish.</param>
     /// <param name="options">Publish options (dry run unless <see cref="PublishOptions.Commit"/> is set).</param>
@@ -39,12 +43,21 @@ public sealed class ExportOrchestrator
 
         foreach (var candidate in candidates)
         {
-            ct.ThrowIfCancellationRequested();
+            if (ct.IsCancellationRequested)
+            {
+                break;
+            }
+
             var result = await PublishOneAsync(candidate, options, ct);
             _logger.LogInformation("{Platform}: {Species} @ {ObservedAt:yyyy-MM-dd HH:mm:ss zzz} -> {Status}",
                 result.PlatformId, candidate.ScientificName, candidate.ObservedAt, result.Status);
             results.Add(result);
             progress?.Report(result);
+
+            if (result.Status == PublishStatus.Cancelled)
+            {
+                break;
+            }
         }
 
         return results;
@@ -52,6 +65,7 @@ public sealed class ExportOrchestrator
 
     private async Task<PublishResult> PublishOneAsync(ObservationCandidate candidate, PublishOptions options, CancellationToken ct)
     {
+        var evidenceLoaded = false;
         try
         {
             var evidence = await EvidenceLoader.LoadAsync(candidate, ct);
@@ -66,9 +80,22 @@ public sealed class ExportOrchestrator
                 };
             }
 
+            evidenceLoaded = true;
             return await _publisher.PublishAsync(candidate, evidence.Files, options, ct);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // A publisher is meant to return Cancelled itself; this covers one that throws instead.
+            return new PublishResult
+            {
+                Candidate = candidate,
+                PlatformId = _publisher.PlatformId,
+                Status = PublishStatus.Cancelled,
+                Message = evidenceLoaded ? "Cancelled." : "Cancelled while reading the evidence; nothing was created.",
+                InterruptedStep = evidenceLoaded ? null : PublishStep.Preparation,
+            };
+        }
+        catch (Exception ex)
         {
             return new PublishResult
             {

@@ -136,7 +136,7 @@ public class ExportOrchestratorTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_Cancellation_Throws()
+    public async Task RunAsync_CancelledBetweenCandidates_ReturnsTheResultsSoFarWithoutThrowing()
     {
         using var cts = new CancellationTokenSource();
         var publisher = new FakePublisher((c, _, _) =>
@@ -145,10 +145,80 @@ public class ExportOrchestratorTests : IDisposable
             return Created(c);
         });
 
-        await Assert.ThrowsAsync<OperationCanceledException>(() =>
-            new ExportOrchestrator(publisher).RunAsync([Candidate("A a"), Candidate("B b")], new PublishOptions { Commit = true }, ct: cts.Token));
+        var results = await new ExportOrchestrator(publisher).RunAsync(
+            [Candidate("A a"), Candidate("B b")], new PublishOptions { Commit = true }, ct: cts.Token);
 
+        Assert.Equal(PublishStatus.Created, results.Single().Status);
         Assert.Single(publisher.Calls);
+    }
+
+    [Fact]
+    public async Task RunAsync_PublisherReportsCancelled_KeepsItsDetailsStopsAndReportsProgress()
+    {
+        var reported = new List<PublishResult>();
+        var publisher = new FakePublisher((c, _, _) => c.ScientificName == "B b"
+            ? new PublishResult
+            {
+                Candidate = c,
+                PlatformId = "fake",
+                Status = PublishStatus.Cancelled,
+                ObservationId = "42",
+                InterruptedStep = PublishStep.AttachAudio,
+                SpectrogramAttached = true,
+            }
+            : Created(c));
+
+        var results = await new ExportOrchestrator(publisher).RunAsync(
+            [Candidate("A a"), Candidate("B b"), Candidate("C c")], new PublishOptions { Commit = true }, new SynchronousProgress(reported.Add));
+
+        Assert.Equal(["A a", "B b"], results.Select(r => r.Candidate.ScientificName));
+        Assert.Equal("42", results[1].ObservationId);
+        Assert.Equal(PublishStep.AttachAudio, results[1].InterruptedStep);
+        Assert.Equal(2, reported.Count);
+        Assert.Equal(2, publisher.Calls.Count);
+    }
+
+    [Fact]
+    public async Task RunAsync_PublisherThrowsOperationCanceled_BecomesCancelledResult()
+    {
+        using var cts = new CancellationTokenSource();
+        var publisher = new FakePublisher((_, _, _) =>
+        {
+            cts.Cancel();
+            throw new OperationCanceledException(cts.Token);
+        });
+
+        var results = await new ExportOrchestrator(publisher).RunAsync(
+            [Candidate("A a"), Candidate("B b")], new PublishOptions { Commit = true }, ct: cts.Token);
+
+        Assert.Equal(PublishStatus.Cancelled, results.Single().Status);
+        Assert.Single(publisher.Calls);
+    }
+
+    [Fact]
+    public async Task RunAsync_CancelledBeforeStart_ReturnsNothing()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var publisher = new FakePublisher((c, _, _) => Created(c));
+
+        var results = await new ExportOrchestrator(publisher).RunAsync([Candidate("A a")], new PublishOptions { Commit = true }, ct: cts.Token);
+
+        Assert.Empty(results);
+        Assert.Empty(publisher.Calls);
+    }
+
+    [Fact]
+    public async Task RunAsync_OperationCanceledWithoutCallerCancellation_IsAFailureAndTheRunContinues()
+    {
+        var publisher = new FakePublisher((c, _, _) =>
+            c.ScientificName == "A a" ? throw new TaskCanceledException("HTTP timeout") : Created(c));
+
+        var results = await new ExportOrchestrator(publisher).RunAsync(
+            [Candidate("A a"), Candidate("B b")], new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.Failed, results[0].Status);
+        Assert.Equal(PublishStatus.Created, results[1].Status);
     }
 
     [Fact]

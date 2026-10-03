@@ -104,8 +104,15 @@ Konfigurationsdateien und keine Umgebungsvariablen.
 
 `ExportOrchestrator.RunAsync` liefert pro Kandidat ein `PublishResult` mit einem `PublishStatus`:
 `Created`, `WouldCreate` (Trockenlauf), `SkippedDuplicate`, `SkippedUnresolvedTaxon`,
-`SkippedMissingEvidence`, `SkippedInvalidEvidence` (nicht lesbar, leer oder keine PNG- / WAV-Datei), `Failed`. Ein fehlgeschlagenes Ergebnis kann teilweise erfolgt sein
-(Beobachtung angelegt, Belege unvollständig); dann ist `ObservationId` gesetzt.
+`SkippedMissingEvidence`, `SkippedInvalidEvidence` (nicht lesbar, leer oder keine PNG- / WAV-Datei), `Resumed`, `Failed`, `Cancelled`.
+
+Ein fehlgeschlagenes oder abgebrochenes Ergebnis kann teilweise erfolgt sein (Beobachtung angelegt, Belege unvollständig): dann ist `ObservationId` gesetzt, `SpectrogramAttached` / `AudioAttached` sagen, was vorhanden ist,
+und `InterruptedStep` nennt den Schritt, an dem es stoppte. Kam der Abbruch, während die Beobachtung angelegt wurde, ist unbekannt, ob sie existiert; der nächste Lauf klärt das.
+
+**Abbrechen** wirft keine Ausnahme. `RunAsync` hält an und liefert die bisherigen Ergebnisse; der unterbrochene Kandidat ist das letzte Ergebnis mit Status `Cancelled`. Noch nicht begonnene Kandidaten bekommen kein Ergebnis. Ob der Lauf abgebrochen wurde oder fertig ist, zeigt das eigene Token.
+
+**Erneuter Lauf nach einem Teilergebnis:** Die Duplikatprüfung überspringt normalerweise eine vorhandene Beobachtung (`SkippedDuplicate`). Ist die vorhandene Beobachtung eine, die dieses Paket für denselben Eintrag angelegt hat
+(identische Beschreibung) und fehlt ihr noch das Spektrogramm oder die Audioaufnahme, hängt der Lauf die fehlenden Belege an und meldet `Resumed`. Jede andere Beobachtung des Nutzers bleibt unberührt. Es wird nie etwas gelöscht.
 
 ## Entwicklung
 

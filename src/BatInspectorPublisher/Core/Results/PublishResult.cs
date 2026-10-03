@@ -25,6 +25,34 @@ public enum PublishStatus
 
     /// <summary>Publishing failed; see <see cref="PublishResult.Error"/>. May be partial, see <see cref="PublishResult.ObservationId"/>.</summary>
     Failed,
+
+    /// <summary>
+    /// An earlier run left an incomplete observation of this entry on the platform; this run attached
+    /// the missing evidence to it (see <see cref="PublishResult.ObservationId"/>). No new observation was created.
+    /// </summary>
+    Resumed,
+
+    /// <summary>
+    /// The caller cancelled while this candidate was being published. May be partial: if
+    /// <see cref="PublishResult.ObservationId"/> is set the observation exists on the platform and its evidence may be incomplete.
+    /// </summary>
+    Cancelled,
+}
+
+/// <summary>The stage of publishing one candidate, used to say where a <see cref="PublishStatus.Failed"/> or <see cref="PublishStatus.Cancelled"/> result stopped.</summary>
+public enum PublishStep
+{
+    /// <summary>Reading the evidence, signing in, resolving the species and checking for duplicates. Nothing was written to the platform.</summary>
+    Preparation,
+
+    /// <summary>Creating the observation. Interrupted here the outcome is unknown: the platform may have created it without the caller learning its id.</summary>
+    CreateObservation,
+
+    /// <summary>Attaching the spectrogram to the observation.</summary>
+    AttachSpectrogram,
+
+    /// <summary>Attaching the audio to the observation.</summary>
+    AttachAudio,
 }
 
 /// <summary>
@@ -42,16 +70,20 @@ public sealed record PublishResult
     /// <summary>What happened.</summary>
     public required PublishStatus Status { get; init; }
 
-    /// <summary>Platform-side observation id. Also set when <see cref="Status"/> is <see cref="PublishStatus.Failed"/> after the observation was already created.</summary>
+    /// <summary>
+    /// Platform-side observation id. Also set when the observation was already created before the result
+    /// became <see cref="PublishStatus.Failed"/> or <see cref="PublishStatus.Cancelled"/>, and for
+    /// <see cref="PublishStatus.Resumed"/> and a <see cref="PublishStatus.SkippedDuplicate"/> whose existing observation is known.
+    /// </summary>
     public string? ObservationId { get; init; }
 
-    /// <summary>Public URL of the created observation, if the platform provides one.</summary>
+    /// <summary>Public URL of the observation, if the platform provides one.</summary>
     public string? Url { get; init; }
 
-    /// <summary>True if the spectrogram was attached to the platform observation.</summary>
+    /// <summary>True if the platform observation has the spectrogram attached (attached now, or already by an earlier run).</summary>
     public bool SpectrogramAttached { get; init; }
 
-    /// <summary>True if the audio was attached to the platform observation.</summary>
+    /// <summary>True if the platform observation has the audio attached (attached now, or already by an earlier run).</summary>
     public bool AudioAttached { get; init; }
 
     /// <summary>Short human-readable (English) detail.</summary>
@@ -59,4 +91,7 @@ public sealed record PublishResult
 
     /// <summary>The exception behind a <see cref="PublishStatus.Failed"/> result.</summary>
     public Exception? Error { get; init; }
+
+    /// <summary>For <see cref="PublishStatus.Failed"/> and <see cref="PublishStatus.Cancelled"/>: the stage that was interrupted, if known.</summary>
+    public PublishStep? InterruptedStep { get; init; }
 }
