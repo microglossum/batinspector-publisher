@@ -60,6 +60,41 @@ public class OAuthFlowTests
     }
 
     [Fact]
+    public async Task Authorize_ConfiguredPortInUse_FallsBackToFreePortAndUsesItConsistently()
+    {
+        var configured = NewRedirectUri();
+        using var occupant = new HttpListener();
+        occupant.Prefixes.Add(OAuthFlow.BuildListenerPrefix(configured));
+        occupant.Start();
+        var http = new StubHttpHandler().On("POST /oauth/token", HttpStatusCode.OK, TokenJson);
+        Uri? authorizeUrl = null;
+        var flow = new OAuthFlow(TestData.Options(configured), new HttpClient(http),
+            Browser(q => $"code=the-code&state={q["state"]}", url => authorizeUrl = url));
+
+        var token = await flow.AuthorizeAsync(CancellationToken.None);
+
+        Assert.Equal("oauth-access", token.AccessToken);
+        var used = HttpUtility.ParseQueryString(authorizeUrl!.Query)["redirect_uri"];
+        Assert.NotEqual(configured, used);
+        Assert.EndsWith("/callback", used);
+        Assert.Equal(used, HttpUtility.ParseQueryString(http.Requests.Single().Body)["redirect_uri"]);
+    }
+
+    [Fact]
+    public async Task Authorize_ConfiguredPortFree_KeepsConfiguredRedirectUri()
+    {
+        var configured = NewRedirectUri();
+        var http = new StubHttpHandler().On("POST /oauth/token", HttpStatusCode.OK, TokenJson);
+        Uri? authorizeUrl = null;
+        var flow = new OAuthFlow(TestData.Options(configured), new HttpClient(http),
+            Browser(q => $"code=c&state={q["state"]}", url => authorizeUrl = url));
+
+        await flow.AuthorizeAsync(CancellationToken.None);
+
+        Assert.Equal(configured, HttpUtility.ParseQueryString(authorizeUrl!.Query)["redirect_uri"]);
+    }
+
+    [Fact]
     public async Task Authorize_PublicClient_OmitsClientSecret()
     {
         var redirect = NewRedirectUri();

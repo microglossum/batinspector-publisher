@@ -86,11 +86,13 @@ OAuth-Tokens von iNaturalist laufen nie ab, die Browser-Anmeldung ist also **ein
 
 ### Port 45679
 
-iNaturalist verlangt, dass die Redirect URI jeder Anfrage exakt einem registrierten Wert entspricht, und
-es ist nicht bestätigt, dass beliebige Loopback-Ports akzeptiert werden. Der Port ist daher fest. 45679
-kollidiert nicht mit üblichen Entwicklungsservern. Ist er auf einem Rechner belegt, schlägt die Anmeldung mit
-einer `HttpListenerException` fehl. Dann einen anderen Port wählen, `INaturalistOptions.RedirectUri`
-setzen und dieselbe URI bei iNaturalist registrieren.
+Die Anmeldung lauscht auf dem Port der registrierten Redirect URI. 45679 kollidiert nicht mit üblichen
+Entwicklungsservern. Ist er auf einem Rechner belegt, versucht die Anmeldung bis zu drei vom Betriebssystem
+vergebene freie Ports (als Warnung protokolliert) und sendet die passende Redirect URI an iNaturalist. Bei
+einer Loopback-URI (`127.0.0.1`) ignoriert iNaturalist den Port beim Abgleich, die eine registrierte URI
+genügt also. Zeigt der Browser trotzdem den Redirect-URI-Fehler von iNaturalist, den Port freigeben oder einen
+anderen Port wählen, `INaturalistOptions.RedirectUri` setzen und dieselbe URI bei iNaturalist registrieren.
+Lässt sich gar kein Port öffnen, schlägt die Anmeldung mit einer `InvalidOperationException` fehl.
 
 Der Host muss an beiden Stellen `127.0.0.1` sein: `HttpListener` vergleicht den `Host`-Header wörtlich, ein
 Listener auf `127.0.0.1` antwortet bei `localhost` mit 404.
@@ -106,7 +108,7 @@ etwa 24 Stunden gültig, dient für alle API-Aufrufe und wird lokal gespeichert.
 | Symptom | Ursache / Lösung |
 |---|---|
 | `ArgumentException` zu `ClientId` | `INaturalistOptions.ClientId` ist leer. |
-| `HttpListenerException` bei der Anmeldung | Port belegt, siehe [Port 45679](#port-45679). |
+| `InvalidOperationException` "cannot listen on port" bei der Anmeldung | Port belegt und kein Ersatzport ließ sich öffnen, siehe [Port 45679](#port-45679). |
 | iNaturalist-Fehlerseite nach "Authorize" | Die registrierte Redirect URI weicht von `INaturalistOptions.RedirectUri` ab. |
 | `TimeoutException` bei der Anmeldung | Niemand hat die Browser-Anmeldung innerhalb von `AuthorizationTimeout` abgeschlossen. |
 | `PlatformNotSupportedException` beim Speichern des Tokens | Nicht Windows. `allowPlaintextOnNonWindows: true` übergeben oder einen eigenen `INaturalistTokenStore` bereitstellen. |

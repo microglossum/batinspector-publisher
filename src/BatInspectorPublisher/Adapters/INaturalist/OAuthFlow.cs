@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -23,6 +24,9 @@ public delegate Task AuthorizationPrompt(Uri authorizeUrl, CancellationToken ct)
 /// </summary>
 internal sealed class OAuthFlow
 {
+    /// <summary>How many OS-assigned ports are tried after the configured one is found taken.</summary>
+    private const int MaxFallbackPorts = 3;
+
     private readonly INaturalistOptions _options;
     private readonly HttpClient _http;
     private readonly AuthorizationPrompt _prompt;
@@ -42,13 +46,11 @@ internal sealed class OAuthFlow
         var codeChallenge = Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(codeVerifier)));
         var state = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
 
-        using var listener = new HttpListener();
-        listener.Prefixes.Add(BuildListenerPrefix(_options.RedirectUri));
-        listener.Start();
+        using var listener = StartListener(_options.RedirectUri, out var redirectUri);
 
         var authorizeUrl = new Uri($"{_options.OAuthAuthorizeUrl}" +
             $"?client_id={Uri.EscapeDataString(_options.ClientId)}" +
-            $"&redirect_uri={Uri.EscapeDataString(_options.RedirectUri)}" +
+            $"&redirect_uri={Uri.EscapeDataString(redirectUri)}" +
             "&response_type=code" +
             $"&state={Uri.EscapeDataString(state)}" +
             $"&code_challenge={Uri.EscapeDataString(codeChallenge)}" +
@@ -72,7 +74,7 @@ internal sealed class OAuthFlow
             listener.Stop();
         }
 
-        return await ExchangeCodeForTokenAsync(code, codeVerifier, ct);
+        return await ExchangeCodeForTokenAsync(code, codeVerifier, redirectUri, ct);
     }
 
     public Task<OAuthTokenResponse> RefreshAsync(string refreshToken, CancellationToken ct) =>
@@ -82,12 +84,12 @@ internal sealed class OAuthFlow
             ["refresh_token"] = refreshToken,
         }, ct);
 
-    private Task<OAuthTokenResponse> ExchangeCodeForTokenAsync(string code, string codeVerifier, CancellationToken ct) =>
+    private Task<OAuthTokenResponse> ExchangeCodeForTokenAsync(string code, string codeVerifier, string redirectUri, CancellationToken ct) =>
         PostTokenRequestAsync(new Dictionary<string, string>
         {
             ["grant_type"] = "authorization_code",
             ["code"] = code,
-            ["redirect_uri"] = _options.RedirectUri,
+            ["redirect_uri"] = redirectUri,
             ["code_verifier"] = codeVerifier,
         }, ct);
 
@@ -162,6 +164,64 @@ internal sealed class OAuthFlow
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Binds the loopback listener on the configured port. If that port is taken (another login session,
+    /// another program), retries with OS-assigned free ports and returns the redirect URI that matches
+    /// the port actually bound; authorize request and token exchange must both use it. RFC 8252 says
+    /// authorization servers must accept any port for a loopback redirect, and iNaturalist ignores
+    /// the port when matching.
+    /// </summary>
+    private HttpListener StartListener(string configuredRedirectUri, out string redirectUri)
+    {
+        var preferred = new Uri(configuredRedirectUri);
+        HttpListenerException? lastError = null;
+        for (var attempt = 0; attempt <= MaxFallbackPorts; attempt++)
+        {
+            var candidate = attempt == 0
+                ? preferred
+                : new UriBuilder(preferred) { Port = GetFreeLoopbackPort() }.Uri;
+            var listener = new HttpListener();
+            try
+            {
+                listener.Prefixes.Add(BuildListenerPrefix(candidate.AbsoluteUri));
+                listener.Start();
+            }
+            catch (HttpListenerException ex)
+            {
+                // Typically "address already in use"; the free port found above can also be taken again before we bind it.
+                listener.Close();
+                lastError = ex;
+                _logger.LogDebug("Cannot listen on port {Port}: {Message}", candidate.Port, ex.Message);
+                continue;
+            }
+
+            if (attempt > 0)
+            {
+                _logger.LogWarning("Port {Preferred} is in use; the login listens on port {Port} instead. iNaturalist must accept that port for the registered redirect URI.", preferred.Port, candidate.Port);
+            }
+
+            redirectUri = candidate.AbsoluteUri;
+            return listener;
+        }
+
+        throw new InvalidOperationException(
+            $"The OAuth login cannot listen on port {preferred.Port} or on {MaxFallbackPorts} alternative loopback ports.", lastError);
+    }
+
+    private static int GetFreeLoopbackPort()
+    {
+        var probe = new TcpListener(IPAddress.Loopback, 0);
+        probe.Start();
+        try
+        {
+            return ((IPEndPoint)probe.LocalEndpoint).Port;
+        }
+        finally
+        {
+            probe.Stop();
+        }
     }
 
     /// <summary>

@@ -132,7 +132,8 @@ Facts found in iNaturalist's open source (Doorkeeper 5.6.6 on `main`, checked 20
 
 To do:
 
-- Live test (needs the approved app): does an ephemeral port work? If yes, bind a free OS-assigned port (no collisions) and keep the fixed port as fallback.
+- Port fallback is done (fixed port first, then up to three OS-assigned ports, 2026-10-03). The owner confirmed iNaturalist accepts a changed loopback port. Still to check in the live run: occupy port 45679 and run the SmokeTest login.
+  Open question: bind an OS-assigned port first (no collisions at all) instead of fixed-first? Not needed while the fallback works.
 - A host-pluggable receiver for the authorization response, next to `AuthorizationPrompt`: a manual "paste the redirected URL" fallback for blocked or remote environments, and a custom-scheme receiver for packaged desktop apps.
 - Distinct, actionable error types: port in use, timeout, denied by user, token rejected.
 - `OAuthFlow.WaitForAuthorizationCodeAsync` accepts only the first request on the listener. Any stray request (port scan, browser prefetch, another local program) ends the login with an error. Keep listening until a request carries a valid `state` or the timeout hits.

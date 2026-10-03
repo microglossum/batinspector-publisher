@@ -14,8 +14,10 @@ public sealed class INaturalistOptions
     public string? ClientSecret { get; init; }
 
     /// <summary>
-    /// Must match a redirect URI registered for the OAuth application exactly, including the port
-    /// (iNaturalist is not confirmed to accept arbitrary loopback ports). The host must be 127.0.0.1,
+    /// Must match a redirect URI registered for the OAuth application exactly, including the port.
+    /// The login listens on this port first. If it is in use, the login retries on OS-assigned loopback
+    /// ports with the same host and path; iNaturalist ignores the port of a loopback redirect URI when
+    /// matching, so the one registered URI is enough. The host must be 127.0.0.1,
     /// not localhost: HttpListener matches the request's Host header text verbatim.
     /// </summary>
     public string RedirectUri { get; init; } = "http://127.0.0.1:45679/callback";

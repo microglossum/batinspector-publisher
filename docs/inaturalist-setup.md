@@ -86,10 +86,13 @@ iNaturalist OAuth tokens never expire, so the browser login is needed **once** (
 
 ### Port 45679
 
-iNaturalist requires the redirect URI of each request to match a registered value exactly and is
-not confirmed to accept an arbitrary loopback port, so the port is fixed. 45679 avoids common
-dev-server ports. If it is taken on a machine, the login fails with an `HttpListenerException`. Pick another
-port, set `INaturalistOptions.RedirectUri` and register the identical URI at iNaturalist.
+The login listens on the port of the registered redirect URI. 45679 avoids common dev-server ports.
+If it is taken on a machine, the login retries on up to three free ports chosen by the operating system
+(logged as a warning) and sends the matching redirect URI to iNaturalist. For a loopback URI
+(`127.0.0.1`) iNaturalist ignores the port when it matches the redirect URI, so the one registered URI is
+enough. Should the browser show iNaturalist's redirect URI error anyway, free the port, or pick another
+port, set `INaturalistOptions.RedirectUri` and register the identical URI at iNaturalist. If no port can
+be opened at all, the login fails with an `InvalidOperationException`.
 
 The host must be `127.0.0.1` in both places: `HttpListener` matches the request's `Host` header
 text verbatim, so `localhost` would get a 404 from a listener bound to `127.0.0.1`.
@@ -106,7 +109,7 @@ undocumented in the official API reference.
 | Symptom | Cause / fix |
 |---|---|
 | `ArgumentException` about `ClientId` | `INaturalistOptions.ClientId` is empty. |
-| `HttpListenerException` on login | Port in use, see [Port 45679](#port-45679). |
+| `InvalidOperationException` "cannot listen on port" on login | Port in use and no fallback port could be opened, see [Port 45679](#port-45679). |
 | iNaturalist error page after clicking Authorize | The registered redirect URI differs from `INaturalistOptions.RedirectUri`. |
 | `TimeoutException` on login | Nobody completed the browser login within `AuthorizationTimeout`. |
 | `PlatformNotSupportedException` when saving the token | Not Windows. Pass `allowPlaintextOnNonWindows: true` or supply your own `INaturalistTokenStore`. |
