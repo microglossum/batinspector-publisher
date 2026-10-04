@@ -146,7 +146,41 @@ Für Dauer oder Abtastrate nennt iNaturalist keine Grenze. Zur Orientierung: Ein
 768 kB pro Sekunde, 20 MB sind also nach etwa 26 Sekunden voll. Ist eine Datei zu groß, die Aufnahme kürzen oder die Abtastrate
 senken und den Lauf wiederholen; für diesen Eintrag wurde nichts angelegt.
 
-Fehlermeldungen, die iNaturalist selbst zurückschickt, werden unverändert in `PublishResult.Message` durchgereicht.
+Fehlermeldungen, die iNaturalist selbst zurückschickt, werden unverändert in `PublishResult.Message` durchgereicht, auf die ersten 1000 Zeichen gekürzt
+(`INaturalistApiException.ResponseBody` behält den ganzen Text; ein Serverfehler kann mit einer vollständigen HTML-Seite antworten).
+
+## Anfragerate und Wiederholungen
+
+iNaturalist drosselt die API bei 100 Anfragen pro Minute und bittet darum, bei 60 oder weniger zu bleiben; darüber antwortet es mit
+`429 Too Many Requests`. Ein Kandidat braucht etwa fünf Anfragen (Taxon-Suche, Duplikatprüfung, Anlegen, Foto, Ton), dazu einen
+Token-Austausch, wenn das gespeicherte API-Token abgelaufen ist. Das Paket takten seine Anfragen deshalb und kann Fehler wiederholen.
+
+**Taktung (standardmäßig an).** `INaturalistOptions.MinRequestInterval` (Standard eine Sekunde) ist die Mindestzeit zwischen den Starts
+zweier Anfragen. Ein Lauf bleibt damit bei etwa 60 Anfragen pro Minute, ein Kandidat dauert etwa fünf Sekunden. Der Abstand gilt je
+`INaturalistPublisher` (der Authenticator hat einen eigenen, er sendet selten): nicht mehrere Publisher parallel gegen ein Konto laufen lassen.
+`TimeSpan.Zero` schaltet die Taktung ab. Das Paket zählt keine Anfragen; die empfohlene Vorgehensweise von iNaturalist nennt auch eine
+Tagesmenge, eine sehr große Datei also auf mehrere Tage verteilen.
+
+**Wiederholungen (standardmäßig aus).** `INaturalistOptions.MaxAttempts` ist die Zahl der Versuche pro Anfrage, der erste eingerechnet.
+Der Standard 1 wiederholt nicht: Ein vorübergehender Fehler beendet den Kandidaten als `Failed`, und der nächste Lauf vervollständigt ihn
+(siehe „Erneuter Lauf nach einem Teilergebnis“ in der README). Mit 3 wird wiederholt. Ein Fehler wird nur wiederholt, wenn dadurch nichts doppelt entstehen kann:
+
+| Anfrage | Wiederholt nach | Nicht wiederholt nach |
+|---|---|---|
+| Lesen: Taxon-Suche, Duplikatprüfung, Benutzerprofil, Token-Austausch | 429, 500, 502, 503, 504, einem Netzwerkfehler, einem Timeout | jedem anderen Status (400, 401, 404, 422, ...) |
+| Schreiben: Beobachtung anlegen, Spektrogramm anhängen, Audio anhängen | 429 (vor der Verarbeitung abgelehnt); einer Verbindung, die nicht aufgebaut werden konnte (kein Netz, DNS, TLS-Handshake) | 500, 502, 503, 504, einem Netzwerkfehler nach dem Senden, einem Timeout |
+
+Eine Schreibanfrage, die so scheitert, kann schon verarbeitet worden sein; ein erneutes Senden könnte eine zweite Beobachtung oder einen
+zweiten Upload anlegen. Sie endet als `Failed` (mit gesetzter `ObservationId`, wenn die Beobachtung existiert), und Duplikatprüfung und Nachholen des nächsten Laufs klären den Rest.
+
+Die Wartezeit vor einer Wiederholung ist `RetryBaseDelay` (Standard 5 Sekunden), mit jeder weiteren Wiederholung verdoppelt, höchstens
+`MaxRetryDelay` (Standard 60 Sekunden). Sendet iNaturalist einen `Retry-After`-Header (die Dokumentation verspricht keinen), gilt stattdessen diese Wartezeit.
+Verlangt der Header mehr als `MaxRetryDelay`, wird nicht abgewartet: Die Anfrage scheitert sofort, und
+`INaturalistApiException.RetryAfter` enthält die verlangte Zeit. Nach dem letzten Versuch wird der ursprüngliche Fehler unverändert gemeldet.
+Jede Wiederholung wird als Warning protokolliert (Ereignis 3003, siehe [logging.de.md](logging.de.md)), ohne die URL, die Koordinaten enthalten kann.
+
+Nicht wiederholt werden die Token-Anfrage der Browser-Anmeldung (ihr Code gilt nur einmal) und alles, was keine der genannten Anfragen ist.
+Ein Abbruch während einer Wartezeit beendet den Kandidaten als `Cancelled`.
 
 ## Fehlersuche
 
@@ -158,4 +192,6 @@ Fehlermeldungen, die iNaturalist selbst zurückschickt, werden unverändert in `
 | `INaturalistLoginException`, `Reason` = `TimedOut`, bei der Anmeldung | Niemand hat die Browser-Anmeldung innerhalb von `AuthorizationTimeout` abgeschlossen. |
 | `PlatformNotSupportedException` bei der Anmeldung oder beim Speichern des Tokens | Nicht Windows. Die Prüfung läuft, bevor sich der Browser öffnet. `allowPlaintextOnNonWindows: true` übergeben (Dateimodus `0600`, schützt nur vor anderen lokalen Benutzern) oder einen eigenen `INaturalistTokenStore` bereitstellen. |
 | Anmeldung wird erneut verlangt, obwohl man sich schon angemeldet hatte | Die Token-Datei war nicht lesbar (beschädigt oder von einem anderen Windows-Benutzer verschlüsselt); eine Warnung wird protokolliert, die nächste Anmeldung ersetzt die Datei. |
+| `Failed` mit `429` oder `Retry-After` in `INaturalistApiException` | iNaturalist hat den Lauf gedrosselt. `MinRequestInterval` erhöhen, `MaxAttempts` auf 3 setzen, siehe [Anfragerate und Wiederholungen](#anfragerate-und-wiederholungen); später erneut laufen lassen, der nächste Lauf vervollständigt den Rest. |
+| `Failed` mit einem 5xx oder einem Netzwerkfehler | Vorübergehend bei iNaturalist oder bei Ihnen. Erneut laufen lassen: Duplikatprüfung und Nachholen vervollständigen den Eintrag. |
 | 401/403 beim JWT-Austausch | Siehe [Warum es einen zusätzlichen JWT-Austausch gibt](#warum-es-einen-zusätzlichen-jwt-austausch-gibt); Registrierung der Anwendung unter <https://www.inaturalist.org/oauth/applications> prüfen. |

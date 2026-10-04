@@ -22,6 +22,7 @@ Checklist for the live test (things stubs cannot prove):
 - The duplicate check sends `mine_only=true` to v1 `/observations`. Confirm the parameter exists and really restricts to the user's own observations; if it is ignored, the check matches other users' observations and reports false duplicates. Compare the result with and without it (and with `user_id` / `user_login` as the alternative).
 - Login port fallback: occupy port 45679 and run the SmokeTest `login`. The login then listens on an OS-assigned port and iNaturalist must accept that redirect URI. The owner confirmed iNaturalist accepts a changed loopback port; the source (Doorkeeper 5.6.6, read 2026-10-02) says the port of a loopback IP redirect URI (`127.0.0.1`, not `localhost`) is ignored when matching. Not yet seen live.
 - Login refusal: click "Deny" on iNaturalist's authorize page and see what the redirect carries. The listener ends the login at once on an `error` parameter without a `state` or with the right one (`Denied`); if iNaturalist sends the error with a different state, the login only ends at the timeout.
+- Retry and pacing (implemented, defaults `MaxAttempts = 1`, `MinRequestInterval` 1 s): the limits come from the forum and secondary sources (100 requests per minute, 60 asked for, about 10,000 per day); iNaturalist's "API recommended practices" page answers 403 to our tools, so read it in a browser and compare with `docs/inaturalist-setup.md`. Check live: whether a 429 carries `Retry-After` (the code honors it if present, otherwise backs off from `RetryBaseDelay`; a throttle window of a minute may need a larger `RetryBaseDelay` or `MaxAttempts`), whether writes (create, upload) have a stricter limit than reads, and what the v2 API answers when it is overloaded (5xx on a write is deliberately not retried). Then decide whether `MaxAttempts = 3` should become the default.
 - Stored OAuth token: per the source it never expires and no refresh token is issued (Doorkeeper `access_token_expires_in` nil), so one login is enough. Confirm that a token stays valid across days (`renew` after a day or more).
 
 ### Taxon matching: live verification
@@ -33,10 +34,6 @@ Needs the live API or BatInspector:
 - Check that `Myotis oxygnatus` (BatInspector's spelling; the usual spelling is *oxygnathus*) and the other Latin names BatInspector exports (`BatInfo.cs` species list in the BatInspector repository) resolve; list the ones that do not.
 - BatInspector exports the raw filename abbreviation when it has no species entry (for example `TTEN`, Tadarida teniotis, which is in its regional lists but not its species list): such entries are skipped by design. The fix belongs into BatInspector's export, not here.
 - Check that `species_guess` keeps the original value (`Nyctaloid`) when `taxon_id` is Chiroptera, and how iNaturalist shows it.
-
-### Retry and rate limiting
-
-A transient error (5xx, 429, network) ends the candidate as `Failed` at once; the next run completes it through resume. Open: retry with backoff for transient errors, and rate limiting against iNaturalist's API etiquette (check the documented request limits, and whether `Retry-After` is sent).
 
 ### iNaturalist validation: verify the rules live
 
@@ -165,8 +162,7 @@ Blocked: there is no public API documentation, so the auth and submission model 
 - `net8.0` stays for now (decided 2026-10-02). Revisit only if keeping it becomes a burden.
 - Versioned serialized result schema: only when BatInspector wants to persist results.
 - Decide whether to register the iNaturalist OAuth application as public (no secret) if BatInspector is distributed to others.
-- Re-check iNaturalist API terms and etiquette for automated submission.
-- Decide whether `INaturalistApiException.Message` (response body included, so also `PublishResult.Message` and the Error log line) gets a length cap: a 5xx can answer with a whole HTML page. The full body stays in `ResponseBody` either way.
+- Re-check iNaturalist API terms (not the rate limits, see the live test) for automated submission.
 - Logging: `ActivitySource` and metrics (OpenTelemetry), if a host wants them.
 - Confirm BatInspector's license is compatible with MIT; add NOTICE if a dependency requires it.
 - JSON Schema file for the input format and a contract test, if BatInspector produces the file.

@@ -90,6 +90,8 @@ internal static class TestData
         ClientId = "test-client",
         ClientSecret = "test-secret",
         RedirectUri = redirectUri ?? "http://127.0.0.1:45679/callback",
+        // No pacing, so no test waits; retrying is off by default. The retry tests opt in.
+        MinRequestInterval = TimeSpan.Zero,
     };
 
     public static ObservationCandidate Candidate(string? comment = null, string? spectrogram = null, string? audio = null) => new()

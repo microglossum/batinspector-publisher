@@ -12,7 +12,7 @@ Die Bibliothek schreibt weder auf die Konsole noch in Dateien. Sie loggt über `
 | --- | --- | --- |
 | Debug | Jeder HTTP-Aufruf an iNaturalist: Methode, URL, Status und der Antworttext (auf 2000 Zeichen gekürzt) | `GET .../observations?... -> 200; body: {...}` |
 | Information | Ergebnisse | eine Zeile je Kandidat und Status, eine angelegte oder vervollständigte Beobachtung, eine Anmeldung |
-| Warning | Ein Ausweichverhalten, das die Anwendung kennen sollte | das gespeicherte Token wurde abgelehnt, die Token-Datei ist unlesbar, der Anmelde-Port war belegt |
+| Warning | Ein Ausweichverhalten, das die Anwendung kennen sollte | das gespeicherte Token wurde abgelehnt, die Token-Datei ist unlesbar, der Anmelde-Port war belegt, eine Anfrage wird wiederholt |
 | Error | Nur Unerwartetes: ein Kandidat, der als `Failed` endete, mit seiner Ausnahme | `inaturalist: Pipistrellus pipistrellus @ ... failed: ...` |
 
 Ein übersprungener Eintrag (Duplikat, nicht aufgelöstes Taxon, ungültige Belege) und ein abgebrochener Kandidat sind erwartete Ergebnisse
@@ -25,7 +25,8 @@ und werden als Information mit Status und Grund protokolliert.
 - Auf Debug können URLs und Antworttexte **Beobachtungsdaten** enthalten (Koordinaten, Art, Beschreibungstext). Debug nur zur Fehlersuche
   einschalten, nicht dauerhaft, und solche Logs wie Daten behandeln.
 - Eine Fehlermeldung von iNaturalist wird unverändert durchgereicht (so entschieden): Ihr Antworttext ist Teil der Ausnahmemeldung und damit
-  der `Error`-Zeile und von `PublishResult.Message`.
+  der `Error`-Zeile und von `PublishResult.Message`, auf die ersten 1000 Zeichen gekürzt (`INaturalistApiException.ResponseBody` behält alles).
+- Die Warnung zur Wiederholung (`RequestRetrying`) nennt Vorgang, Grund und Wartezeit, nie die URL (sie kann Koordinaten enthalten) oder den Antworttext.
 
 ## Ereignis-IDs
 
@@ -37,7 +38,7 @@ Jede Meldung hat eine feste Ereignis-ID und einen Namen, damit die Anwendung dan
 | 2000 | `INaturalistAuthenticator` | 2001 `StoredTokenRejected`, 2002 `TokenRefreshFailed`, 2003 `LoggedIn` |
 | 2100 | OAuth-Anmeldung | 2101 `OAuthTokenRequest`, 2102 `OAuthCannotListen`, 2103 `OAuthFallbackPort` |
 | 2200 | `ProtectedFileTokenStore` | 2201 `TokenFileUnreadable` |
-| 3000 | iNaturalist-REST-Aufrufe | 3001 `HttpCall`, 3002 `NoNumericObservationId` |
+| 3000 | iNaturalist-REST-Aufrufe | 3001 `HttpCall`, 3002 `NoNumericObservationId`, 3003 `RequestRetrying` |
 | 4000 | `INaturalistPublisher` | 4001 `ObservationResuming`, 4002 `ObservationCreated` |
 
 ## Einen Logger anschließen

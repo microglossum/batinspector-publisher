@@ -44,6 +44,7 @@ Flow: BatInspector's export file is read into candidates (one reference recordin
 - The input file holds one reference recording per species, night and location, not every detection; the duplicate check relies on that on purpose.
 - The package ships no credentials and reads no config files or environment variables. The host passes the adapter options.
 - Decided against:
+  - retrying a write (create, photo, sound) after a 5xx, a network error or a timeout (2026-10-04: the server may have processed it, so a repeat could create a second observation or upload; only a 429 and a failed connection setup are safe, and everything else ends as `Failed` and resume completes it). Retries are opt-in (`MaxAttempts` defaults to 1), pacing is on;
   - rolling back (deleting) an observation whose evidence could not be attached (2026-10-03: deleting public data automatically is destructive and the failure may be transient; resume completes it on the next run);
   - geoprivacy / sensitive-species handling (2026-10-02: iNaturalist obscures sensitive taxa itself, other platforms may not support it, the package cannot solve it);
   - pattern-matching or translating iNaturalist's error messages (2026-10-04: the texts are undocumented and can change, so such code would break silently; the platform's message is passed through, and clear messages come from the adapter's own validation before anything is written);

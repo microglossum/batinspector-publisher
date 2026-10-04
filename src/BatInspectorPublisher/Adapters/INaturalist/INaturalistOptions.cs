@@ -43,6 +43,33 @@ public sealed class INaturalistOptions
     /// <summary>Radius in km for the "does this observation already exist" check.</summary>
     public double DuplicateCheckRadiusKm { get; init; } = 0.1;
 
+    /// <summary>
+    /// How often a request is tried in total, the first try included. The default is 1: no retry, so a transient failure ends the
+    /// candidate as <c>Failed</c> and the next run completes it. Set 3 (or more) to retry. Only a failure that is safe to repeat is retried:
+    /// every request is retried after a 429 (iNaturalist refused it before processing), a read request (taxon search,
+    /// duplicate check, user profile, token exchange) also after a 500, 502, 503, 504, a network error or a timeout.
+    /// A write request (create, photo, sound) is not repeated after those, because the server may already have
+    /// processed it and a repeat could create a second observation; it ends as <c>Failed</c> and the next run completes it.
+    /// A write is repeated after a failed connection setup, since nothing was sent then.
+    /// </summary>
+    public int MaxAttempts { get; init; } = 1;
+
+    /// <summary>Wait before the second try; each further retry waits twice as long as the one before, up to <see cref="MaxRetryDelay"/>.</summary>
+    public TimeSpan RetryBaseDelay { get; init; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Longest wait before a retry. When iNaturalist sends a <c>Retry-After</c> header, that wait is used instead of the backoff;
+    /// a header asking for more than this is not waited out, the request fails with that answer (see <see cref="INaturalistApiException.RetryAfter"/>).
+    /// </summary>
+    public TimeSpan MaxRetryDelay { get; init; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// Minimum time between the starts of two requests of one <see cref="INaturalistPublisher"/> (or <see cref="INaturalistAuthenticator"/>).
+    /// iNaturalist throttles at 100 requests per minute and asks clients to stay at 60 or fewer; the default of one second keeps a
+    /// batch under that. <see cref="TimeSpan.Zero"/> turns pacing off.
+    /// </summary>
+    public TimeSpan MinRequestInterval { get; init; } = TimeSpan.FromSeconds(1);
+
     /// <summary>iNaturalist API v1 base URL.</summary>
     public string ApiBaseUrlV1 { get; init; } = "https://api.inaturalist.org/v1";
 
@@ -61,6 +88,19 @@ public sealed class INaturalistOptions
     /// the OAuth token as Bearer. Note the host is www.inaturalist.org, not api.
     /// </summary>
     public string ApiTokenExchangeUrl { get; init; } = "https://www.inaturalist.org/users/api_token";
+
+    internal void ValidateForRequests()
+    {
+        if (MaxAttempts < 1)
+        {
+            throw new ArgumentException("INaturalistOptions.MaxAttempts must be at least 1 (1 = no retry).", nameof(MaxAttempts));
+        }
+
+        if (RetryBaseDelay < TimeSpan.Zero || MaxRetryDelay < TimeSpan.Zero || MinRequestInterval < TimeSpan.Zero)
+        {
+            throw new ArgumentException("INaturalistOptions.RetryBaseDelay, MaxRetryDelay and MinRequestInterval must not be negative.");
+        }
+    }
 
     internal void ValidateForOAuth()
     {

@@ -147,7 +147,41 @@ iNaturalist documents no duration or sample-rate limit. For orientation: a mono 
 768 kB per second, so about 26 seconds fill 20 MB. If a file is too large, shorten the recording or lower its sample
 rate and run again; nothing was created for that entry.
 
-Error messages that iNaturalist itself sends back are passed through unchanged in `PublishResult.Message`.
+Error messages that iNaturalist itself sends back are passed through unchanged in `PublishResult.Message`, cut to their first 1000 characters
+(`INaturalistApiException.ResponseBody` keeps the whole body; a server error can answer with a complete HTML page).
+
+## Request rate and retries
+
+iNaturalist throttles the API at 100 requests per minute and asks clients to stay at 60 or fewer; beyond that it answers
+`429 Too Many Requests`. A candidate needs about five requests (taxon search, duplicate check, create, photo, sound), plus a
+token exchange when the stored API token has expired. The package therefore paces its requests and can retry failures.
+
+**Pacing (on by default).** `INaturalistOptions.MinRequestInterval` (default one second) is the minimum time between the starts
+of two requests, so a run stays at about 60 requests per minute and a candidate takes about five seconds. The spacing holds per
+`INaturalistPublisher` (the authenticator keeps its own, it sends rarely): do not run several publishers in parallel against one
+account. `TimeSpan.Zero` turns pacing off. The package does not count requests; iNaturalist's recommended practices also name a
+daily volume, so split a very large file over several days.
+
+**Retries (off by default).** `INaturalistOptions.MaxAttempts` is the number of tries per request, the first one included.
+The default 1 does not retry: a transient failure ends the candidate as `Failed` and the next run completes it (see "Re-running
+after a partial result" in the README). Set 3 to retry. A failure is repeated only when that cannot create anything twice:
+
+| Request | Retried after | Not retried after |
+|---|---|---|
+| Reads: taxon search, duplicate check, user profile, token exchange | 429, 500, 502, 503, 504, a network error, a timeout | any other status (400, 401, 404, 422, ...) |
+| Writes: create the observation, attach the spectrogram, attach the audio | 429 (refused before processing); a connection that could not be set up (no network, DNS, TLS handshake) | 500, 502, 503, 504, a network error after sending, a timeout |
+
+A write that fails that way may already have been processed, and sending it again could create a second observation or a
+second upload. It ends as `Failed` (with `ObservationId` set if the observation exists) and the next run's duplicate check and resume sort it out.
+
+The wait before a retry is `RetryBaseDelay` (default 5 seconds), doubled with every further retry, at most `MaxRetryDelay`
+(default 60 seconds). If iNaturalist sends a `Retry-After` header (its documentation does not promise one), that wait is used instead.
+A header that asks for more than `MaxRetryDelay` is not waited out: the request fails at once and
+`INaturalistApiException.RetryAfter` holds the requested time. After the last attempt the original error is reported unchanged.
+Every retry is logged as a Warning (event 3003, see [logging.md](logging.md)), without the URL, which can contain coordinates.
+
+Not retried: the token request of the browser login (its code works once) and anything that is not one of the requests above.
+Cancelling during a wait ends the candidate as `Cancelled`.
 
 ## Troubleshooting
 
@@ -159,4 +193,6 @@ Error messages that iNaturalist itself sends back are passed through unchanged i
 | `INaturalistLoginException`, `Reason` = `TimedOut`, on login | Nobody completed the browser login within `AuthorizationTimeout`. |
 | `PlatformNotSupportedException` when logging in or saving the token | Not Windows. The check runs before the browser opens. Pass `allowPlaintextOnNonWindows: true` (file mode `0600`, protects against other local users only) or supply your own `INaturalistTokenStore`. |
 | Login asked again although you logged in before | The token file could not be read (corrupt, or encrypted by another Windows user); a warning is logged and the file is replaced by the next login. |
+| `Failed` with `429` or `Retry-After` in `INaturalistApiException` | iNaturalist throttled the run. Raise `MinRequestInterval`, set `MaxAttempts` to 3, see [Request rate and retries](#request-rate-and-retries); run again later, the next run completes what was left. |
+| `Failed` with a 5xx or a network error | Transient on iNaturalist's or your side. Run again: the duplicate check and resume complete it. |
 | 401/403 during the JWT exchange | See [Why there is an extra JWT exchange](#why-there-is-an-extra-jwt-exchange); check the application registration at <https://www.inaturalist.org/oauth/applications>. |

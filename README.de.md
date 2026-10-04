@@ -150,6 +150,8 @@ und `InterruptedStep` nennt den Schritt, an dem es stoppte. Kam der Abbruch, wä
 **Erneuter Lauf nach einem Teilergebnis:** Die Duplikatprüfung überspringt normalerweise eine vorhandene Beobachtung (`SkippedDuplicate`). Ist die vorhandene Beobachtung eine, die dieses Paket für denselben Eintrag angelegt hat
 (identische Beschreibung) und fehlt ihr noch das Spektrogramm oder die Audioaufnahme, hängt der Lauf die fehlenden Belege an und meldet `Resumed`. Jede andere Beobachtung des Nutzers bleibt unberührt. Es wird nie etwas gelöscht.
 
+**Rate und Wiederholungen:** Anfragen werden im Abstand von einer Sekunde gesendet, damit ein Lauf unter dem Limit von iNaturalist (60 Anfragen pro Minute) bleibt (`INaturalistOptions.MinRequestInterval`). Fehlgeschlagene Anfragen werden standardmäßig nicht wiederholt: Ein vorübergehender Fehler beendet den Kandidaten als `Failed`, ein erneuter Lauf vervollständigt ihn. Mit `INaturalistOptions.MaxAttempts = 3` wird wiederholt, und zwar nur, was nichts doppelt anlegen kann. Einzelheiten: [docs/inaturalist-setup.de.md](docs/inaturalist-setup.de.md#anfragerate-und-wiederholungen).
+
 ## Logging
 
 Die Bibliothek loggt über `Microsoft.Extensions.Logging.Abstractions`; jede Klasse, die loggt, nimmt einen optionalen `ILogger`, ohne ihn wird nichts geschrieben.

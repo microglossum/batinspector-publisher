@@ -149,6 +149,8 @@ and `InterruptedStep` names the stage that stopped. If the stop came while the o
 **Re-running after a partial result:** the duplicate check normally skips an observation that already exists (`SkippedDuplicate`). If the existing observation is one this package created for the same entry
 (identical description) and it still lacks the spectrogram or the audio, the run attaches the missing evidence instead and reports `Resumed`. Any other observation of yours is left untouched. Nothing is ever deleted.
 
+**Rate and retries:** requests are spaced one second apart so a run stays under iNaturalist's limit of 60 requests per minute (`INaturalistOptions.MinRequestInterval`). Failed requests are not retried by default: a transient error ends the candidate as `Failed` and a re-run completes it. `INaturalistOptions.MaxAttempts = 3` turns on retries, which only ever repeat what cannot create anything twice. Details: [docs/inaturalist-setup.md](docs/inaturalist-setup.md#request-rate-and-retries).
+
 ## Logging
 
 The library logs through `Microsoft.Extensions.Logging.Abstractions`; every class that logs takes an optional `ILogger`, and nothing is written without one.

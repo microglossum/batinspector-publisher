@@ -55,12 +55,13 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         HttpClient httpClient,
         Func<CancellationToken, Task<string>> getAccessToken,
         ILogger? logger = null,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        Func<TimeSpan, CancellationToken, Task>? delay = null)
     {
         _options = options;
         _time = time ?? TimeProvider.System;
         _logger = logger ?? NullLogger.Instance;
-        _api = new INaturalistApiClient(options, httpClient, _logger);
+        _api = new INaturalistApiClient(options, httpClient, _logger, _time, delay);
         _getAccessToken = getAccessToken;
     }
 
