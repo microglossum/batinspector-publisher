@@ -79,7 +79,7 @@ await auth.LoginAsync(); // z. B. über einen Button "Mit iNaturalist verbinden"
 
 Standardmäßig öffnet sich der Systembrowser. Um die URL in der eigenen Oberfläche anzuzeigen, einen
 `AuthorizationPrompt` übergeben. Die Anmeldung endet, wenn iNaturalist auf die Redirect URI weiterleitet;
-ein temporärer lokaler Listener fängt diese eine Anfrage ab. `AuthorizationTimeout` (Standard 5 Minuten) begrenzt die Wartezeit.
+ein temporärer lokaler Listener fängt diese Anfrage ab, andere Anfragen an ihn werden ignoriert. `AuthorizationTimeout` (Standard 5 Minuten) begrenzt die Wartezeit.
 
 `EnsureAuthenticatedAsync` (vom Publisher aufgerufen) liefert das gespeicherte API-Token und erneuert es still, wenn es abgelaufen ist:
 OAuth-Tokens von iNaturalist laufen nie ab, die Browser-Anmeldung ist also **einmal** nötig (bis die Person den Zugriff widerruft). Nur wenn iNaturalist das gespeicherte Token ablehnt, folgt eine neue Anmeldung. Ein Netzwerkfehler startet nie eine Anmeldung.
@@ -92,10 +92,29 @@ vergebene freie Ports (als Warnung protokolliert) und sendet die passende Redire
 einer Loopback-URI (`127.0.0.1`) ignoriert iNaturalist den Port beim Abgleich, die eine registrierte URI
 genügt also. Zeigt der Browser trotzdem den Redirect-URI-Fehler von iNaturalist, den Port freigeben oder einen
 anderen Port wählen, `INaturalistOptions.RedirectUri` setzen und dieselbe URI bei iNaturalist registrieren.
-Lässt sich gar kein Port öffnen, schlägt die Anmeldung mit einer `InvalidOperationException` fehl.
+Lässt sich gar kein Port öffnen, schlägt die Anmeldung mit einer `INaturalistLoginException` fehl (`Reason` ist `ListenerUnavailable`).
+
+Solange die Anmeldung wartet, ignoriert der Listener jede Anfrage, die nicht zu dieser Anmeldung gehört
+(Portscan, Vorabruf des Browsers, ein anderes lokales Programm), und beantwortet sie mit 404; nur die
+Umleitung mit dem `state` dieser Anmeldung beendet das Warten.
 
 Der Host muss an beiden Stellen `127.0.0.1` sein: `HttpListener` vergleicht den `Host`-Header wörtlich, ein
 Listener auf `127.0.0.1` antwortet bei `localhost` mit 404.
+
+### Wo die Loopback-Anmeldung nicht funktioniert
+
+Die Anmeldung braucht auf **demselben Rechner** zweierlei: Die Anwendung kann einen lokalen Port öffnen, und
+der Browser, der die Anmeldung abschließt, erreicht ihn. In diesen Umgebungen scheitert eines von beiden
+(bisher nicht getestet; die Ursache ergibt sich aus der Funktionsweise der Anmeldung):
+
+| Umgebung | Was passiert | Was tun |
+|---|---|---|
+| Browser auf einem anderen Rechner als die Anwendung (Remotedesktop, VDI, SSH-Sitzung) | iNaturalist leitet den Browser auf `127.0.0.1` *seines* Rechners um, dort lauscht nichts. Die Anmeldung endet mit `TimedOut`. | Den Port zum Rechner des Browsers weiterleiten (bei SSH: `ssh -L 45679:127.0.0.1:45679 <Host>`) und dafür sorgen, dass der feste Port frei ist, denn ein Ersatzport lässt sich nicht vorab weiterleiten. Oder auf dem Rechner mit dem Browser anmelden. |
+| Abgesicherter Rechner (Firewall oder Sicherheitssoftware blockiert lokale Listener) | Kein Port lässt sich öffnen: `ListenerUnavailable`. Oder der Browser erreicht ihn nicht: `TimedOut`. | Der Anwendung das Lauschen auf der Loopback-Adresse erlauben. Geht das nicht, ist die Loopback-Anmeldung dort nicht nutzbar. |
+| Mehrere Benutzer auf einem Rechner (Terminalserver) | Der feste Port ist von der Anmeldung einer anderen Sitzung belegt; die Ersatzports springen ein. | Nichts, außer bei `ListenerUnavailable`: dann erneut versuchen, wenn die andere Anmeldung beendet ist. |
+| Abgeschottete oder paketierte Anwendungen mit Loopback-Isolierung (zum Beispiel MSIX) | Die Anwendung erreicht ihren eigenen Loopback-Listener vom Browser aus eventuell nicht. | Nicht unterstützt: die Anmeldung braucht einen Loopback-Listener. |
+
+Eine fehlgeschlagene Anmeldung speichert nichts. Abbrechen und neu versuchen; die Anfragen anderer Programme beenden das Warten nicht.
 
 ### Warum es einen zusätzlichen JWT-Austausch gibt
 
@@ -134,9 +153,9 @@ Fehlermeldungen, die iNaturalist selbst zurückschickt, werden unverändert in `
 | Symptom | Ursache / Lösung |
 |---|---|
 | `ArgumentException` zu `ClientId` | `INaturalistOptions.ClientId` ist leer. |
-| `InvalidOperationException` "cannot listen on port" bei der Anmeldung | Port belegt und kein Ersatzport ließ sich öffnen, siehe [Port 45679](#port-45679). |
+| `INaturalistLoginException`, `Reason` = `ListenerUnavailable`, bei der Anmeldung | Port belegt und kein Ersatzport ließ sich öffnen, siehe [Port 45679](#port-45679). |
 | iNaturalist-Fehlerseite nach "Authorize" | Die registrierte Redirect URI weicht von `INaturalistOptions.RedirectUri` ab. |
-| `TimeoutException` bei der Anmeldung | Niemand hat die Browser-Anmeldung innerhalb von `AuthorizationTimeout` abgeschlossen. |
+| `INaturalistLoginException`, `Reason` = `TimedOut`, bei der Anmeldung | Niemand hat die Browser-Anmeldung innerhalb von `AuthorizationTimeout` abgeschlossen. |
 | `PlatformNotSupportedException` bei der Anmeldung oder beim Speichern des Tokens | Nicht Windows. Die Prüfung läuft, bevor sich der Browser öffnet. `allowPlaintextOnNonWindows: true` übergeben (Dateimodus `0600`, schützt nur vor anderen lokalen Benutzern) oder einen eigenen `INaturalistTokenStore` bereitstellen. |
 | Anmeldung wird erneut verlangt, obwohl man sich schon angemeldet hatte | Die Token-Datei war nicht lesbar (beschädigt oder von einem anderen Windows-Benutzer verschlüsselt); eine Warnung wird protokolliert, die nächste Anmeldung ersetzt die Datei. |
 | 401/403 beim JWT-Austausch | Siehe [Warum es einen zusätzlichen JWT-Austausch gibt](#warum-es-einen-zusätzlichen-jwt-austausch-gibt); Registrierung der Anwendung unter <https://www.inaturalist.org/oauth/applications> prüfen. |

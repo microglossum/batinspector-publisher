@@ -95,6 +95,39 @@ public class OAuthFlowTests
     }
 
     [Fact]
+    public async Task Authorize_DenialWithoutState_StillEndsTheLogin()
+    {
+        var flow = new OAuthFlow(TestData.Options(NewRedirectUri()), new HttpClient(new StubHttpHandler()), Browser(_ => "error=access_denied"));
+
+        var ex = await Assert.ThrowsAsync<INaturalistLoginException>(() => flow.AuthorizeAsync(CancellationToken.None));
+
+        Assert.Equal(INaturalistLoginFailure.Denied, ex.Reason);
+    }
+
+    [Fact]
+    public async Task Authorize_DenialWithForeignState_IsIgnored()
+    {
+        var options = new INaturalistOptions { ClientId = "c", RedirectUri = NewRedirectUri(), AuthorizationTimeout = TimeSpan.FromMilliseconds(500) };
+        var flow = new OAuthFlow(options, new HttpClient(new StubHttpHandler()), Browser(_ => "error=access_denied&state=forged"));
+
+        var ex = await Assert.ThrowsAsync<INaturalistLoginException>(() => flow.AuthorizeAsync(CancellationToken.None));
+
+        Assert.Equal(INaturalistLoginFailure.TimedOut, ex.Reason);
+    }
+
+    [Fact]
+    public async Task Authorize_NoPortCanBeOpened_ThrowsListenerUnavailable()
+    {
+        // An address that does not belong to this machine cannot be bound on any attempt, fallback ports included.
+        var options = new INaturalistOptions { ClientId = "c", RedirectUri = "http://203.0.113.1:45679/callback" };
+        var flow = new OAuthFlow(options, new HttpClient(new StubHttpHandler()), (_, _) => Task.CompletedTask);
+
+        var ex = await Assert.ThrowsAsync<INaturalistLoginException>(() => flow.AuthorizeAsync(CancellationToken.None));
+
+        Assert.Equal(INaturalistLoginFailure.ListenerUnavailable, ex.Reason);
+    }
+
+    [Fact]
     public async Task Authorize_PublicClient_OmitsClientSecret()
     {
         var redirect = NewRedirectUri();
@@ -108,12 +141,46 @@ public class OAuthFlowTests
     }
 
     [Fact]
-    public async Task Authorize_WrongState_Throws()
+    public async Task Authorize_WrongStateOnly_IsIgnoredUntilTimeout()
     {
-        var flow = new OAuthFlow(TestData.Options(NewRedirectUri()), new HttpClient(new StubHttpHandler()),
-            Browser(_ => "code=the-code&state=forged"));
+        var options = new INaturalistOptions { ClientId = "c", RedirectUri = NewRedirectUri(), AuthorizationTimeout = TimeSpan.FromMilliseconds(500) };
+        var flow = new OAuthFlow(options, new HttpClient(new StubHttpHandler()), Browser(_ => "code=the-code&state=forged"));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => flow.AuthorizeAsync(CancellationToken.None));
+        var ex = await Assert.ThrowsAsync<INaturalistLoginException>(() => flow.AuthorizeAsync(CancellationToken.None));
+
+        Assert.Equal(INaturalistLoginFailure.TimedOut, ex.Reason);
+    }
+
+    [Fact]
+    public async Task Authorize_StrayRequestsBeforeTheRealRedirect_DoNotEndTheLogin()
+    {
+        var redirect = NewRedirectUri();
+        var http = new StubHttpHandler().On("POST /oauth/token", HttpStatusCode.OK, TokenJson);
+        var strayStatuses = new List<HttpStatusCode>();
+        var flow = new OAuthFlow(TestData.Options(redirect), new HttpClient(http), (url, ct) =>
+        {
+            var state = HttpUtility.ParseQueryString(url.Query)["state"];
+            var root = new Uri(redirect).GetLeftPart(UriPartial.Authority);
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(50, CancellationToken.None);
+                using var client = new HttpClient();
+                foreach (var stray in new[] { "/", "/favicon.ico", "/callback?code=x&state=forged", "/callback?state=" + state })
+                {
+                    strayStatuses.Add((await client.GetAsync(root + stray, CancellationToken.None)).StatusCode);
+                }
+
+                await client.GetAsync($"{root}/callback?code=the-code&state={state}", CancellationToken.None);
+            }, CancellationToken.None);
+            return Task.CompletedTask;
+        });
+
+        var token = await flow.AuthorizeAsync(CancellationToken.None);
+
+        Assert.Equal("oauth-access", token.AccessToken);
+        Assert.All(strayStatuses, status => Assert.Equal(HttpStatusCode.NotFound, status));
+        Assert.Equal(4, strayStatuses.Count);
+        Assert.Equal("the-code", HttpUtility.ParseQueryString(http.Requests.Single().Body)["code"]);
     }
 
     [Fact]
@@ -122,8 +189,9 @@ public class OAuthFlowTests
         var flow = new OAuthFlow(TestData.Options(NewRedirectUri()), new HttpClient(new StubHttpHandler()),
             Browser(q => $"error=access_denied&state={q["state"]}"));
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => flow.AuthorizeAsync(CancellationToken.None));
+        var ex = await Assert.ThrowsAsync<INaturalistLoginException>(() => flow.AuthorizeAsync(CancellationToken.None));
 
+        Assert.Equal(INaturalistLoginFailure.Denied, ex.Reason);
         Assert.Contains("access_denied", ex.Message);
     }
 
@@ -133,7 +201,9 @@ public class OAuthFlowTests
         var options = new INaturalistOptions { ClientId = "c", RedirectUri = NewRedirectUri(), AuthorizationTimeout = TimeSpan.FromMilliseconds(200) };
         var flow = new OAuthFlow(options, new HttpClient(new StubHttpHandler()), (_, _) => Task.CompletedTask);
 
-        await Assert.ThrowsAsync<TimeoutException>(() => flow.AuthorizeAsync(CancellationToken.None));
+        var ex = await Assert.ThrowsAsync<INaturalistLoginException>(() => flow.AuthorizeAsync(CancellationToken.None));
+
+        Assert.Equal(INaturalistLoginFailure.TimedOut, ex.Reason);
     }
 
     [Fact]

@@ -43,6 +43,10 @@ internal sealed partial class OAuthFlow
         Message = "Port {Preferred} is in use; the login listens on port {Port} instead. iNaturalist must accept that port for the registered redirect URI.")]
     private static partial void LogFallbackPort(ILogger logger, int preferred, int port);
 
+    [LoggerMessage(EventId = 2104, EventName = "OAuthIgnoredRequest", Level = LogLevel.Debug,
+        Message = "Ignored a request to {Path} on the login listener: it carries no code and state of this login")]
+    private static partial void LogIgnoredRequest(ILogger logger, string path);
+
     public OAuthFlow(INaturalistOptions options, HttpClient http, AuthorizationPrompt? prompt = null, ILogger? logger = null)
     {
         _options = options;
@@ -78,7 +82,8 @@ internal sealed partial class OAuthFlow
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            throw new TimeoutException($"No iNaturalist login was completed within {_options.AuthorizationTimeout}.");
+            throw new INaturalistLoginException(INaturalistLoginFailure.TimedOut,
+                $"No iNaturalist login was completed within {_options.AuthorizationTimeout}.");
         }
         finally
         {
@@ -127,40 +132,54 @@ internal sealed partial class OAuthFlow
             : throw new InvalidOperationException("The OAuth token endpoint returned no access_token.");
     }
 
-    /// <summary>Blocks until the redirect with the authorization code arrives, then shows a short confirmation page.</summary>
-    private static async Task<string> WaitForAuthorizationCodeAsync(HttpListener listener, string expectedState, CancellationToken ct)
+    /// <summary>
+    /// Blocks until the redirect that belongs to this login arrives, then shows a short confirmation page.
+    /// Any other request (port scan, browser prefetch, another local program) gets a 404 and is ignored;
+    /// only a request carrying this login's <c>state</c> ends the wait. An <c>error</c> without a state is
+    /// accepted as well, so a refusal that omits the state still ends the login at once.
+    /// </summary>
+    private async Task<string> WaitForAuthorizationCodeAsync(HttpListener listener, string expectedState, CancellationToken ct)
     {
         using var registration = ct.Register(listener.Stop);
-        HttpListenerContext context;
-        try
+        while (true)
         {
-            context = await listener.GetContextAsync();
+            HttpListenerContext context;
+            try
+            {
+                context = await listener.GetContextAsync();
+            }
+            catch (Exception) when (ct.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(ct);
+            }
+
+            var query = context.Request.QueryString;
+            var error = query["error"];
+            var code = query["code"];
+            var state = query["state"];
+            var denied = !string.IsNullOrEmpty(error) && (string.IsNullOrEmpty(state) || state == expectedState);
+            var granted = !denied && !string.IsNullOrEmpty(code) && state == expectedState;
+            if (!denied && !granted)
+            {
+                LogIgnoredRequest(_logger, context.Request.Url?.AbsolutePath ?? "?");
+                context.Response.StatusCode = (int)HttpStatusCode.NotFound;
+                context.Response.Close();
+                continue;
+            }
+
+            var html = granted
+                ? "<html><body><h1>Erfolgreich angemeldet / Signed in</h1><p>Du kannst dieses Fenster schließen. / You can close this window.</p></body></html>"
+                : $"<html><body><h1>Anmeldung fehlgeschlagen / Login failed</h1><p>{WebUtility.HtmlEncode(error)}</p></body></html>";
+            var buffer = Encoding.UTF8.GetBytes(html);
+            context.Response.ContentType = "text/html; charset=utf-8";
+            context.Response.ContentLength64 = buffer.Length;
+            await context.Response.OutputStream.WriteAsync(buffer, ct);
+            context.Response.Close();
+
+            return granted
+                ? code!
+                : throw new INaturalistLoginException(INaturalistLoginFailure.Denied, $"Authorization was denied or failed: {error}");
         }
-        catch (Exception) when (ct.IsCancellationRequested)
-        {
-            throw new OperationCanceledException(ct);
-        }
-
-        var query = context.Request.QueryString;
-        var error = query["error"];
-        var code = query["code"];
-        var valid = string.IsNullOrEmpty(error) && !string.IsNullOrEmpty(code) && query["state"] == expectedState;
-
-        var html = valid
-            ? "<html><body><h1>Erfolgreich angemeldet / Signed in</h1><p>Du kannst dieses Fenster schließen. / You can close this window.</p></body></html>"
-            : $"<html><body><h1>Anmeldung fehlgeschlagen / Login failed</h1><p>{WebUtility.HtmlEncode(error ?? "invalid response")}</p></body></html>";
-        var buffer = Encoding.UTF8.GetBytes(html);
-        context.Response.ContentType = "text/html; charset=utf-8";
-        context.Response.ContentLength64 = buffer.Length;
-        await context.Response.OutputStream.WriteAsync(buffer, ct);
-        context.Response.Close();
-
-        if (!string.IsNullOrEmpty(error))
-        {
-            throw new InvalidOperationException($"Authorization was denied or failed: {error}");
-        }
-
-        return valid ? code! : throw new InvalidOperationException("Invalid authorization response (missing code or wrong state parameter).");
     }
 
     private static Task OpenSystemBrowserAsync(Uri url, CancellationToken ct)
@@ -217,7 +236,7 @@ internal sealed partial class OAuthFlow
             return listener;
         }
 
-        throw new InvalidOperationException(
+        throw new INaturalistLoginException(INaturalistLoginFailure.ListenerUnavailable,
             $"The OAuth login cannot listen on port {preferred.Port} or on {MaxFallbackPorts} alternative loopback ports.", lastError);
     }
 

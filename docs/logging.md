@@ -35,7 +35,7 @@ Every message has a fixed event ID and name, so a host can filter or alert on th
 | --- | --- | --- |
 | 1000 | `ExportOrchestrator` | 1001 `CandidateProcessed`, 1002 `CandidateFailed` |
 | 2000 | `INaturalistAuthenticator` | 2001 `StoredTokenRejected`, 2002 `TokenRefreshFailed`, 2003 `LoggedIn` |
-| 2100 | OAuth login | 2101 `OAuthTokenRequest`, 2102 `OAuthCannotListen`, 2103 `OAuthFallbackPort` |
+| 2100 | OAuth login | 2101 `OAuthTokenRequest`, 2102 `OAuthCannotListen`, 2103 `OAuthFallbackPort`, 2104 `OAuthIgnoredRequest` |
 | 2200 | `ProtectedFileTokenStore` | 2201 `TokenFileUnreadable` |
 | 3000 | iNaturalist REST calls | 3001 `HttpCall`, 3002 `NoNumericObservationId` |
 | 4000 | `INaturalistPublisher` | 4001 `ObservationResuming`, 4002 `ObservationCreated` |

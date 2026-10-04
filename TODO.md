@@ -20,6 +20,9 @@ Checklist for the live test (things stubs cannot prove):
   Also check that an observation with a not yet processed upload already lists its photo or sound.
 - Dry run: run it against an entry that is already published and against a half-created one, and check that it says `SkippedDuplicate` and `WouldResume` and that a commit run then agrees.
 - The duplicate check sends `mine_only=true` to v1 `/observations`. Confirm the parameter exists and really restricts to the user's own observations; if it is ignored, the check matches other users' observations and reports false duplicates. Compare the result with and without it (and with `user_id` / `user_login` as the alternative).
+- Login port fallback: occupy port 45679 and run the SmokeTest `login`. The login then listens on an OS-assigned port and iNaturalist must accept that redirect URI. The owner confirmed iNaturalist accepts a changed loopback port; the source (Doorkeeper 5.6.6, read 2026-10-02) says the port of a loopback IP redirect URI (`127.0.0.1`, not `localhost`) is ignored when matching. Not yet seen live.
+- Login refusal: click "Deny" on iNaturalist's authorize page and see what the redirect carries. The listener ends the login at once on an `error` parameter without a `state` or with the right one (`Denied`); if iNaturalist sends the error with a different state, the login only ends at the timeout.
+- Stored OAuth token: per the source it never expires and no refresh token is issued (Doorkeeper `access_token_expires_in` nil), so one login is enough. Confirm that a token stays valid across days (`renew` after a day or more).
 
 ### Taxon matching: live verification
 
@@ -66,24 +69,6 @@ Two levels: **error** (the entry is rejected) and **warning** (reported in `Inpu
 Platform limits belong in the adapter's own validation (`INaturalistValidator`), not in `Core`.
 
 - The signature checks are not a full format validation (a file can start like a PNG and still be something else); decide whether that is enough.
-
-### OAuth login robustness (loopback listener)
-
-The login needs a local HTTP listener on `127.0.0.1` (RFC 8252 loopback redirect), which can fail where the host cannot open a port: port already in use,
-two sessions on one machine (terminal server), locked-down machines, a browser on another machine than the app (remote/VDI/SSH), sandboxed or packaged apps with loopback isolation.
-Facts found in iNaturalist's open source (Doorkeeper 5.6.6 on `main`, checked 2026-10-02; **not yet verified live**):
-
-- OAuth access tokens never expire and no refresh tokens are issued, so the login is needed once.
-- For loopback IP redirect URIs (`127.0.0.1`, `::1`, not `localhost`) the **port is ignored** when matching, and the registered redirect URI field accepts several URIs (one per line).
-  So an OS-assigned port should work with the one registered URI. Other apps use custom schemes (`myapp://callback`), so those are accepted too.
-
-To do:
-
-- Live check of the port fallback (fixed port first, then up to three OS-assigned ports): occupy port 45679 and run the SmokeTest login. The owner confirmed iNaturalist accepts a changed loopback port.
-- A host-pluggable receiver for the authorization response, next to `AuthorizationPrompt`: a manual "paste the redirected URL" fallback for blocked or remote environments, and a custom-scheme receiver for packaged desktop apps.
-- Distinct, actionable error types: port in use, timeout, denied by user, token rejected.
-- `OAuthFlow.WaitForAuthorizationCodeAsync` accepts only the first request on the listener. Any stray request (port scan, browser prefetch, another local program) ends the login with an error. Keep listening until a request carries a valid `state` or the timeout hits.
-- Document the environments where the loopback login does not work and what to do.
 
 ### Documentation: input file and per-platform mapping
 
