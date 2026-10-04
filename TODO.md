@@ -74,9 +74,6 @@ Platform limits belong in the adapter's own validation (`INaturalistValidator`),
 
 - Rejected entries have no `ObservationCandidate`, so they are not part of `PublishResult`s; the host has to show `InputDocument.Rejected` itself. Decide whether a combined report is worth it.
 - `Candidates` can be shorter than `DocumentFiles` and a candidate does not know its position in the file. If a host needs to map results back to entries, add the entry index to `ObservationCandidate`.
-- Validate before anything is published. `EvidenceLoader` checks each file right before its candidate is published, so a missing file on entry 40 is found after 39 observations are public (a dry run finds it, but needs a login and the network). Add an offline pass over all candidates first (existence, size, signature from the header only, no full read; platform limits through a new generic `IObservationPublisher` method that `INaturalistValidator` implements on file sizes), as a separate `ExportOrchestrator` call so the host can stop. The read-once check at publish time stays authoritative.
-- `EntryValidator.ValidateValues` only runs for entries read from a file. A host that builds `ObservationCandidate` objects itself skips it; the orchestrator could run it for every candidate.
-- More warnings for `InputDocument.Warnings` (they belong into `EntryValidator`): implausible temperature or humidity (omit the value from the description); a daytime timestamp for a bat; duplicate entries (same species, time and place; the remote duplicate check can lag); a name that is neither a binomial nor a genus.
 - The signature checks are not a full format validation (a file can start like a PNG and still be something else); decide whether that is enough.
 
 ### OAuth login robustness (loopback listener)

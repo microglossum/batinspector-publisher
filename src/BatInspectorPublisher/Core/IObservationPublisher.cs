@@ -33,6 +33,10 @@ public sealed record PublishOptions
     /// <summary>
     /// When false (the default) nothing is written to the platform: the publisher only reports what
     /// it would do. Publishing is irreversible and public, so it must be requested explicitly.
+    /// <para>
+    /// A dry run is optional. <c>InputDocument.Rejected</c> and <c>InputDocument.Warnings</c> do not depend on it and are never
+    /// reported by a run, so a host that skips the dry run should show them to the user before it commits.
+    /// </para>
     /// </summary>
     public bool Commit { get; init; }
 }

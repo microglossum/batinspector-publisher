@@ -54,6 +54,70 @@ internal static class EntryValidator
     }
 
     /// <summary>
+    /// Air temperatures (°C) a recorder can plausibly measure. Sensors report error codes such as -127 or 85 that fall
+    /// outside this range.
+    /// </summary>
+    private const double MinTemperature = -40, MaxTemperature = 60;
+
+    /// <summary>First and last local hour (inclusive) at which a recording counts as made in daylight.</summary>
+    private const int FirstDaylightHour = 9, LastDaylightHour = 15;
+
+    /// <summary>
+    /// Returns the temperature, or null with a warning when it is implausible. Measurements only enrich the description,
+    /// so a doubtful one is left out and reported instead of rejecting the whole entry.
+    /// </summary>
+    public static double? PlausibleTemperature(double? value, List<ValidationIssue> warnings)
+    {
+        if (value is { } v && v is < MinTemperature or > MaxTemperature)
+        {
+            warnings.Add(new(nameof(ObservationCandidate.TemperatureCelsius),
+                $"{v.ToString(CultureInfo.InvariantCulture)} °C is outside {MinTemperature} to {MaxTemperature} °C; the value is left out."));
+            return null;
+        }
+
+        return value;
+    }
+
+    /// <summary>Returns the relative humidity, or null with a warning when it is not a percentage (0 to 100).</summary>
+    public static double? PlausibleHumidity(double? value, List<ValidationIssue> warnings)
+    {
+        if (value is { } v && v is < 0 or > 100)
+        {
+            warnings.Add(new(nameof(ObservationCandidate.HumidityPercent),
+                $"{v.ToString(CultureInfo.InvariantCulture)} % is outside 0 to 100 %; the value is left out."));
+            return null;
+        }
+
+        return value;
+    }
+
+    /// <summary>
+    /// Doubtful but publishable: a recording time in daylight (bats fly at night, so the device clock or the zone may be
+    /// wrong) and a name that is neither a binomial nor a single genus word (it will not resolve to a taxon).
+    /// </summary>
+    public static List<ValidationIssue> ValidatePlausibility(string? scientificName, DateTimeOffset? observedAt)
+    {
+        var warnings = new List<ValidationIssue>();
+        if (observedAt is { Hour: >= FirstDaylightHour and <= LastDaylightHour } local)
+        {
+            warnings.Add(new(nameof(ObservationCandidate.ObservedAt),
+                $"{local:HH:mm} local time is in daylight; bats fly at night. Check the device clock and the time zone."));
+        }
+
+        if (scientificName is not null)
+        {
+            var words = scientificName.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+            if (words > 2)
+            {
+                warnings.Add(new(nameof(ObservationCandidate.ScientificName),
+                    $"'{scientificName}' is neither a genus nor a binomial species name; it will not resolve to a taxon."));
+            }
+        }
+
+        return warnings;
+    }
+
+    /// <summary>
     /// Judges the content of an evidence file that was read. Returns null when it is fine, otherwise what is wrong
     /// ("empty", "not a PNG image") so that the caller can say "The spectrogram file is {problem}: {path}".
     /// A check of the first bytes, not a format validation: a file can start like a PNG and still be something else.

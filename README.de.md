@@ -54,6 +54,16 @@ foreach (var r in ergebnisse)
     Console.WriteLine($"{r.Candidate.ScientificName}: {r.Status} {r.Url}");
 ```
 
+## Vor dem Veröffentlichen
+
+Veröffentlichen ist öffentlich und nicht umkehrbar. Deshalb ist ein Lauf ein Probelauf, solange nicht `Commit = true` übergeben wird. Wenn möglich, zuerst einen Probelauf machen: Er ordnet jede Art einem Taxon zu, liest und prüft die Belegdateien, wendet die Regeln von iNaturalist an und meldet `WouldCreate` oder den Grund, warum ein Eintrag übersprungen würde. Er braucht die Anmeldung und das Netz, schreibt aber nichts. Duplikate zeigt er noch nicht an: Eine Beobachtung, die ein echter Lauf als `SkippedDuplicate` überspringt, wird im Probelauf trotzdem als `WouldCreate` gemeldet.
+
+Bietet die Anwendung keinen Probelauf an, hängen die wichtigsten Prüfungen nicht davon ab:
+
+* `InputDocument.Rejected` und `InputDocument.Warnings` liegen vor, sobald die Datei gelesen ist. Der Veröffentlichungslauf meldet sie nie: **beides dem Nutzer anzeigen und bestätigen lassen, bevor mit `Commit = true` veröffentlicht wird**. Eine Warnung hält einen Eintrag nicht vom Veröffentlichen ab.
+* Die Regeln von iNaturalist und die Prüfung der Belege laufen vor jeder Veröffentlichung, ob Probelauf oder nicht; ein Eintrag, der sie verletzt, wird mit dem Grund in `PublishResult.Message` übersprungen.
+* In kleinen Stapeln veröffentlichen statt die ganze Datei auf einmal. Der erste Stapel dient dann als Vorschau, und die Duplikatprüfung macht eine Wiederholung sicher.
+
 ## Zugangsdaten
 
 Das Paket enthält **keine** OAuth-Client-ID und kein Secret. Die Anwendung einmal registrieren
@@ -97,6 +107,7 @@ Konfigurationsdateien und keine Umgebungsvariablen.
 * Das JSON muss nicht aus einer Datei kommen: `InputSchemaReader.Parse(string json)` und `InputSchemaReader.Read(Stream)` funktionieren wie `ReadFile`. Die Belegpfade darin müssen weiterhin auf Dateien auf dem Datenträger zeigen.
 * Die Prüfung erfolgt pro Eintrag. Eine Datei, die kein wohlgeformtes JSON ist, deren `SchemaVersion` fehlt oder nicht unterstützt wird oder die kein `DocumentFiles`-Array hat, wird als Ganzes abgelehnt (`InputSchemaException`). Ein fehlerhafter Eintrag fehlt in `InputDocument.Candidates` und steht mit allen Problemen in `InputDocument.Rejected`; die gültigen Einträge werden trotzdem zurückgegeben und können veröffentlicht werden. Abgelehnte Einträge werden nie veröffentlicht. `Rejected` sollte dem Nutzer angezeigt werden: Der Veröffentlichungslauf meldet sie nicht. Nach dem Korrigieren der Datei kann der Lauf wiederholt werden: Bereits veröffentlichte Einträge werden als Duplikate übersprungen.
 * Fehler pro Eintrag: Belegpfade müssen absolut sein (Windows- oder Unix-Schreibweise) und auf `.png` / `.wav` enden; `Latitude` und `Longitude` beide `0` (fehlende GPS-Position) wird abgelehnt; ein `Date` in der Zukunft (verglichen mit der aktuellen deutschen Zeit) wird abgelehnt.
+* Warnungen pro Eintrag (`InputDocument.Warnings`): Der Eintrag wird akzeptiert und veröffentlicht, aber etwas ist zweifelhaft; auch diese sollten angezeigt werden. Eine `Temperature` außerhalb von -40 bis 60 °C oder eine `Humidity` außerhalb von 0 bis 100 % wird nicht in die Beobachtung übernommen (Sensor-Fehlercodes wie -127 oder 85 landen hier); ein `Date` zwischen 09:00 und 15:59 Ortszeit (Fledermäuse fliegen nachts: Geräteuhr und `TimeZone` prüfen); ein `SpeciesLatin` aus drei oder mehr Wörtern (es wird keinem Taxon zugeordnet); ein Eintrag mit derselben Art, Zeit und Position wie ein früherer.
 * Die Datei soll eine **Referenzaufnahme** pro Art, Nacht und Standort enthalten, nicht jede Detektion: Es geht darum, eine Art an einem Ort zu einer Zeit nachzuweisen, und dafür reicht meist eine gute Aufnahme. Die Duplikatprüfung bei iNaturalist (gleiches Taxon, gleicher Kalendertag, standardmäßig im Umkreis von 100 m) überspringt einen zweiten Eintrag für dieselbe Kombination.
 * `SchemaVersion` ist Pflicht. Neuere Versionen als die der Bibliothek werden abgelehnt.
 * Pflicht: `Date`, `Latitude`, `Longitude`, `SpeciesLatin`, `PathToPng`, `PathToWav`.

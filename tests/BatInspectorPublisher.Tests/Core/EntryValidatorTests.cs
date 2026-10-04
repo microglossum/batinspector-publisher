@@ -1,3 +1,4 @@
+using BatInspectorPublisher.Core.InputSchema;
 using BatInspectorPublisher.Core.Validation;
 using BatInspectorPublisher.Tests.Adapters.INaturalist;
 
@@ -101,5 +102,103 @@ public class EntryValidatorTests
     public void ValidateEvidenceContent_EmptyFile_IsEmpty(bool audio)
     {
         Assert.Equal("empty", EntryValidator.ValidateEvidenceContent(audio ? EvidenceKind.Audio : EvidenceKind.Spectrogram, []));
+    }
+
+    [Theory]
+    [InlineData(-40, false)]
+    [InlineData(60, false)]
+    [InlineData(60.5, true)]
+    [InlineData(-127, true)]
+    [InlineData(85, true)]
+    public void PlausibleTemperature_OutsideTheRange_IsLeftOutWithAWarning(double value, bool dropped)
+    {
+        var warnings = new List<ValidationIssue>();
+
+        var result = EntryValidator.PlausibleTemperature(value, warnings);
+
+        Assert.Equal(dropped ? null : value, result);
+        Assert.Equal(dropped, warnings.Any(w => w.Path == "TemperatureCelsius"));
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(100, false)]
+    [InlineData(-1, true)]
+    [InlineData(101, true)]
+    public void PlausibleHumidity_NotAPercentage_IsLeftOutWithAWarning(double value, bool dropped)
+    {
+        var warnings = new List<ValidationIssue>();
+
+        var result = EntryValidator.PlausibleHumidity(value, warnings);
+
+        Assert.Equal(dropped ? null : value, result);
+        Assert.Equal(dropped, warnings.Any(w => w.Path == "HumidityPercent"));
+    }
+
+    [Fact]
+    public void PlausibleMeasurements_Absent_StayAbsentWithoutWarning()
+    {
+        var warnings = new List<ValidationIssue>();
+
+        Assert.Null(EntryValidator.PlausibleTemperature(null, warnings));
+        Assert.Null(EntryValidator.PlausibleHumidity(null, warnings));
+        Assert.Empty(warnings);
+    }
+
+    [Theory]
+    [InlineData(8, false)]
+    [InlineData(9, true)]
+    [InlineData(15, true)]
+    [InlineData(16, false)]
+    [InlineData(23, false)]
+    [InlineData(2, false)]
+    public void ValidatePlausibility_DaylightHour_IsWarnedAboutInLocalTime(int hour, bool warned)
+    {
+        // The offset is part of the value: 12:00 UTC is 14:00 here, but the local hour counts.
+        var at = new DateTimeOffset(2026, 6, 11, hour, 30, 0, TimeSpan.FromHours(2));
+
+        var warnings = EntryValidator.ValidatePlausibility("Pipistrellus nathusii", at);
+
+        Assert.Equal(warned, warnings.Any(w => w.Path == "ObservedAt"));
+    }
+
+    [Theory]
+    [InlineData("Pipistrellus nathusii", false)]
+    [InlineData("Pipistrellus", false)]
+    [InlineData("?", false)]
+    [InlineData("Myotis myotis x blythii", true)]
+    [InlineData("Myotis myotis oxygnathus", true)]
+    public void ValidatePlausibility_NameThatIsNotAGenusOrBinomial_IsWarnedAbout(string name, bool warned)
+    {
+        var warnings = EntryValidator.ValidatePlausibility(name, null);
+
+        Assert.Equal(warned, warnings.Any(w => w.Path == "ScientificName"));
+    }
+
+    [Fact]
+    public void DuplicateEntryFinder_SameSpeciesTimeAndPosition_WarnsOnTheLaterEntryOnly()
+    {
+        var finder = new DuplicateEntryFinder();
+        var candidate = TestData.Candidate();
+
+        Assert.Null(finder.Check(0, "DocumentFiles[0]", candidate));
+        var warning = finder.Check(3, "DocumentFiles[3]", candidate with { Comment = "other" });
+
+        Assert.NotNull(warning);
+        Assert.Equal("DocumentFiles[3]", warning.Path);
+        Assert.Contains("DocumentFiles[0]", warning.Message);
+    }
+
+    [Fact]
+    public void DuplicateEntryFinder_AnyDifference_IsNoDuplicate()
+    {
+        var finder = new DuplicateEntryFinder();
+        var candidate = TestData.Candidate();
+        finder.Check(0, "DocumentFiles[0]", candidate);
+
+        Assert.Null(finder.Check(1, "DocumentFiles[1]", candidate with { ScientificName = "Other species" }));
+        Assert.Null(finder.Check(2, "DocumentFiles[2]", candidate with { ObservedAt = candidate.ObservedAt.AddSeconds(1) }));
+        Assert.Null(finder.Check(3, "DocumentFiles[3]", candidate with { Latitude = candidate.Latitude + 0.001 }));
+        Assert.Null(finder.Check(4, "DocumentFiles[4]", candidate with { Longitude = candidate.Longitude + 0.001 }));
     }
 }

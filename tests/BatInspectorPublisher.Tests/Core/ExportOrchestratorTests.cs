@@ -83,6 +83,38 @@ public class ExportOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_CandidateBuiltInCodeBreaksARule_IsSkippedWithoutReadingEvidenceOrCallingPublisher()
+    {
+        var publisher = new FakePublisher((c, _, _) => Created(c));
+        var bad = Candidate("A a") with { Latitude = 0, Longitude = 0, SpectrogramPath = "relative/a.png" };
+
+        var results = await new ExportOrchestrator(publisher).RunAsync([bad, Candidate("B b")], new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.SkippedInvalidEntry, results[0].Status);
+        Assert.Contains("GPS", results[0].Message);
+        Assert.Contains("absolute", results[0].Message);
+        Assert.Equal(PublishStatus.Created, results[1].Status);
+        Assert.Equal("B b", publisher.Calls.Single().Candidate.ScientificName);
+    }
+
+    [Fact]
+    public async Task RunAsync_CandidateInTheFuture_IsJudgedAgainstTheOrchestratorsClock()
+    {
+        var publisher = new FakePublisher((c, _, _) => Created(c));
+        var clock = new FixedTime(new DateTimeOffset(2026, 6, 13, 1, 0, 0, TimeSpan.Zero));
+
+        var results = await new ExportOrchestrator(publisher, null, clock).RunAsync([Candidate("A a")], new PublishOptions());
+
+        Assert.Equal(PublishStatus.SkippedInvalidEntry, results.Single().Status);
+        Assert.Empty(publisher.Calls);
+    }
+
+    private sealed class FixedTime(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    [Fact]
     public async Task RunAsync_HandsTheValidatedBytesAndFileNamesToThePublisher()
     {
         var publisher = new FakePublisher((c, _, _) => Created(c));

@@ -27,9 +27,9 @@ public enum PublishStatus
     SkippedInvalidEvidence,
 
     /// <summary>
-    /// The entry breaks a rule of this platform (for example a date or a position it rejects) that the
-    /// platform-neutral input validation does not cover; nothing is published. <see cref="PublishResult.Message"/>
-    /// lists every problem. The same entry may be fine for another platform.
+    /// The entry breaks a rule; nothing is published. <see cref="PublishResult.Message"/> lists every problem. Either a
+    /// platform-neutral rule that the reader would have caught (a candidate built in code skips the reader), or a rule of
+    /// this platform (for example a date or a position it rejects), in which case the same entry may be fine for another platform.
     /// </summary>
     SkippedInvalidEntry,
 

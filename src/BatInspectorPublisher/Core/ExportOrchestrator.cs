@@ -1,5 +1,6 @@
 using BatInspectorPublisher.Core.Models;
 using BatInspectorPublisher.Core.Results;
+using BatInspectorPublisher.Core.Validation;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -13,12 +14,19 @@ public sealed class ExportOrchestrator
 {
     private readonly IObservationPublisher _publisher;
     private readonly ILogger _logger;
+    private readonly TimeProvider _time;
 
     /// <summary>Creates an orchestrator that publishes through <paramref name="publisher"/>.</summary>
     public ExportOrchestrator(IObservationPublisher publisher, ILogger<ExportOrchestrator>? logger = null)
+        : this(publisher, logger, null)
+    {
+    }
+
+    internal ExportOrchestrator(IObservationPublisher publisher, ILogger<ExportOrchestrator>? logger, TimeProvider? time)
     {
         _publisher = publisher;
         _logger = logger ?? NullLogger<ExportOrchestrator>.Instance;
+        _time = time ?? TimeProvider.System;
     }
 
     /// <summary>
@@ -68,6 +76,19 @@ public sealed class ExportOrchestrator
         var evidenceLoaded = false;
         try
         {
+            // The reader already judged candidates from a file; one built in code has not been judged yet.
+            var issues = EntryValidator.ValidateValues(EntryValues.From(candidate), _time.GetUtcNow());
+            if (issues.Count > 0)
+            {
+                return new PublishResult
+                {
+                    Candidate = candidate,
+                    PlatformId = _publisher.PlatformId,
+                    Status = PublishStatus.SkippedInvalidEntry,
+                    Message = string.Join("; ", issues),
+                };
+            }
+
             var evidence = await EvidenceLoader.LoadAsync(candidate, ct);
             if (evidence.Files is null)
             {

@@ -118,6 +118,7 @@ public static class InputSchemaReader
             return candidates;
         }
 
+        var duplicates = new DuplicateEntryFinder();
         var index = -1;
         foreach (var entry in files.EnumerateArray())
         {
@@ -155,10 +156,17 @@ public static class InputSchemaReader
                 continue;
             }
 
-            warnings.AddRange(entryWarnings.Select(w => new EntryWarning(index, w)));
-            candidates.Add(new ObservationCandidate
+            // Measurements only enrich the description: an implausible one is dropped with a warning, not a rejection.
+            var plausibility = new List<ValidationIssue>();
+            temperature = EntryValidator.PlausibleTemperature(temperature, plausibility);
+            humidity = EntryValidator.PlausibleHumidity(humidity, plausibility);
+            var name = ScientificName.Normalize(species!);
+            plausibility.AddRange(EntryValidator.ValidatePlausibility(name, observedAt));
+            entryWarnings.AddRange(plausibility.Select(w => w with { Path = $"{path}.{InputFieldName(w.Path)}" }));
+
+            var candidate = new ObservationCandidate
             {
-                ScientificName = ScientificName.Normalize(species!),
+                ScientificName = name,
                 LocalName = local,
                 ObservedAt = observedAt!.Value,
                 TimeZoneId = zone!.Value.Id,
@@ -169,7 +177,15 @@ public static class InputSchemaReader
                 Comment = comment,
                 SpectrogramPath = png!,
                 AudioPath = wav!,
-            });
+            };
+
+            if (duplicates.Check(index, path, candidate) is { } duplicate)
+            {
+                entryWarnings.Add(duplicate);
+            }
+
+            warnings.AddRange(entryWarnings.Select(w => new EntryWarning(index, w)));
+            candidates.Add(candidate);
         }
 
         return candidates;
@@ -311,6 +327,9 @@ public static class InputSchemaReader
     private static string InputFieldName(string candidateProperty) => candidateProperty switch
     {
         nameof(ObservationCandidate.ObservedAt) => "Date",
+        nameof(ObservationCandidate.ScientificName) => "SpeciesLatin",
+        nameof(ObservationCandidate.TemperatureCelsius) => "Temperature",
+        nameof(ObservationCandidate.HumidityPercent) => "Humidity",
         nameof(ObservationCandidate.SpectrogramPath) => "PathToPng",
         nameof(ObservationCandidate.AudioPath) => "PathToWav",
         _ => candidateProperty,

@@ -437,6 +437,66 @@ public class InputSchemaReaderTests
     }
 
     [Fact]
+    public void Parse_ImplausibleMeasurements_AreLeftOutWithWarningsAndTheEntryIsKept()
+    {
+        var doc = InputSchemaReader.Parse(Doc(Entry(extra: ", \"Temperature\": 85, \"Humidity\": 130")), Later);
+
+        var candidate = Assert.Single(doc.Candidates);
+        Assert.Null(candidate.TemperatureCelsius);
+        Assert.Null(candidate.HumidityPercent);
+        Assert.Equal(["DocumentFiles[0].Temperature", "DocumentFiles[0].Humidity"], doc.Warnings.Select(w => w.Issue.Path));
+    }
+
+    [Fact]
+    public void Parse_PlausibleMeasurements_AreKept()
+    {
+        var doc = InputSchemaReader.Parse(Doc(Entry(extra: ", \"Temperature\": 14.5, \"Humidity\": 80")), Later);
+
+        var candidate = Assert.Single(doc.Candidates);
+        Assert.Equal(14.5, candidate.TemperatureCelsius);
+        Assert.Equal(80, candidate.HumidityPercent);
+        Assert.Empty(doc.Warnings);
+    }
+
+    [Fact]
+    public void Parse_DaylightTimestamp_AcceptedWithWarning()
+    {
+        var doc = InputSchemaReader.Parse(Doc(Entry("13.06.2026 12:00:00")), Later);
+
+        Assert.Single(doc.Candidates);
+        Assert.Equal("DocumentFiles[0].Date", Assert.Single(doc.Warnings).Issue.Path);
+    }
+
+    [Fact]
+    public void Parse_NameThatIsNeitherGenusNorBinomial_AcceptedWithWarning()
+    {
+        var doc = InputSchemaReader.Parse(Doc(Entry(species: "\"Myotis myotis x blythii\"")), Later);
+
+        Assert.Single(doc.Candidates);
+        Assert.Equal("DocumentFiles[0].SpeciesLatin", Assert.Single(doc.Warnings).Issue.Path);
+    }
+
+    [Fact]
+    public void Parse_RepeatedEntry_WarnsOnTheSecondOnly_AndKeepsBoth()
+    {
+        var doc = InputSchemaReader.Parse(Doc(Entry() + "," + Entry(species: "\"pipistrellus  NATHUSII\"")), Later);
+
+        Assert.Equal(2, doc.Candidates.Count);
+        var warning = Assert.Single(doc.Warnings);
+        Assert.Equal(1, warning.Index);
+        Assert.Contains("DocumentFiles[0]", warning.Issue.Message);
+    }
+
+    [Fact]
+    public void Parse_EntryRepeatingARejectedOne_IsNoDuplicate()
+    {
+        var doc = InputSchemaReader.Parse(Doc(Entry(lat: "0", lon: "0") + "," + Entry(lat: "0", lon: "0")), Later);
+
+        Assert.Empty(doc.Candidates);
+        Assert.Empty(doc.Warnings);
+    }
+
+    [Fact]
     public void Parse_RejectedEntry_HasNoWarning()
     {
         var doc = InputSchemaReader.Parse(Doc(Entry("25.10.2026 02:30:00", lat: "0", lon: "0")), Later);

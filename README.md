@@ -54,6 +54,16 @@ foreach (var r in results)
     Console.WriteLine($"{r.Candidate.ScientificName}: {r.Status} {r.Url}");
 ```
 
+## Before you publish
+
+Publishing is public and irreversible, so a run is a dry run unless you pass `Commit = true`. Run a dry run first when you can: it resolves every species to a taxon, reads and checks the evidence files, applies iNaturalist's rules and reports `WouldCreate` or the reason an entry would be skipped. It needs the login and the network, but writes nothing. It does not yet preview duplicates: an observation that a real run would skip as `SkippedDuplicate` is still reported as `WouldCreate`.
+
+If your application does not offer a dry run, the checks that matter most do not depend on one:
+
+* `InputDocument.Rejected` and `InputDocument.Warnings` exist as soon as the file is read. The publish run never reports them, so **show both to the user and let them confirm before you call it with `Commit = true`**. A warning does not stop an entry from being published.
+* The iNaturalist rules and the evidence checks run before every publish, dry or not, and an entry that fails them is skipped with the reason in `PublishResult.Message`.
+* Publish in small batches rather than the whole file at once. The first batch then serves as the preview, and the duplicate check makes a repeated run safe.
+
 ## Credentials
 
 The package contains **no** OAuth client ID or secret. Register your application once
@@ -96,6 +106,7 @@ config files and no environment variables.
 * The JSON does not have to come from a file: `InputSchemaReader.Parse(string json)` and `InputSchemaReader.Read(Stream)` work the same as `ReadFile`. The evidence paths inside it must still point to files on disk.
 * Validation is per entry. A file that is not well-formed JSON, or has a missing or unsupported `SchemaVersion` or no `DocumentFiles` array, is rejected as a whole (`InputSchemaException`). A bad entry is left out of `InputDocument.Candidates` and listed with every problem in `InputDocument.Rejected`; the valid entries are still returned and can be published. Rejected entries are never published. Show `Rejected` to the user: the publish run does not report them. After fixing the file, run it again: entries that are already published are skipped as duplicates.
 * Entry errors: evidence paths must be absolute (Windows or Unix syntax) and end in `.png` / `.wav`; `Latitude` and `Longitude` both `0` (missing GPS) is rejected; a `Date` in the future (compared with current German time) is rejected.
+* Entry warnings (`InputDocument.Warnings`): the entry is accepted and published, but something is doubtful, so show them too. A `Temperature` outside -40 to 60 °C or a `Humidity` outside 0 to 100 % is left out of the observation (sensor error codes such as -127 or 85 land there); a `Date` between 09:00 and 15:59 local time (bats fly at night: check the device clock and `TimeZone`); a `SpeciesLatin` of three or more words (it will not resolve to a taxon); an entry with the same species, time and position as an earlier one.
 * The file is expected to hold one **reference recording** (*Referenzaufnahme*) per species, night and location, not every detection: the goal is to document that a species was present at a place and time, and one good recording is usually enough. The iNaturalist duplicate check (same taxon, same calendar day, within a radius of 100 m by default) skips a second entry for the same combination.
 * `SchemaVersion` is required. Newer versions than the library supports are rejected.
 * Required: `Date`, `Latitude`, `Longitude`, `SpeciesLatin`, `PathToPng`, `PathToWav`.
