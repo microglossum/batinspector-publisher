@@ -6,6 +6,9 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ### Added
 
+- The dry run is now faithful: it goes through the same steps as a commit run (login, taxon, duplicate check) and stops before the first write. A duplicate is reported as `SkippedDuplicate` and an incomplete own observation as the new `PublishStatus.WouldResume`. New `PublishResult.Description` carries the German description text that would become public (set in every run that got as far as building it). Several entries for the same species, night and place still all say `WouldCreate`: the dry run creates nothing, so it cannot see an earlier entry of the same file.
+- `ExportOrchestrator.RunAsync(InputDocument, ...)` returns a `RunReport` (rejected entries, warnings, results, `IsComplete`, `CountByStatus`, `WarningsFor`) so a host shows one object before the commit run. New `ObservationCandidate.EntryIndex` maps a candidate back to its entry in the file.
+
 - Targets net8.0 and net10.0.
 - Core: `ObservationCandidate`, `IObservationPublisher`, `ExportOrchestrator`, `PublishResult`.
 - Input schema v1 reader (`InputSchemaReader`) with required `SchemaVersion`.

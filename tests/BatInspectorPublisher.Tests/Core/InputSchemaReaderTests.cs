@@ -51,6 +51,15 @@ public class InputSchemaReaderTests
     }
 
     [Fact]
+    public void Parse_Candidates_KnowTheirPositionInTheFile()
+    {
+        var doc = InputSchemaReader.Parse(Doc($"{Entry()}, {Entry(lat: "0", lon: "0")}, {Entry(species: "\"Myotis myotis\"")}"));
+
+        Assert.Equal([0, 2], doc.Candidates.Select(c => c.EntryIndex));
+        Assert.Equal(1, Assert.Single(doc.Rejected).Index);
+    }
+
+    [Fact]
     public void Parse_WrongSpeciesCapitalization_IsNormalized()
     {
         var doc = InputSchemaReader.ReadFile(Path.Combine(AppContext.BaseDirectory, "Fixtures", "sample_v1.json"));

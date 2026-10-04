@@ -1,3 +1,4 @@
+using BatInspectorPublisher.Core.InputSchema;
 using BatInspectorPublisher.Core.Models;
 using BatInspectorPublisher.Core.Results;
 using BatInspectorPublisher.Core.Validation;
@@ -69,6 +70,31 @@ public sealed class ExportOrchestrator
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Publishes the candidates of <paramref name="document"/> like <see cref="RunAsync(IEnumerable{ObservationCandidate}, PublishOptions, IProgress{PublishResult}?, CancellationToken)"/>
+    /// and returns one <see cref="RunReport"/> that also carries the document's rejected entries and warnings.
+    /// After a dry run, show the report to the user before you call this again with <see cref="PublishOptions.Commit"/>.
+    /// </summary>
+    /// <param name="document">The parsed input file.</param>
+    /// <param name="options">Publish options (dry run unless <see cref="PublishOptions.Commit"/> is set).</param>
+    /// <param name="progress">Receives each result as soon as it is available.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task<RunReport> RunAsync(
+        InputDocument document,
+        PublishOptions options,
+        IProgress<PublishResult>? progress = null,
+        CancellationToken ct = default)
+    {
+        var results = await RunAsync(document.Candidates, options, progress, ct);
+        return new RunReport
+        {
+            Rejected = document.Rejected,
+            Warnings = document.Warnings,
+            Results = results,
+            IsComplete = results.Count == document.Candidates.Count && results.All(r => r.Status != PublishStatus.Cancelled),
+        };
     }
 
     private async Task<PublishResult> PublishOneAsync(ObservationCandidate candidate, PublishOptions options, CancellationToken ct)

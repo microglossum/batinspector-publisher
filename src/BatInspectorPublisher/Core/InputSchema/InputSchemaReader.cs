@@ -166,6 +166,7 @@ public static class InputSchemaReader
 
             var candidate = new ObservationCandidate
             {
+                EntryIndex = index,
                 ScientificName = name,
                 LocalName = local,
                 ObservedAt = observedAt!.Value,

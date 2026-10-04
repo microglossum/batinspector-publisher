@@ -6,6 +6,12 @@ namespace BatInspectorPublisher.Core.Models;
 /// </summary>
 public sealed record ObservationCandidate
 {
+    /// <summary>
+    /// Zero-based position of the entry in the input file's <c>DocumentFiles</c>, the same index that
+    /// <c>InputDocument.Rejected</c> and <c>InputDocument.Warnings</c> use. Null for a candidate built in code.
+    /// </summary>
+    public int? EntryIndex { get; init; }
+
     /// <summary>Latin species (or genus) name, normalized to binomial capitalization ("Genus species").</summary>
     public required string ScientificName { get; init; }
 

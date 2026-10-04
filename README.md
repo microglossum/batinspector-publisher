@@ -45,22 +45,38 @@ var publisher = new INaturalistPublisher(options, http, auth);
 var input = InputSchemaReader.ReadFile(@"C:\path\to\export.json");
 var orchestrator = new ExportOrchestrator(publisher);
 
-// Default is a dry run: resolves species, writes nothing.
-var preview = await orchestrator.RunAsync(input.Candidates, new PublishOptions());
+// Default is a dry run: it goes through every step and writes nothing.
+// The report holds the rejected entries, the warnings and one result per candidate.
+var preview = await orchestrator.RunAsync(input, new PublishOptions());
+foreach (var r in preview.Results)
+    Console.WriteLine($"{r.Candidate.ScientificName}: {r.Status} {r.Message}");
 
-// Publish for real (first call opens the browser for the iNaturalist login).
-var results = await orchestrator.RunAsync(input.Candidates, new PublishOptions { Commit = true });
-foreach (var r in results)
+// Publish for real (the first call opens the browser for the iNaturalist login).
+var report = await orchestrator.RunAsync(input, new PublishOptions { Commit = true });
+foreach (var r in report.Results)
     Console.WriteLine($"{r.Candidate.ScientificName}: {r.Status} {r.Url}");
 ```
 
 ## Before you publish
 
-Publishing is public and irreversible, so a run is a dry run unless you pass `Commit = true`. Run a dry run first when you can: it resolves every species to a taxon, reads and checks the evidence files, applies iNaturalist's rules and reports `WouldCreate` or the reason an entry would be skipped. It needs the login and the network, but writes nothing. It does not yet preview duplicates: an observation that a real run would skip as `SkippedDuplicate` is still reported as `WouldCreate`.
+Publishing is public and irreversible, so a run is a dry run unless you pass `Commit = true`. Run a dry run first when you can. It goes through every step of a real run (login, species resolution, evidence checks, iNaturalist's rules, the duplicate check) and stops where the first write would happen, so it reports what a real run would do:
+
+* `WouldCreate`: a real run creates the observation and attaches spectrogram and audio.
+* `WouldResume`: an earlier run left an incomplete observation of this entry (`ObservationId`); a real run attaches what is missing.
+* `SkippedDuplicate`, `SkippedUnresolvedTaxon`, `SkippedInvalidEntry`, `SkippedInvalidEvidence`, `SkippedMissingEvidence`: the same result as in a real run, with the reason in `Message`.
+* `PublishResult.Description` holds the (German) text that becomes the public description.
+
+`ExportOrchestrator.RunAsync(InputDocument, ...)` returns a `RunReport`: the document's `Rejected` entries and `Warnings` next to the results (`WarningsFor(result)`, `CountByStatus`), so one object is all you show the user before the real run. `IsComplete` is false for a cancelled run. `ObservationCandidate.EntryIndex` is the position in the file.
+
+What a dry run cannot tell you:
+
+* **Several entries for the same species, night and place all say `WouldCreate`.** Nothing is created, so the duplicate check cannot see an earlier entry of the same file. A real run creates the first and skips the later ones as `SkippedDuplicate`. The file should hold one reference recording per species, night and place anyway (see "Input format"); `Warnings` reports the entries that repeat each other exactly, nothing more can be checked up front.
+* The upload itself is not tried. The evidence is checked against iNaturalist's documented rules (type, size), but only a real run shows whether iNaturalist accepts it.
+* The result is a snapshot: observations that appear or disappear on iNaturalist afterwards are not foreseen.
 
 If your application does not offer a dry run, the checks that matter most do not depend on one:
 
-* `InputDocument.Rejected` and `InputDocument.Warnings` exist as soon as the file is read. The publish run never reports them, so **show both to the user and let them confirm before you call it with `Commit = true`**. A warning does not stop an entry from being published.
+* `InputDocument.Rejected` and `InputDocument.Warnings` exist as soon as the file is read. A run that gets only the candidates never reports them (the `RunReport` overload does), so **show both to the user and let them confirm before you call it with `Commit = true`**. A warning does not stop an entry from being published.
 * The iNaturalist rules and the evidence checks run before every publish, dry or not, and an entry that fails them is skipped with the reason in `PublishResult.Message`.
 * Publish in small batches rather than the whole file at once. The first batch then serves as the preview, and the duplicate check makes a repeated run safe.
 
@@ -104,7 +120,7 @@ config files and no environment variables.
 ```
 
 * The JSON does not have to come from a file: `InputSchemaReader.Parse(string json)` and `InputSchemaReader.Read(Stream)` work the same as `ReadFile`. The evidence paths inside it must still point to files on disk.
-* Validation is per entry. A file that is not well-formed JSON, or has a missing or unsupported `SchemaVersion` or no `DocumentFiles` array, is rejected as a whole (`InputSchemaException`). A bad entry is left out of `InputDocument.Candidates` and listed with every problem in `InputDocument.Rejected`; the valid entries are still returned and can be published. Rejected entries are never published. Show `Rejected` to the user: the publish run does not report them. After fixing the file, run it again: entries that are already published are skipped as duplicates.
+* Validation is per entry. A file that is not well-formed JSON, or has a missing or unsupported `SchemaVersion` or no `DocumentFiles` array, is rejected as a whole (`InputSchemaException`). A bad entry is left out of `InputDocument.Candidates` and listed with every problem in `InputDocument.Rejected`; the valid entries are still returned and can be published. Rejected entries are never published. Show `Rejected` to the user: a run over the candidates alone does not report them, the `RunReport` does. After fixing the file, run it again: entries that are already published are skipped as duplicates.
 * Entry errors: evidence paths must be absolute (Windows or Unix syntax) and end in `.png` / `.wav`; `Latitude` and `Longitude` both `0` (missing GPS) is rejected; a `Date` in the future (compared with current German time) is rejected.
 * Entry warnings (`InputDocument.Warnings`): the entry is accepted and published, but something is doubtful, so show them too. A `Temperature` outside -40 to 60 °C or a `Humidity` outside 0 to 100 % is left out of the observation (sensor error codes such as -127 or 85 land there); a `Date` between 09:00 and 15:59 local time (bats fly at night: check the device clock and `TimeZone`); a `SpeciesLatin` of three or more words (it will not resolve to a taxon); an entry with the same species, time and position as an earlier one.
 * The file is expected to hold one **reference recording** (*Referenzaufnahme*) per species, night and location, not every detection: the goal is to document that a species was present at a place and time, and one good recording is usually enough. The iNaturalist duplicate check (same taxon, same calendar day, within a radius of 100 m by default) skips a second entry for the same combination.
@@ -122,7 +138,7 @@ BatInspector is open source ([chrmue44/BatInspector](https://github.com/chrmue44
 ## Results
 
 `ExportOrchestrator.RunAsync` returns one `PublishResult` per candidate with a `PublishStatus`:
-`Created`, `WouldCreate` (dry run), `SkippedDuplicate`, `SkippedUnresolvedTaxon`,
+`Created`, `WouldCreate` and `WouldResume` (dry run), `SkippedDuplicate`, `SkippedUnresolvedTaxon`,
 `SkippedMissingEvidence`, `SkippedInvalidEvidence` (unreadable, empty, not a PNG / WAV file, or larger than the platform accepts), `SkippedInvalidEntry` (the entry breaks a rule of this platform, such as a date or position it rejects), `Resumed`, `Failed`, `Cancelled`.
 
 A failed or cancelled result may be partial (observation created, evidence incomplete): then `ObservationId` is set, `SpectrogramAttached` / `AudioAttached` say what is there,

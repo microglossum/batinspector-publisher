@@ -11,6 +11,12 @@ public enum PublishStatus
     /// <summary>Dry run: the observation would be created; nothing was written.</summary>
     WouldCreate,
 
+    /// <summary>
+    /// Dry run: an earlier run left an incomplete observation of this entry, and a commit run would attach the missing evidence to it
+    /// (see <see cref="PublishResult.ObservationId"/>); nothing was written.
+    /// </summary>
+    WouldResume,
+
     /// <summary>The platform already has an equivalent observation of this user.</summary>
     SkippedDuplicate,
 
@@ -94,13 +100,19 @@ public sealed record PublishResult
     /// </summary>
     public string? ObservationId { get; init; }
 
+    /// <summary>
+    /// The text posted as the observation's description (German), also in a dry run, where it shows what would become public.
+    /// Null when the run stopped before the text was built.
+    /// </summary>
+    public string? Description { get; init; }
+
     /// <summary>Public URL of the observation, if the platform provides one.</summary>
     public string? Url { get; init; }
 
-    /// <summary>True if the platform observation has the spectrogram attached (attached now, or already by an earlier run).</summary>
+    /// <summary>True if the platform observation has the spectrogram attached (attached now, or already by an earlier run). In a dry run: what is already there.</summary>
     public bool SpectrogramAttached { get; init; }
 
-    /// <summary>True if the platform observation has the audio attached (attached now, or already by an earlier run).</summary>
+    /// <summary>True if the platform observation has the audio attached (attached now, or already by an earlier run). In a dry run: what is already there.</summary>
     public bool AudioAttached { get; init; }
 
     /// <summary>Short human-readable (English) detail.</summary>

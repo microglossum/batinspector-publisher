@@ -18,6 +18,7 @@ Checklist for the live test (things stubs cannot prove):
 - Resume (new, written from memory of the v1 API, never seen live): the v1 `/observations` search results must carry `description`, `photos` and `sounds`, and `description` must come back as sent (the match ignores whitespace differences only).
   If a field is missing the observation is deliberately left alone (`SkippedDuplicate`), so a wrong assumption fails safe but resume never triggers. Check with a real half-created observation (stop after the photo, or delete the sound in the web UI).
   Also check that an observation with a not yet processed upload already lists its photo or sound.
+- Dry run: run it against an entry that is already published and against a half-created one, and check that it says `SkippedDuplicate` and `WouldResume` and that a commit run then agrees.
 - The duplicate check sends `mine_only=true` to v1 `/observations`. Confirm the parameter exists and really restricts to the user's own observations; if it is ignored, the check matches other users' observations and reports false duplicates. Compare the result with and without it (and with `user_id` / `user_login` as the alternative).
 
 ### Taxon matching: live verification
@@ -29,14 +30,6 @@ Needs the live API or BatInspector:
 - Check that `Myotis oxygnatus` (BatInspector's spelling; the usual spelling is *oxygnathus*) and the other Latin names BatInspector exports (`BatInfo.cs` species list in the BatInspector repository) resolve; list the ones that do not.
 - BatInspector exports the raw filename abbreviation when it has no species entry (for example `TTEN`, Tadarida teniotis, which is in its regional lists but not its species list): such entries are skipped by design. The fix belongs into BatInspector's export, not here.
 - Check that `species_guess` keeps the original value (`Nyctaloid`) when `taxon_id` is Chiroptera, and how iNaturalist shows it.
-
-### Dry run should preview duplicates
-
-`INaturalistPublisher` returns `WouldCreate` before the duplicate check, so a dry run reports "would create" for observations that a commit run skips as `SkippedDuplicate`.
-The dry run is the default and the only safety net, so it should be faithful:
-
-- Run the (read-only) duplicate check in the dry run too and report `SkippedDuplicate` (and `Resumed` as "would resume": the match logic is in `INaturalistPublisher`).
-- A dry run currently also needs a login for the JWT, although taxon autocomplete is a public endpoint. Check which calls really need auth; the duplicate check with `mine_only` does, so a dry run that previews duplicates needs the login anyway. Decide whether that is acceptable.
 
 ### Retry and rate limiting
 
@@ -72,8 +65,6 @@ Principles for any new check: validate at the boundary, report every problem wit
 Two levels: **error** (the entry is rejected) and **warning** (reported in `InputDocument.Warnings`, does not block). Publishing is public and irreversible, so anything doubtful that cannot be fixed afterwards is an error, not a warning.
 Platform limits belong in the adapter's own validation (`INaturalistValidator`), not in `Core`.
 
-- Rejected entries have no `ObservationCandidate`, so they are not part of `PublishResult`s; the host has to show `InputDocument.Rejected` itself. Decide whether a combined report is worth it.
-- `Candidates` can be shorter than `DocumentFiles` and a candidate does not know its position in the file. If a host needs to map results back to entries, add the entry index to `ObservationCandidate`.
 - The signature checks are not a full format validation (a file can start like a PNG and still be something else); decide whether that is enough.
 
 ### OAuth login robustness (loopback listener)

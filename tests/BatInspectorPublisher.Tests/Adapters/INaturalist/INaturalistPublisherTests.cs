@@ -55,6 +55,78 @@ public class INaturalistPublisherTests
         Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
     }
 
+    [Fact]
+    public async Task Publish_DryRun_RunsTheSameReadStepsAsACommitRunAndStopsBeforeTheFirstWrite()
+    {
+        HappyPath();
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions());
+
+        Assert.Equal(["GET /v2/taxa/autocomplete", "GET /v1/observations"], _http.Requests.Select(r => $"{r.Method} {r.Uri.AbsolutePath}"));
+        Assert.Contains("attach the spectrogram and the audio", result.Message);
+        Assert.Null(result.ObservationId);
+        Assert.False(result.SpectrogramAttached);
+        Assert.False(result.AudioAttached);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Publish_Description_IsReportedAndIsTheTextThatIsPosted(bool commit)
+    {
+        HappyPath();
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = commit });
+
+        Assert.NotNull(result.Description);
+        Assert.Equal(CreatePublisher().BuildPayload(Candidate(), 99).Description, result.Description);
+        if (commit)
+        {
+            using var doc = JsonDocument.Parse(_http.Requests.Single(r => r.Method == "POST" && r.Uri.AbsolutePath == "/v2/observations").Body);
+            Assert.Equal(result.Description, doc.RootElement.GetProperty("observation").GetProperty("description").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task Publish_ResultBeforeTheTextIsBuilt_HasNoDescription()
+    {
+        _http.On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [] }""");
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions());
+
+        Assert.Equal(PublishStatus.SkippedUnresolvedTaxon, result.Status);
+        Assert.Null(result.Description);
+    }
+
+    [Fact]
+    public async Task Publish_DryRun_ExistingDuplicateIsReportedAsSkippedDuplicate()
+    {
+        WithExisting(ExistingObservations(photos: "[ { \"id\": 1 } ]", sounds: "[ { \"id\": 2 } ]"));
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions());
+
+        Assert.Equal(PublishStatus.SkippedDuplicate, result.Status);
+        Assert.Equal("123", result.ObservationId);
+        Assert.Equal("https://www.inaturalist.org/observations/123", result.Url);
+        Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
+    }
+
+    [Theory]
+    [InlineData("[]", "[]", "the spectrogram and the audio")]
+    [InlineData("[ { \"id\": 1 } ]", "[]", "the audio")]
+    [InlineData("[]", "[ { \"id\": 2 } ]", "the spectrogram")]
+    public async Task Publish_DryRun_IncompleteOwnObservationWouldBeResumed(string photos, string sounds, string missing)
+    {
+        WithExisting(ExistingObservations(photos, sounds));
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions());
+
+        Assert.Equal(PublishStatus.WouldResume, result.Status);
+        Assert.Equal("123", result.ObservationId);
+        Assert.Contains(missing, result.Message);
+        Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -47,6 +47,7 @@ Flow: BatInspector's export file is read into candidates (one reference recordin
   - rolling back (deleting) an observation whose evidence could not be attached (2026-10-03: deleting public data automatically is destructive and the failure may be transient; resume completes it on the next run);
   - geoprivacy / sensitive-species handling (2026-10-02: iNaturalist obscures sensitive taxa itself, other platforms may not support it, the package cannot solve it);
   - pattern-matching or translating iNaturalist's error messages (2026-10-04: the texts are undocumented and can change, so such code would break silently; the platform's message is passed through, and clear messages come from the adapter's own validation before anything is written);
+  - foreseeing duplicates within one dry run (2026-10-04: the dry run creates nothing, so entries of the same file that a commit run would skip as duplicates of each other all say `WouldCreate`; the docs say so, the file holds one reference recording per species, night and place anyway);
   - an offline validation pass over all candidates before the first one is published (2026-10-04: the host publishes in batches, not all at once, so a bad entry late in the file costs at most one batch, and the dry run already finds it).
 
 ## Conventions

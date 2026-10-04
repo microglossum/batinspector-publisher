@@ -4,7 +4,7 @@
 //   dotnet run -- login                       interactive browser login, stores the token
 //   dotnet run -- whoami                      uses the stored token only, never opens a browser (tests the token store)
 //   dotnet run -- renew                       ages the stored API token by 2 days, then renews it silently from the stored OAuth token
-//   dotnet run -- dry-run <input.json>        resolve + duplicate check, writes nothing
+//   dotnet run -- dry-run <input.json>        full simulation (login, taxon, duplicate check), writes nothing
 //   dotnet run -- publish <input.json>        REAL, public, irreversible; asks for confirmation
 // Keep real observation data (input files, evidence) under local/, which is git-ignored.
 using System.Diagnostics;
@@ -80,16 +80,30 @@ switch (command)
         }
 
         var doc = InputSchemaReader.ReadFile(args[1]);
-        foreach (var rejected in doc.Rejected)
+        var publisher = new INaturalistPublisher(options, http, auth);
+        var progress = new Progress<PublishResult>(r =>
+            Console.WriteLine($"{r.Status,-24} {r.Candidate.ScientificName} {r.ObservationId} {r.Url} {r.Message}"));
+        var report = await new ExportOrchestrator(publisher).RunAsync(doc, new PublishOptions { Commit = commit }, progress);
+        foreach (var rejected in report.Rejected)
         {
             Console.WriteLine($"{"Rejected",-24} entry {rejected.Index}: {string.Join("; ", rejected.Issues)}");
         }
 
-        var publisher = new INaturalistPublisher(options, http, auth);
-        var progress = new Progress<PublishResult>(r =>
-            Console.WriteLine($"{r.Status,-24} {r.Candidate.ScientificName} {r.ObservationId} {r.Url} {r.Message}"));
-        var results = await new ExportOrchestrator(publisher).RunAsync(doc.Candidates, new PublishOptions { Commit = commit }, progress);
-        Console.WriteLine($"{results.Count} candidate(s) processed, commit={commit}.");
+        foreach (var warning in report.Warnings)
+        {
+            Console.WriteLine($"{"Warning",-24} entry {warning.Index}: {warning.Issue}");
+        }
+
+        if (!commit)
+        {
+            foreach (var r in report.Results.Where(r => r.Description is not null))
+            {
+                Console.WriteLine($"{"Description",-24} {r.Candidate.ScientificName}: {r.Description}");
+            }
+        }
+
+        Console.WriteLine($"{report.Results.Count} candidate(s) processed, commit={commit}, complete={report.IsComplete}: " +
+                          string.Join(", ", report.CountByStatus.Select(kv => $"{kv.Key}={kv.Value}")));
         return 0;
 
     default:

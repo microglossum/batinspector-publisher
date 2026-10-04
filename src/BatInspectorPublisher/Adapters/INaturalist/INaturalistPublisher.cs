@@ -10,8 +10,9 @@ namespace BatInspectorPublisher.Adapters.INaturalist;
 /// <summary>
 /// Publishes candidates to iNaturalist: resolve taxon, duplicate check, create the observation,
 /// attach spectrogram (photo) and audio (sound). Before anything else, the platform
-/// validation refuses what iNaturalist would reject. A dry run (the default) resolves the taxon but
-/// writes nothing. An observation that an earlier run left without its full evidence is completed
+/// validation refuses what iNaturalist would reject. A dry run (the default) goes through the same steps, including
+/// the login, the taxon search and the duplicate check, and stops where the first write would happen: it reports
+/// what a commit run would do and writes nothing. An observation that an earlier run left without its full evidence is completed
 /// instead of being reported as a duplicate.
 /// </summary>
 public sealed class INaturalistPublisher : IObservationPublisher
@@ -72,6 +73,7 @@ public sealed class INaturalistPublisher : IObservationPublisher
         var photoAttached = false;
         var soundAttached = false;
         string? taxonName = null;
+        string? description = null;
 
         try
         {
@@ -90,13 +92,8 @@ public sealed class INaturalistPublisher : IObservationPublisher
             }
 
             taxonName = taxon.Name;
-            var filedAs = SameName(taxon.Name, candidate.ScientificName) ? "" : $" as {taxon.Name}";
-            if (!options.Commit)
-            {
-                return Result(PublishStatus.WouldCreate, $"Dry run: would create an observation of {candidate.ScientificName}{filedAs} (taxon_id={taxon.Id}).");
-            }
-
             var payload = BuildPayload(candidate, taxon.Id, taxon.Name);
+            description = payload.Description;
             var existing = await _api.FindExistingObservationsAsync(
                 taxon.Id, DateOnly.FromDateTime(candidate.ObservedAt.DateTime), candidate.Latitude, candidate.Longitude, jwt, ct);
 
@@ -126,10 +123,22 @@ public sealed class INaturalistPublisher : IObservationPublisher
                 photoAttached = match.Photos is { Count: > 0 };
                 soundAttached = match.Sounds is { Count: > 0 };
                 resumed = true;
+                if (!options.Commit)
+                {
+                    return Result(PublishStatus.WouldResume, $"Dry run: would complete the incomplete observation {observationId} by attaching {Missing()}.");
+                }
+
                 _logger.LogInformation("Completing the incomplete iNaturalist observation {ObservationId} of {Species}", observationId, candidate.ScientificName);
             }
             else
             {
+                if (!options.Commit)
+                {
+                    var filedAs = SameName(taxon.Name, candidate.ScientificName) ? "" : $" as {taxon.Name}";
+                    return Result(PublishStatus.WouldCreate,
+                        $"Dry run: would create an observation of {candidate.ScientificName}{filedAs} (taxon_id={taxon.Id}) and attach the spectrogram and the audio.");
+                }
+
                 step = PublishStep.CreateObservation;
                 var created = await _api.CreateObservationAsync(payload, jwt, ct);
                 uuid = created.Uuid;
@@ -172,6 +181,8 @@ public sealed class INaturalistPublisher : IObservationPublisher
                 ? $"{what} while the observation was being created; it may or may not exist on iNaturalist."
                 : $"{what} during {step}; nothing was created.";
 
+        string Missing() => photoAttached ? "the audio" : soundAttached ? "the spectrogram" : "the spectrogram and the audio";
+
         string Partial() => observationId is null
             ? ""
             : $" The observation {observationId} was already created; its evidence is incomplete.";
@@ -182,6 +193,7 @@ public sealed class INaturalistPublisher : IObservationPublisher
             PlatformId = PlatformId,
             Status = status,
             TaxonName = taxonName,
+            Description = description,
             ObservationId = observationId,
             Url = url,
             SpectrogramAttached = photoAttached,

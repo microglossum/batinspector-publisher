@@ -1,4 +1,5 @@
 using BatInspectorPublisher.Core;
+using BatInspectorPublisher.Core.InputSchema;
 using BatInspectorPublisher.Core.Models;
 using BatInspectorPublisher.Core.Results;
 
@@ -69,6 +70,53 @@ public class ExportOrchestratorTests : IDisposable
         await new ExportOrchestrator(publisher).RunAsync([Candidate("A a")], new PublishOptions());
 
         Assert.False(publisher.Calls.Single().Options.Commit);
+    }
+
+    private InputDocument Document(params ObservationCandidate[] candidates) => new(1, candidates)
+    {
+        Rejected = [new RejectedEntry(1, [new ValidationIssue("DocumentFiles[1].Latitude", "bad")])],
+        Warnings = [new EntryWarning(0, new ValidationIssue("DocumentFiles[0].Date", "noon")), new EntryWarning(2, new ValidationIssue("DocumentFiles[2].Date", "noon"))],
+    };
+
+    [Fact]
+    public async Task RunAsync_Document_ReportCarriesRejectedWarningsAndResultsTogether()
+    {
+        var publisher = new FakePublisher((c, _, _) => Created(c));
+        var document = Document(Candidate("A a") with { EntryIndex = 0 }, Candidate("B b") with { EntryIndex = 2 });
+
+        var report = await new ExportOrchestrator(publisher).RunAsync(document, new PublishOptions { Commit = true });
+
+        Assert.Single(report.Rejected);
+        Assert.Equal(2, report.Warnings.Count);
+        Assert.Equal(["A a", "B b"], report.Results.Select(r => r.Candidate.ScientificName));
+        Assert.True(report.IsComplete);
+        Assert.Equal(2, report.CountByStatus[PublishStatus.Created]);
+        Assert.Equal([2], report.WarningsFor(report.Results[1]).Select(w => w.Index));
+    }
+
+    [Fact]
+    public async Task RunAsync_Document_CancelledRunIsNotComplete()
+    {
+        using var cts = new CancellationTokenSource();
+        var publisher = new FakePublisher((c, _, _) =>
+        {
+            cts.Cancel();
+            return new PublishResult { Candidate = c, PlatformId = "fake", Status = PublishStatus.Cancelled };
+        });
+
+        var report = await new ExportOrchestrator(publisher).RunAsync(Document(Candidate("A a"), Candidate("B b")), new PublishOptions(), ct: cts.Token);
+
+        Assert.Single(report.Results);
+        Assert.False(report.IsComplete);
+    }
+
+    [Fact]
+    public void WarningsFor_CandidateBuiltInCode_IsEmpty()
+    {
+        var candidate = Candidate("A a");
+        var report = new RunReport { Warnings = [new EntryWarning(0, new ValidationIssue("x", "y"))] };
+
+        Assert.Empty(report.WarningsFor(new PublishResult { Candidate = candidate, PlatformId = "fake", Status = PublishStatus.WouldCreate }));
     }
 
     [Fact]
