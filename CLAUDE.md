@@ -41,6 +41,7 @@ Flow: BatInspector's export file is read into candidates (one reference recordin
 - Validation is per entry: a bad entry is left out and reported, the rest is still published; only a structurally unusable file throws. No strict/lenient switch. Re-runs rely on the duplicate check.
 - `PublishOptions.Commit` defaults to false: publishing is public and irreversible, so dry run is the default.
 - Taxon resolution is strict and never guesses (no "first autocomplete hit", no broader taxon for a typo). The one exception is a small fixed table of BatInspector group/uncertain values, always on, no option.
+- Taxa are resolved live for every candidate and never cached or shipped as a list: iNaturalist's taxonomy changes (names are split, merged and renamed), and a stale copy would file observations under outdated taxa. A synonym is reported with its current name; the input file is corrected, not the package.
 - The input file holds one reference recording per species, night and location, not every detection; the duplicate check relies on that on purpose.
 - The package ships no credentials and reads no config files or environment variables. The host passes the adapter options.
 - Decided against:
