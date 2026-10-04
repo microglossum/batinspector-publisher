@@ -16,39 +16,49 @@ dotnet pack -c Release -o artifacts
 VS Code tasks (`Terminal > Run Task`) wrap these, plus `check` (format check + build + test). `/check` runs the same from Claude Code.
 Before finishing any change: `dotnet format`, then `dotnet test` must pass. CI builds with warnings as errors (`-p:CI=true` reproduces it).
 
-## Layout
+## Architecture
+
+One package, one assembly, two parts. For details read the code; this is only the map.
 
 ```text
 src/BatInspectorPublisher/
-  Core/            platform-neutral: Models/, InputSchema/, Results/, IObservationPublisher, ExportOrchestrator
-  Adapters/INaturalist/    OAuth, token store, API client, publisher (everything iNaturalist-specific)
-  Adapters/Naturgucker/    internal stub only
-tests/BatInspectorPublisher.Tests/   xunit; Fixtures/ = sanitized sample data
+  Core/        platform-neutral: input file, validation, models, results, orchestration, publisher interface
+  Adapters/    one folder per platform: everything that platform needs (auth, API client, platform rules, publisher)
+tests/         xunit, hand-written HTTP stubs; Fixtures/ = sanitized sample data
 tools/SmokeTest/   manual console host for live tests (not in the solution); reads git-ignored appsettings.local.json
 ```
 
+Flow: BatInspector's export file is read into candidates (one reference recording each), the orchestrator loads the evidence and hands each candidate to a platform publisher, which returns a structured result per candidate.
+
+- `Core` never references `Adapters`, adapters never reference each other (enforced by `ArchitectureTests`). The publisher interface lives in `Core`.
+- Each adapter owns its auth entirely. There is no shared auth abstraction; do not assume OAuth outside the iNaturalist adapter.
+- Validation has two layers. Platform-neutral checks live in `Core` and reject an entry for every platform; what only one platform rejects (its limits, its accepted ranges) is validated inside that adapter, before any login or request. Never put a platform limit into `Core`.
+- naturgucker is blocked (no public API docs): keep it an internal stub, do not guess its shape or bend the publisher interface for it.
+
 ## Rules that are decided - do not re-litigate
 
-- One package, one assembly. `Core` never references `Adapters`; adapters never reference each other (enforced by `ArchitectureTests`).
-- Each adapter owns its auth entirely. No shared auth abstraction in `Core`; do not assume OAuth outside `Adapters/INaturalist`.
-- naturgucker is blocked (no public API docs). Keep it a stub. Do not guess its shape or bend `IObservationPublisher` for it.
-- Input schema is BatInspector-specific, `SchemaVersion` is required. Additive changes only within a version.
-- Input validation is per entry: a bad entry is left out and listed in `InputDocument.Rejected`, the rest is still published; only a structurally unusable file throws. No strict/lenient switch. Re-runs rely on the duplicate check.
+- Input schema is BatInspector-specific, `SchemaVersion` is required, changes within a version are additive only.
+- Validation is per entry: a bad entry is left out and reported, the rest is still published; only a structurally unusable file throws. No strict/lenient switch. Re-runs rely on the duplicate check.
 - `PublishOptions.Commit` defaults to false: publishing is public and irreversible, so dry run is the default.
-- Taxon resolution accepts only an exact name match of an active taxon with the expected rank (binomial = species, one word = genus); several matches are skipped as ambiguous. Never fall back to "first autocomplete hit".
-  The one exception is a fixed table of BatInspector group/uncertain values (`Nyctaloid`, `Social`, `?` -> Chiroptera, `Mbart` -> Myotis), always on, no option; anything else that does not resolve (`todo`, typos, unknown codes) is skipped, never filed under a broader taxon.
-- Decided against: rolling back (deleting) an observation whose evidence could not be attached (2026-10-03: deleting public data automatically is destructive and the failure may be transient; resume completes it on the next run). Geoprivacy / sensitive-species handling (2026-10-02: iNaturalist obscures sensitive taxa itself, other platforms may not support it at all, the package cannot solve it). Pattern-matching or translating iNaturalist's error messages (2026-10-04: the texts are undocumented and can change, so such code would break silently; the platform's message is passed through unchanged, and clear messages come from the adapter's own validation before anything is written).
-- The package ships no credentials and reads no config files or environment variables. The host passes `INaturalistOptions`.
+- Taxon resolution is strict and never guesses (no "first autocomplete hit", no broader taxon for a typo). The one exception is a small fixed table of BatInspector group/uncertain values, always on, no option.
+- The input file holds one reference recording per species, night and location, not every detection; the duplicate check relies on that on purpose.
+- The package ships no credentials and reads no config files or environment variables. The host passes the adapter options.
+- Decided against:
+  - rolling back (deleting) an observation whose evidence could not be attached (2026-10-03: deleting public data automatically is destructive and the failure may be transient; resume completes it on the next run);
+  - geoprivacy / sensitive-species handling (2026-10-02: iNaturalist obscures sensitive taxa itself, other platforms may not support it, the package cannot solve it);
+  - pattern-matching or translating iNaturalist's error messages (2026-10-04: the texts are undocumented and can change, so such code would break silently; the platform's message is passed through, and clear messages come from the adapter's own validation before anything is written);
+  - an offline validation pass over all candidates before the first one is published (2026-10-04: the host publishes in batches, not all at once, so a bad entry late in the file costs at most one batch, and the dry run already finds it).
 
 ## Conventions
 
-- Code, comments, exceptions, logs, tests: English. User-visible content posted to a platform (observation description) is German and lives in `DescriptionBuilder`.
+- Code, comments, exceptions, logs, tests: English. User-visible content posted to a platform (the observation description) is German and built in the adapter.
 - Docs are Markdown. User-facing docs are bilingual: English is the source (`README.md`, `docs/*.md`), German is `*.de.md`; change both together. Small files (`CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`) hold both languages in one file.
 - Library code never writes to the console. Use `ILogger` (optional, NullLogger default) and structured results.
 - Never log tokens or token-bearing response bodies.
-- Public API is minimal and fully XML-documented; wire models and the API client stay `internal`.
-- Tests use hand-written HTTP stubs (`StubHttpHandler`), never live APIs. Windows-only behavior uses `[WindowsOnlyFact]`.
+- Public API is minimal and fully XML-documented; wire models and API clients stay `internal`.
+- Tests use hand-written HTTP stubs, never live APIs. Windows-only behavior uses `[WindowsOnlyFact]`.
 - Keep `CHANGELOG.md` (Keep a Changelog) updated under `[Unreleased]`.
+- The library multi-targets `net8.0;net10.0`. Do not use APIs that exist only on net10.0 without a `#if`.
 
 ## Secrets and data - hard rules
 
@@ -56,16 +66,12 @@ tools/SmokeTest/   manual console host for live tests (not in the solution); rea
 - Fixtures in `tests/**/Fixtures` must be sanitized: no real coordinates, no real local paths.
 - Do not `git push` or commit unless the user explicitly asks. The remote is public.
 
-## Backlog and memory
+## Backlog and docs
 
 - `TODO.md` is the project backlog: open and blocked work only, no list of finished items. Read it at the start of a task, update it when something is decided or found, and groom it before every commit (see Git rules). English only.
-  Finished work is recorded by the commit and `CHANGELOG.md`; a decision against something goes into the "decided" rules below, not into `TODO.md`.
-- `CLAUDE.md` (this file) holds standing rules; `docs/releasing.md` is the release runbook; the design notes below hold decisions that are not obvious from the code. Claude's own auto-memory lives outside the repo and is per machine.
+  Finished work is recorded by the commit and `CHANGELOG.md`; a decision against something goes into the "decided" rules above, not into `TODO.md`.
+- `CLAUDE.md` (this file) holds standing rules and the architecture map, not details the code already shows; `docs/releasing.md` is the release runbook. Claude's own auto-memory lives outside the repo and is per machine.
 - Internal docs (`CLAUDE.md`, `TODO.md`, `CHANGELOG.md`) are English only; user-facing docs are bilingual.
-
-## Frameworks
-
-The library multi-targets `net8.0;net10.0`, tests run on both (`dotnet test` does it). Do not use APIs that exist only on net10.0 without a `#if`.
 
 ## Project stance
 
@@ -91,15 +97,8 @@ One-person project: external code contributions are not solicited (bug reports a
 The package version comes from the git tag via MinVer (`vX.Y.Z`); never add `<Version>` to the csproj. Release procedure and SemVer sizing: `docs/releasing.md`.
 Validate non-C# files with `scripts/validate-config.sh` (VS Code task "validate (config files)"; the tools come from the devcontainer) before finishing changes to workflows, YAML/JSON config, Markdown or the devcontainer.
 
-## Design notes (decisions that are not obvious from the code)
+## BatInspector (producer of the input file)
 
-- `IObservationPublisher` lives in `Core/` (no `Abstractions/` folder, no shared auth abstraction). `ExportOrchestrator` is thin: evidence validation, failure isolation, progress. The resolve, duplicate-check, build, create and attach sequence lives inside `INaturalistPublisher`.
-- Validation has two layers. Platform-neutral rules (plausibility of the data, evidence paths, evidence content is a PNG / WAV) live in one class, `Core/Validation/EntryValidator`, and reject an entry for every platform; `InputSchemaReader` only reads (types, formats, zones) and `EvidenceLoader` only does file I/O, both ask the validator. What only one platform rejects (its limits and accepted ranges) lives in that adapter (`INaturalistValidator`), runs first in `PublishAsync` before any login or request, also in a dry run, and ends in `SkippedInvalidEntry` / `SkippedInvalidEvidence`. Never put a platform limit into `Core`.
-- `PublishResult` is a plain in-memory type. A versioned serialized result schema is deferred until BatInspector needs to persist results.
-- Input `Date` is German local time without zone; only the date is sent to iNaturalist (v2 rejects `time_observed_at`).
-- The input file holds one reference recording (German: "Referenzaufnahme") per species, night and location, not every detection: the aim is to document presence of a species at a place and time, and one recording is usually enough. The duplicate check (taxon, calendar day, radius) relies on that and skips a second entry for the same key on purpose.
-- `SpeciesTaxonMap` from the prototype was not ported: the new schema carries Latin names, not BatInspector codes.
-- Uncertain calls filed under Chiroptera or Myotis (see the taxon rule above) are collapsed by the duplicate check (taxon, day, radius) when they share a night and place. Accepted on purpose: both are "a bat"; the description names the original call.
-- BatInspector (the producer of the input file) is open source: <https://github.com/chrmue44/BatInspector>. Look there to learn what it writes (field meanings, species list in `BatInfo.cs`, `BatSpeciesRegions.json`); `gh` is not logged in, so use `curl` on `api.github.com` / `raw.githubusercontent.com`.
-  The public code can lag behind: a feature or integration may sit on a non-`main` branch or not be pushed at all. If something is missing or unclear, say so and ask the owner instead of guessing. BatInspector is CC BY-NC 4.0: read it for facts, never copy its code into this MIT repo.
-- The old prototypes (`INaturalistApiKeyExporter`, `INaturalistOAuthExporter`) live on in the owner's other repo; do not look for them here.
+BatInspector is open source: <https://github.com/chrmue44/BatInspector>. Look there to learn what it writes (field meanings, species list); `gh` is not logged in, so use `curl` on `api.github.com` / `raw.githubusercontent.com`.
+The public code can lag behind: a feature or integration may sit on a non-`main` branch or not be pushed at all. If something is missing or unclear, say so and ask the owner instead of guessing. BatInspector is CC BY-NC 4.0: read it for facts, never copy its code into this MIT repo.
+The old prototypes live on in the owner's other repo; do not look for them here.
