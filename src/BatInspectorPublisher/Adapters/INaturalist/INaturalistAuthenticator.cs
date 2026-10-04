@@ -9,10 +9,21 @@ namespace BatInspectorPublisher.Adapters.INaturalist;
 /// refresh and the OAuth-to-JWT exchange. Hosts can call <see cref="LoginAsync"/> from a "connect"
 /// button; <see cref="INaturalistPublisher"/> calls <see cref="EnsureAuthenticatedAsync"/> itself.
 /// </summary>
-public sealed class INaturalistAuthenticator
+public sealed partial class INaturalistAuthenticator
 {
     /// <summary>The API JWT is documented/observed to live 24 h, independent of the OAuth token's own expires_in.</summary>
     private const int JwtLifetimeSeconds = 24 * 60 * 60;
+
+    [LoggerMessage(EventId = 2001, EventName = "StoredTokenRejected", Level = LogLevel.Warning,
+        Message = "iNaturalist rejected the stored OAuth token; a new login is needed")]
+    private static partial void LogStoredTokenRejected(ILogger logger, Exception error);
+
+    [LoggerMessage(EventId = 2002, EventName = "TokenRefreshFailed", Level = LogLevel.Warning,
+        Message = "Refreshing the iNaturalist token failed; falling back to interactive login")]
+    private static partial void LogRefreshFailed(ILogger logger, Exception error);
+
+    [LoggerMessage(EventId = 2003, EventName = "LoggedIn", Level = LogLevel.Information, Message = "Logged in to iNaturalist as {Username}")]
+    private static partial void LogLoggedIn(ILogger logger, string username);
 
     private readonly INaturalistApiClient _api;
     private readonly OAuthFlow _flow;
@@ -89,7 +100,7 @@ public sealed class INaturalistAuthenticator
                 }
                 catch (INaturalistApiException ex) when (ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
                 {
-                    _logger.LogWarning(ex, "iNaturalist rejected the stored OAuth token; a new login is needed");
+                    LogStoredTokenRejected(_logger, ex);
                 }
             }
 
@@ -104,7 +115,7 @@ public sealed class INaturalistAuthenticator
                 }
                 catch (Exception ex) when (ex is INaturalistApiException or InvalidOperationException)
                 {
-                    _logger.LogWarning(ex, "Refreshing the iNaturalist token failed; falling back to interactive login");
+                    LogRefreshFailed(_logger, ex);
                 }
             }
 
@@ -155,7 +166,7 @@ public sealed class INaturalistAuthenticator
             ExpiresInSeconds = JwtLifetimeSeconds,
         };
         _store.Save(token);
-        _logger.LogInformation("Logged in to iNaturalist as {Username}", username);
+        LogLoggedIn(_logger, username);
         return token;
     }
 }

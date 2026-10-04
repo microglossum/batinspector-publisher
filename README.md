@@ -149,6 +149,12 @@ and `InterruptedStep` names the stage that stopped. If the stop came while the o
 **Re-running after a partial result:** the duplicate check normally skips an observation that already exists (`SkippedDuplicate`). If the existing observation is one this package created for the same entry
 (identical description) and it still lacks the spectrogram or the audio, the run attaches the missing evidence instead and reports `Resumed`. Any other observation of yours is left untouched. Nothing is ever deleted.
 
+## Logging
+
+The library logs through `Microsoft.Extensions.Logging.Abstractions`; every class that logs takes an optional `ILogger`, and nothing is written without one.
+Debug logs the HTTP calls, Information the outcomes, Warning the fallbacks, Error a `Failed` candidate with its exception. Tokens are never logged.
+Levels, event IDs and how to plug in a console or file logger: [docs/logging.md](docs/logging.md).
+
 ## Development
 
 ```text

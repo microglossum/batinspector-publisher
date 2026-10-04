@@ -150,6 +150,12 @@ und `InterruptedStep` nennt den Schritt, an dem es stoppte. Kam der Abbruch, wä
 **Erneuter Lauf nach einem Teilergebnis:** Die Duplikatprüfung überspringt normalerweise eine vorhandene Beobachtung (`SkippedDuplicate`). Ist die vorhandene Beobachtung eine, die dieses Paket für denselben Eintrag angelegt hat
 (identische Beschreibung) und fehlt ihr noch das Spektrogramm oder die Audioaufnahme, hängt der Lauf die fehlenden Belege an und meldet `Resumed`. Jede andere Beobachtung des Nutzers bleibt unberührt. Es wird nie etwas gelöscht.
 
+## Logging
+
+Die Bibliothek loggt über `Microsoft.Extensions.Logging.Abstractions`; jede Klasse, die loggt, nimmt einen optionalen `ILogger`, ohne ihn wird nichts geschrieben.
+Debug protokolliert die HTTP-Aufrufe, Information die Ergebnisse, Warning die Ausweichfälle, Error einen `Failed`-Kandidaten mit seiner Ausnahme. Tokens werden nie protokolliert.
+Stufen, Ereignis-IDs und wie man einen Konsolen- oder Datei-Logger anschließt: [docs/logging.de.md](docs/logging.de.md).
+
 ## Entwicklung
 
 ```text

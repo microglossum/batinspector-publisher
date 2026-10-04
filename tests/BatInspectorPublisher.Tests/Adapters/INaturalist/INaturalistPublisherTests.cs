@@ -678,12 +678,23 @@ public class INaturalistPublisherTests
 
 internal sealed class CapturingLogger : Microsoft.Extensions.Logging.ILogger
 {
-    public List<(Microsoft.Extensions.Logging.LogLevel Level, string Message)> Entries { get; } = [];
+    public List<(Microsoft.Extensions.Logging.LogLevel Level, string Message, Exception? Error)> Entries { get; } = [];
 
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
     public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
 
     public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-        Entries.Add((logLevel, formatter(state, exception)));
+        Entries.Add((logLevel, formatter(state, exception), exception));
+}
+
+/// <summary>Typed view on a <see cref="CapturingLogger"/>, for classes that take an <c>ILogger&lt;T&gt;</c>.</summary>
+internal sealed class CapturingLogger<T>(CapturingLogger inner) : Microsoft.Extensions.Logging.ILogger<T>
+{
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => inner.BeginScope(state);
+
+    public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => inner.IsEnabled(logLevel);
+
+    public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+        inner.Log(logLevel, eventId, state, exception, formatter);
 }

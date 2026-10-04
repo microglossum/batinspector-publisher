@@ -37,8 +37,12 @@ public interface INaturalistTokenStore
 /// </para>
 /// <para>An unreadable file (corrupt, or encrypted by another Windows user) is treated as "no token" and logged as a warning.</para>
 /// </summary>
-public sealed class ProtectedFileTokenStore : INaturalistTokenStore
+public sealed partial class ProtectedFileTokenStore : INaturalistTokenStore
 {
+    [LoggerMessage(EventId = 2201, EventName = "TokenFileUnreadable", Level = LogLevel.Warning,
+        Message = "The stored iNaturalist token in {Path} cannot be read and is ignored; a new login is needed")]
+    private static partial void LogUnreadable(ILogger logger, Exception error, string path);
+
     private readonly string _filePath;
     private readonly bool _allowPlaintext;
     private readonly ILogger _logger;
@@ -82,7 +86,7 @@ public sealed class ProtectedFileTokenStore : INaturalistTokenStore
         catch (Exception ex) when (ex is CryptographicException or JsonException)
         {
             // The next Save replaces the file, so there is no need to delete it here.
-            _logger.LogWarning(ex, "The stored iNaturalist token in {Path} cannot be read and is ignored; a new login is needed", _filePath);
+            LogUnreadable(_logger, ex, _filePath);
             return null;
         }
     }

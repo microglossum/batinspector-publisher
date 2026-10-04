@@ -86,28 +86,6 @@ To do:
 - `OAuthFlow.WaitForAuthorizationCodeAsync` accepts only the first request on the listener. Any stray request (port scan, browser prefetch, another local program) ends the login with an error. Keep listening until a request carries a valid `state` or the timeout hits.
 - Document the environments where the loopback login does not work and what to do.
 
-### Logging strategy
-
-Today every class takes an optional `ILogger` (`Microsoft.Extensions.Logging.Abstractions`; `NullLogger` when omitted), so a host can plug in any logger.
-Logged now: HTTP calls at Debug with truncated response bodies (the token exchange body is never logged), per-candidate results and logins at Information,
-fallbacks (rejected token, failed refresh) at Warning. `INaturalistPublisher` itself logs nothing yet.
-
-How .NET libraries usually do it (confirm while researching): depend only on the `Microsoft.Extensions.Logging.Abstractions` package (`ILogger<T>` / `ILoggerFactory`)
-and let the host choose the provider; Serilog and NLog both bridge to it. Hosts without dependency injection create a factory (`LoggerFactory.Create(...)`, package
-`Microsoft.Extensions.Logging`) or pass nothing. Older libraries expose their own event or callback; telemetry-minded ones add `ActivitySource` / metrics (OpenTelemetry).
-
-Open decisions:
-
-- Keep the optional `ILogger` constructor parameters, or accept one `ILoggerFactory`/options object that is passed once?
-- `[LoggerMessage]` source-generated logging (fast, structured, event IDs) versus plain calls.
-- Stable event IDs and message templates: they become part of what hosts can filter and alert on.
-- What may be logged: never tokens or secrets (a test with a capturing logger should prove it). Decide about Debug response bodies (they can contain observation data such as coordinates), file paths and species.
-  Define the level policy (Debug: HTTP; Information: outcomes; Warning: fallbacks; Error: only the unexpected).
-- `INaturalistApiException.Message` contains the response body and ends up in `PublishResult.Message` and host UIs. Decide whether error bodies may be shown there or only kept in `ResponseBody`.
-- Document how a host without DI (BatInspector) plugs in a logger, with a console and a file example.
-- Keep logs (diagnostics) separate from progress for a UI (`IProgress<PublishResult>`).
-- Optional later: `ActivitySource` and metrics.
-
 ### Documentation: input file and per-platform mapping
 
 Two kinds of reference pages under `docs/`, each bilingual (English source, `*.de.md` twin), with diagrams where they help:
@@ -208,6 +186,8 @@ Blocked: there is no public API documentation, so the auth and submission model 
 - Versioned serialized result schema: only when BatInspector wants to persist results.
 - Decide whether to register the iNaturalist OAuth application as public (no secret) if BatInspector is distributed to others.
 - Re-check iNaturalist API terms and etiquette for automated submission.
+- Decide whether `INaturalistApiException.Message` (response body included, so also `PublishResult.Message` and the Error log line) gets a length cap: a 5xx can answer with a whole HTML page. The full body stays in `ResponseBody` either way.
+- Logging: `ActivitySource` and metrics (OpenTelemetry), if a host wants them.
 - Confirm BatInspector's license is compatible with MIT; add NOTICE if a dependency requires it.
 - JSON Schema file for the input format and a contract test, if BatInspector produces the file.
 - Deprecation policy for schema changes.

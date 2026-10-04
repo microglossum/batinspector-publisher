@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace BatInspectorPublisher.Adapters.INaturalist;
 
 /// <summary>Thin wrapper around the iNaturalist REST endpoints needed to create observations with photo and sound evidence.</summary>
-internal sealed class INaturalistApiClient
+internal sealed partial class INaturalistApiClient
 {
     private const int MaxLoggedBodyLength = 2000;
 
@@ -29,6 +29,14 @@ internal sealed class INaturalistApiClient
         _http = http;
         _logger = logger ?? NullLogger.Instance;
     }
+
+    // Debug only: URLs and bodies can hold observation data (coordinates, descriptions), never a token.
+    [LoggerMessage(EventId = 3001, EventName = "HttpCall", Level = LogLevel.Debug, Message = "{Method} {Url} -> {Status}; body: {Body}")]
+    private static partial void LogHttpCall(ILogger logger, HttpMethod method, Uri? url, int status, string body);
+
+    [LoggerMessage(EventId = 3002, EventName = "NoNumericObservationId", Level = LogLevel.Warning,
+        Message = "iNaturalist returned no numeric observation id; continuing with the uuid {Uuid}")]
+    private static partial void LogNoNumericId(ILogger logger, string uuid);
 
     private static HttpRequestMessage NewRequest(HttpMethod method, string url, string bearerToken, HttpContent? content = null)
     {
@@ -52,7 +60,7 @@ internal sealed class INaturalistApiClient
             if (_logger.IsEnabled(LogLevel.Debug))
             {
                 var shown = !logBody ? "(not logged)" : body.Length > MaxLoggedBodyLength ? body[..MaxLoggedBodyLength] + "... (truncated)" : body;
-                _logger.LogDebug("{Method} {Url} -> {Status}; body: {Body}", request.Method, request.RequestUri, (int)response.StatusCode, shown);
+                LogHttpCall(_logger, request.Method, request.RequestUri, (int)response.StatusCode, shown);
             }
 
             if (!response.IsSuccessStatusCode)
@@ -148,7 +156,7 @@ internal sealed class INaturalistApiClient
         if (observation.Id == 0)
         {
             // Seen in practice: a valid uuid but no numeric id. Only the uuid is needed to attach media.
-            _logger.LogWarning("iNaturalist returned no numeric observation id; continuing with the uuid {Uuid}", observation.Uuid);
+            LogNoNumericId(_logger, observation.Uuid);
         }
 
         return observation;

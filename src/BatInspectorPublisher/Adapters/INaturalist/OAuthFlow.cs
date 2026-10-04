@@ -22,7 +22,7 @@ public delegate Task AuthorizationPrompt(Uri authorizeUrl, CancellationToken ct)
 /// <see cref="AuthorizationPrompt"/>, catches the redirect on a temporary loopback HTTP listener
 /// and exchanges the returned code for tokens.
 /// </summary>
-internal sealed class OAuthFlow
+internal sealed partial class OAuthFlow
 {
     /// <summary>How many OS-assigned ports are tried after the configured one is found taken.</summary>
     private const int MaxFallbackPorts = 3;
@@ -31,6 +31,17 @@ internal sealed class OAuthFlow
     private readonly HttpClient _http;
     private readonly AuthorizationPrompt _prompt;
     private readonly ILogger _logger;
+
+    // The token endpoint's body holds tokens and is never logged.
+    [LoggerMessage(EventId = 2101, EventName = "OAuthTokenRequest", Level = LogLevel.Debug, Message = "POST {Url} ({GrantType}) -> {Status}")]
+    private static partial void LogTokenRequest(ILogger logger, string url, string grantType, int status);
+
+    [LoggerMessage(EventId = 2102, EventName = "OAuthCannotListen", Level = LogLevel.Debug, Message = "Cannot listen on port {Port}: {Message}")]
+    private static partial void LogCannotListen(ILogger logger, int port, string message);
+
+    [LoggerMessage(EventId = 2103, EventName = "OAuthFallbackPort", Level = LogLevel.Warning,
+        Message = "Port {Preferred} is in use; the login listens on port {Port} instead. iNaturalist must accept that port for the registered redirect URI.")]
+    private static partial void LogFallbackPort(ILogger logger, int preferred, int port);
 
     public OAuthFlow(INaturalistOptions options, HttpClient http, AuthorizationPrompt? prompt = null, ILogger? logger = null)
     {
@@ -104,7 +115,7 @@ internal sealed class OAuthFlow
         using var request = new HttpRequestMessage(HttpMethod.Post, _options.OAuthTokenUrl) { Content = new FormUrlEncodedContent(form) };
         using var response = await _http.SendAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
-        _logger.LogDebug("POST {Url} ({GrantType}) -> {Status}", _options.OAuthTokenUrl, form["grant_type"], (int)response.StatusCode);
+        LogTokenRequest(_logger, _options.OAuthTokenUrl, form["grant_type"], (int)response.StatusCode);
         if (!response.IsSuccessStatusCode)
         {
             throw new INaturalistApiException("OAuth token request", response.StatusCode, body);
@@ -193,13 +204,13 @@ internal sealed class OAuthFlow
                 // Typically "address already in use"; the free port found above can also be taken again before we bind it.
                 listener.Close();
                 lastError = ex;
-                _logger.LogDebug("Cannot listen on port {Port}: {Message}", candidate.Port, ex.Message);
+                LogCannotListen(_logger, candidate.Port, ex.Message);
                 continue;
             }
 
             if (attempt > 0)
             {
-                _logger.LogWarning("Port {Preferred} is in use; the login listens on port {Port} instead. iNaturalist must accept that port for the registered redirect URI.", preferred.Port, candidate.Port);
+                LogFallbackPort(_logger, preferred.Port, candidate.Port);
             }
 
             redirectUri = candidate.AbsoluteUri;

@@ -11,7 +11,7 @@ namespace BatInspectorPublisher.Core;
 /// Platform-agnostic control flow: per candidate, read and check the evidence once, then one publisher
 /// call, with failure isolation and progress reporting. Everything platform-specific lives in the publisher.
 /// </summary>
-public sealed class ExportOrchestrator
+public sealed partial class ExportOrchestrator
 {
     private readonly IObservationPublisher _publisher;
     private readonly ILogger _logger;
@@ -58,8 +58,15 @@ public sealed class ExportOrchestrator
             }
 
             var result = await PublishOneAsync(candidate, options, ct);
-            _logger.LogInformation("{Platform}: {Species} @ {ObservedAt:yyyy-MM-dd HH:mm:ss zzz} -> {Status}",
-                result.PlatformId, candidate.ScientificName, candidate.ObservedAt, result.Status);
+            if (result.Status == PublishStatus.Failed)
+            {
+                LogCandidateFailed(_logger, result.Error, result.PlatformId, candidate.ScientificName, candidate.ObservedAt, result.Message);
+            }
+            else
+            {
+                LogCandidateProcessed(_logger, result.PlatformId, candidate.ScientificName, candidate.ObservedAt, result.Status, result.Message);
+            }
+
             results.Add(result);
             progress?.Report(result);
 
@@ -96,6 +103,14 @@ public sealed class ExportOrchestrator
             IsComplete = results.Count == document.Candidates.Count && results.All(r => r.Status != PublishStatus.Cancelled),
         };
     }
+
+    [LoggerMessage(EventId = 1001, EventName = "CandidateProcessed", Level = LogLevel.Information,
+        Message = "{Platform}: {Species} @ {ObservedAt:yyyy-MM-dd HH:mm:ss zzz} -> {Status}: {Message}")]
+    private static partial void LogCandidateProcessed(ILogger logger, string platform, string species, DateTimeOffset observedAt, PublishStatus status, string? message);
+
+    [LoggerMessage(EventId = 1002, EventName = "CandidateFailed", Level = LogLevel.Error,
+        Message = "{Platform}: {Species} @ {ObservedAt:yyyy-MM-dd HH:mm:ss zzz} failed: {Message}")]
+    private static partial void LogCandidateFailed(ILogger logger, Exception? error, string platform, string species, DateTimeOffset observedAt, string? message);
 
     private async Task<PublishResult> PublishOneAsync(ObservationCandidate candidate, PublishOptions options, CancellationToken ct)
     {

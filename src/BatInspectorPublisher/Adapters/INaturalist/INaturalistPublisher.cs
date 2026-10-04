@@ -15,7 +15,7 @@ namespace BatInspectorPublisher.Adapters.INaturalist;
 /// what a commit run would do and writes nothing. An observation that an earlier run left without its full evidence is completed
 /// instead of being reported as a duplicate.
 /// </summary>
-public sealed class INaturalistPublisher : IObservationPublisher
+public sealed partial class INaturalistPublisher : IObservationPublisher
 {
     private readonly INaturalistOptions _options;
     private readonly INaturalistApiClient _api;
@@ -63,6 +63,14 @@ public sealed class INaturalistPublisher : IObservationPublisher
         _api = new INaturalistApiClient(options, httpClient, _logger);
         _getAccessToken = getAccessToken;
     }
+
+    [LoggerMessage(EventId = 4001, EventName = "ObservationResuming", Level = LogLevel.Information,
+        Message = "Completing the incomplete iNaturalist observation {ObservationId} of {Species}")]
+    private static partial void LogResuming(ILogger logger, string? observationId, string species);
+
+    [LoggerMessage(EventId = 4002, EventName = "ObservationCreated", Level = LogLevel.Information,
+        Message = "Created iNaturalist observation {ObservationId} of {Species}")]
+    private static partial void LogCreated(ILogger logger, string? observationId, string species);
 
     /// <inheritdoc />
     public async Task<PublishResult> PublishAsync(ObservationCandidate candidate, EvidenceFiles evidence, PublishOptions options, CancellationToken ct = default)
@@ -128,7 +136,7 @@ public sealed class INaturalistPublisher : IObservationPublisher
                     return Result(PublishStatus.WouldResume, $"Dry run: would complete the incomplete observation {observationId} by attaching {Missing()}.");
                 }
 
-                _logger.LogInformation("Completing the incomplete iNaturalist observation {ObservationId} of {Species}", observationId, candidate.ScientificName);
+                LogResuming(_logger, observationId, candidate.ScientificName);
             }
             else
             {
@@ -144,7 +152,7 @@ public sealed class INaturalistPublisher : IObservationPublisher
                 uuid = created.Uuid;
                 (observationId, url) = Identify(created.Id, created.Uuid);
                 // Logged at once: if anything after this fails, this line is the trail to the observation.
-                _logger.LogInformation("Created iNaturalist observation {ObservationId} of {Species}", observationId, candidate.ScientificName);
+                LogCreated(_logger, observationId, candidate.ScientificName);
             }
 
             if (!photoAttached)
