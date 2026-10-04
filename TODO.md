@@ -80,7 +80,6 @@ Facts found in iNaturalist's open source (Doorkeeper 5.6.6 on `main`, checked 20
 To do:
 
 - Live check of the port fallback (fixed port first, then up to three OS-assigned ports): occupy port 45679 and run the SmokeTest login. The owner confirmed iNaturalist accepts a changed loopback port.
-  Open question: bind an OS-assigned port first (no collisions at all) instead of fixed-first? Not needed while the fallback works.
 - A host-pluggable receiver for the authorization response, next to `AuthorizationPrompt`: a manual "paste the redirected URL" fallback for blocked or remote environments, and a custom-scheme receiver for packaged desktop apps.
 - Distinct, actionable error types: port in use, timeout, denied by user, token rejected.
 - `OAuthFlow.WaitForAuthorizationCodeAsync` accepts only the first request on the listener. Any stray request (port scan, browser prefetch, another local program) ends the login with an error. Keep listening until a request carries a valid `state` or the timeout hits.
@@ -122,8 +121,6 @@ Waits until BatInspector runs off Windows:
 
 ### GitHub Actions
 
-`.github/workflows/ci.yml` builds and tests on Ubuntu 26.04 and Windows Server 2025 (both pinned, no `-latest`), checks format, validates config files, packs and runs gitleaks. To do:
-
 - `tech/setup-repo` is currently the default branch and `main` does not exist on the remote, so Dependabot PRs target the working branch. Push `main`, make it the default, let Dependabot retarget;
 - release workflow per `docs/releasing.md`: checkout with `fetch-depth: 0` (MinVer reads the tag), pack, push to nuget.org, create the GitHub Release with notes extracted from `CHANGELOG.md`;
 - harden the workflow: pin actions to commit SHAs (Dependabot keeps them current) and set `permissions: contents: read` at the top (check what gitleaks needs on pull requests);
@@ -149,10 +146,10 @@ Prerequisites: the first live test (see above), CHANGELOG, README check.
 Before the first release, research current best practice for publishing a high-quality package, then decide what to adopt. Starting points and topics:
 
 - Microsoft's guidance: the .NET library guidance (learn.microsoft.com/dotnet/standard/library-guidance) and NuGet's package authoring best practices.
-- Metadata and discoverability: README rendering on nuget.org, package icon, tags, description, license expression, release notes link, repository and SourceLink.
+- Metadata and discoverability: README rendering on nuget.org, package icon, release notes link.
 - API quality: public API tracking (`Microsoft.CodeAnalysis.PublicApiAnalyzers`), package validation with a baseline version (`EnablePackageValidation`) to catch breaking changes automatically, nullable annotations, XML docs coverage.
 - Compatibility: multi-targeting choices, minimum dependency versions, trimming and AOT annotations, minimal dependencies.
-- Supply chain: package signing, nuget.org trusted publishing (OIDC) instead of long-lived API keys, NuGet audit, SBOM, dependency update policy (Dependabot is set up).
+- Supply chain: package signing, nuget.org trusted publishing (OIDC) instead of long-lived API keys, NuGet audit, SBOM.
 - Documentation: a docs site (DocFX on GitHub Pages) versus README only, samples, how a consumer discovers the BatInspector integration.
 - Release hygiene: pre-release flow (`-preview.N`, `-rc.N`), deprecation and unlisting policy, prefix reservation.
 - Look at well-regarded small packages and copy what works.
@@ -160,8 +157,6 @@ Before the first release, research current best practice for publishing a high-q
 Output: a short decision list in this file (adopt, later, skip) and the resulting items in CI and the csproj.
 
 ### GitHub repository polish (settings on github.com, after the first push)
-
-Files are in the repo (README badges, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, issue forms, Dependabot config). Still to click:
 
 - About box: description, topics (`bats`, `bioacoustics`, `inaturalist`, `citizen-science`, `dotnet`, `nuget`), social preview image.
 - Security: enable private vulnerability reporting (needed by `SECURITY.md`), secret scanning with push protection, Dependabot alerts.
