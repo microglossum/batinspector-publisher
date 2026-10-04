@@ -42,15 +42,22 @@ The dry run is the default and the only safety net, so it should be faithful:
 
 A transient error (5xx, 429, network) ends the candidate as `Failed` at once; the next run completes it through resume. Open: retry with backoff for transient errors, and rate limiting against iNaturalist's API etiquette (check the documented request limits, and whether `Retry-After` is sent).
 
-### iNaturalist upload limits (file size and format)
+### iNaturalist validation: verify the rules live
 
-Evidence files are read completely into memory (one candidate at a time) and uploaded as is. Nothing checks size or format limits yet, so an oversized file only fails at the upload, after the observation was already created
-(the next run then completes it by resume).
+`INaturalistValidator` (before login and request, also in a dry run) refuses what iNaturalist would reject; the rules are listed in `docs/inaturalist-setup.md`. They come from iNaturalist's open source and forum (read 2026-10-04), **not yet verified live**. Error texts from iNaturalist are passed through unchanged (decided, see `CLAUDE.md`).
+Per observation we send one photo and one sound, so the per-observation file count (about 20 photos) is no issue. Facts that the validator relies on or that stay unknown:
 
-- Look up iNaturalist's limits for observation photos and sounds: maximum file size, accepted image and audio formats and sample rates, duration limits. Check the v2 API docs and the sound upload rules; confirm with a real upload in the live test.
-- Reject files over the limit in the adapter pre-flight (`Adapters/INaturalist`, not `Core`), before the observation is created, with a clear `SkippedInvalidEvidence` message. It also caps memory use.
-- Decide whether a too large spectrogram PNG should be re-encoded or left to the host, and what to do with WAV recordings over the sound limit (skip, or host provides a compressed copy).
-- Add the limits to `docs/inaturalist-setup.md`.
+- **Size:** 20 MB per file (forum, moderator statements; MB or MiB unknown, `MaxEvidenceBytes` defaults to the safe 20,000,000). The v2 API sets no limit itself and proxies to the Rails app, so the limit is probably enforced in front of it; a forum thread mentions "413 Request Entity Too Large". What the v2 API returns is unknown.
+- **Formats:** sounds WAV, MP3, M4A, AAC, AMR (content-detected; WAV and MP3 stored unchanged); photos JPEG, PNG, GIF, HEIC/HEIF, downscaled to 2048 px on the longest edge. No duration or sample-rate limit is documented anywhere.
+- **Description:** a `text` column without a known length limit, so it is not validated.
+- **Date:** the server also refuses a date after today in the account's own time zone, which the validator cannot know; it only catches dates no zone allows. Sending the zone (see "Times and time zones") would let the server decide correctly.
+
+To do:
+
+- Live test: upload a real recording and a spectrogram of realistic size; then one deliberately over 20 MB (a test account or an observation that may be deleted) to see the status and body the v2 API returns, and whether the real limit is 20 MB or 20 MiB. Is a high sample rate (192-500 kHz) accepted, and does the observation page play it and show its spectrogram? Compare real WAV sizes with the limit (`local/` is off limits for Claude).
+- Live test of the other rules: a date one day ahead, latitude exactly 90, a tag list over the limit. Adjust or drop a rule that iNaturalist does not enforce.
+- The evidence files are read completely into memory before the size is checked (the loader runs first and knows no platform limit). Fine for one candidate at a time; revisit only if memory becomes a problem.
+- A WAV over the limit has no automatic way out (the host has to supply a smaller file); see whether BatInspector can export a shorter or resampled copy.
 
 ### Times and time zones
 
@@ -63,11 +70,13 @@ Needs the live test:
 
 Principles for any new check: validate at the boundary, report every problem with its path, never alter data silently (except documented normalization such as species capitalization).
 Two levels: **error** (the entry is rejected) and **warning** (reported in `InputDocument.Warnings`, does not block). Publishing is public and irreversible, so anything doubtful that cannot be fixed afterwards is an error, not a warning.
-Platform limits belong in the adapter's pre-flight, not in `Core`.
+Platform limits belong in the adapter's own validation (`INaturalistValidator`), not in `Core`.
 
 - Rejected entries have no `ObservationCandidate`, so they are not part of `PublishResult`s; the host has to show `InputDocument.Rejected` itself. Decide whether a combined report is worth it.
 - `Candidates` can be shorter than `DocumentFiles` and a candidate does not know its position in the file. If a host needs to map results back to entries, add the entry index to `ObservationCandidate`.
-- More warnings for `InputDocument.Warnings`: implausible temperature or humidity (omit the value from the description); a daytime timestamp for a bat; duplicate entries (same species, time and place; the remote duplicate check can lag); a name that is neither a binomial nor a genus.
+- Validate before anything is published. `EvidenceLoader` checks each file right before its candidate is published, so a missing file on entry 40 is found after 39 observations are public (a dry run finds it, but needs a login and the network). Add an offline pass over all candidates first (existence, size, signature from the header only, no full read; platform limits through a new generic `IObservationPublisher` method that `INaturalistValidator` implements on file sizes), as a separate `ExportOrchestrator` call so the host can stop. The read-once check at publish time stays authoritative.
+- `EntryValidator.ValidateValues` only runs for entries read from a file. A host that builds `ObservationCandidate` objects itself skips it; the orchestrator could run it for every candidate.
+- More warnings for `InputDocument.Warnings` (they belong into `EntryValidator`): implausible temperature or humidity (omit the value from the description); a daytime timestamp for a bat; duplicate entries (same species, time and place; the remote duplicate check can lag); a name that is neither a binomial nor a genus.
 - The signature checks are not a full format validation (a file can start like a PNG and still be something else); decide whether that is enough.
 
 ### OAuth login robustness (loopback listener)

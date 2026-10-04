@@ -55,6 +55,58 @@ public class INaturalistPublisherTests
         Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Publish_EntryINaturalistRefuses_IsSkippedBeforeLoginAndAnyRequest(bool commit)
+    {
+        var loggedIn = false;
+        var publisher = new INaturalistPublisher(TestData.Options(), new HttpClient(_http), _ =>
+        {
+            loggedIn = true;
+            return Task.FromResult("jwt-token");
+        });
+
+        var result = await publisher.PublishAsync(Candidate() with { Latitude = 90 }, Evidence(), new PublishOptions { Commit = commit });
+
+        Assert.Equal(PublishStatus.SkippedInvalidEntry, result.Status);
+        Assert.Contains("Latitude", result.Message);
+        Assert.False(loggedIn);
+        Assert.Empty(_http.Requests);
+    }
+
+    [Fact]
+    public async Task Publish_OversizedEvidence_IsSkippedBeforeTheObservationIsCreated()
+    {
+        HappyPath();
+        var options = new INaturalistOptions { ClientId = "test-client", MaxEvidenceBytes = 10 };
+        var publisher = new INaturalistPublisher(options, new HttpClient(_http), _ => Task.FromResult("jwt-token"));
+
+        var result = await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.SkippedInvalidEvidence, result.Status);
+        Assert.Contains("audio.wav", result.Message);
+        Assert.Null(result.ObservationId);
+        Assert.Empty(_http.Requests);
+    }
+
+    [Fact]
+    public async Task Publish_FutureDate_IsSkippedWithTheInjectedClock()
+    {
+        var clock = new FixedTime(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var publisher = new INaturalistPublisher(TestData.Options(), new HttpClient(_http), _ => Task.FromResult("jwt-token"), time: clock);
+
+        var result = await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions());
+
+        Assert.Equal(PublishStatus.SkippedInvalidEntry, result.Status);
+        Assert.Contains("in the future", result.Message);
+    }
+
+    private sealed class FixedTime(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
     [Fact]
     public async Task Publish_UnknownTaxon_IsSkippedAndNeverFallsBackToFirstHit()
     {

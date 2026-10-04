@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using BatInspectorPublisher.Core.Models;
+using BatInspectorPublisher.Core.Validation;
 
 namespace BatInspectorPublisher.Core.InputSchema;
 
@@ -133,8 +134,8 @@ public static class InputSchemaReader
             var entryWarnings = new List<ValidationIssue>();
             var zone = OptionalZone(entry, zones, path, entryIssues);
             var observedAt = RequiredDate(entry, "Date", zone?.Zone, path, entryIssues, entryWarnings);
-            var lat = RequiredCoordinate(entry, "Latitude", 90, path, entryIssues);
-            var lon = RequiredCoordinate(entry, "Longitude", 180, path, entryIssues);
+            var lat = RequiredNumber(entry, "Latitude", path, entryIssues);
+            var lon = RequiredNumber(entry, "Longitude", path, entryIssues);
             var png = RequiredString(entry, "PathToPng", path, entryIssues);
             var wav = RequiredString(entry, "PathToWav", path, entryIssues);
             var temperature = OptionalNumber(entry, "Temperature", path, entryIssues);
@@ -142,9 +143,11 @@ public static class InputSchemaReader
             var local = OptionalString(entry, "SpeciesLocal", path, entryIssues);
             var comment = OptionalString(entry, "Comment", path, entryIssues);
 
-            CheckEvidencePath(png, "PathToPng", ".png", path, entryIssues);
-            CheckEvidencePath(wav, "PathToWav", ".wav", path, entryIssues);
-            CheckPlausible(observedAt, lat, lon, path, now, entryIssues);
+            // Reading is done; whether the values are acceptable is the validator's call.
+            foreach (var issue in EntryValidator.ValidateValues(new EntryValues(observedAt, lat, lon, png, wav), now))
+            {
+                entryIssues.Add(issue with { Path = $"{path}.{InputFieldName(issue.Path)}" });
+            }
 
             if (entryIssues.Count > 0)
             {
@@ -170,53 +173,6 @@ public static class InputSchemaReader
         }
 
         return candidates;
-    }
-
-    /// <summary>
-    /// Evidence paths are uploaded to a public service, so they must be explicit: absolute (never resolved against the
-    /// process working directory) and of the expected type. Content is checked when the file is read at publish time.
-    /// The syntax check accepts Windows and Unix absolute paths on every OS (the file may be written on another OS).
-    /// </summary>
-    private static void CheckEvidencePath(string? value, string name, string extension, string path, List<ValidationIssue> issues)
-    {
-        if (value is null)
-        {
-            return;
-        }
-
-        if (!IsAbsolutePath(value))
-        {
-            issues.Add(new($"{path}.{name}", $"'{value}' is not an absolute path."));
-        }
-
-        if (!HasExtension(value, extension))
-        {
-            issues.Add(new($"{path}.{name}", $"'{value}' must be a {extension} file."));
-        }
-    }
-
-    private static bool IsAbsolutePath(string value) =>
-        value.StartsWith('/')
-        || value.StartsWith(@"\\", StringComparison.Ordinal)
-        || (value.Length >= 3 && char.IsAsciiLetter(value[0]) && value[1] == ':' && value[2] is '\\' or '/');
-
-    private static bool HasExtension(string value, string extension)
-    {
-        var name = value[(value.LastIndexOfAny(['/', '\\']) + 1)..];
-        return name.EndsWith(extension, StringComparison.OrdinalIgnoreCase) && name.Length > extension.Length;
-    }
-
-    private static void CheckPlausible(DateTimeOffset? observedAt, double? lat, double? lon, string path, DateTimeOffset now, List<ValidationIssue> issues)
-    {
-        if (lat == 0 && lon == 0)
-        {
-            issues.Add(new($"{path}.Latitude", "Latitude and Longitude are both 0: the GPS position is missing."));
-        }
-
-        if (observedAt > now)
-        {
-            issues.Add(new($"{path}.Date", $"{observedAt.Value:dd.MM.yyyy HH:mm:ss} is in the future."));
-        }
     }
 
     private static string? RequiredString(JsonElement obj, string name, string path, List<ValidationIssue> issues)
@@ -335,7 +291,7 @@ public static class InputSchemaReader
         return el.GetDouble();
     }
 
-    private static double? RequiredCoordinate(JsonElement obj, string name, double limit, string path, List<ValidationIssue> issues)
+    private static double? RequiredNumber(JsonElement obj, string name, string path, List<ValidationIssue> issues)
     {
         var value = OptionalNumber(obj, name, path, issues);
         if (value is null)
@@ -348,12 +304,15 @@ public static class InputSchemaReader
             return null;
         }
 
-        if (Math.Abs(value.Value) > limit)
-        {
-            issues.Add(new($"{path}.{name}", $"{value} is outside the range -{limit} to {limit}."));
-            return null;
-        }
-
         return value;
     }
+
+    /// <summary>The validator names values after <see cref="ObservationCandidate"/> properties; the file calls some of them differently.</summary>
+    private static string InputFieldName(string candidateProperty) => candidateProperty switch
+    {
+        nameof(ObservationCandidate.ObservedAt) => "Date",
+        nameof(ObservationCandidate.SpectrogramPath) => "PathToPng",
+        nameof(ObservationCandidate.AudioPath) => "PathToWav",
+        _ => candidateProperty,
+    };
 }

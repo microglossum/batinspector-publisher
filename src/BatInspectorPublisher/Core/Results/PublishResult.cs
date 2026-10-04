@@ -20,8 +20,18 @@ public enum PublishStatus
     /// <summary>The spectrogram or audio file does not exist; nothing is published without evidence.</summary>
     SkippedMissingEvidence,
 
-    /// <summary>The spectrogram or audio file is unreadable, empty, or not a PNG / WAV file; nothing is published.</summary>
+    /// <summary>
+    /// The spectrogram or audio file is unreadable, empty, not a PNG / WAV file, or larger than the platform accepts;
+    /// nothing is published. <see cref="PublishResult.Message"/> names the file and the reason.
+    /// </summary>
     SkippedInvalidEvidence,
+
+    /// <summary>
+    /// The entry breaks a rule of this platform (for example a date or a position it rejects) that the
+    /// platform-neutral input validation does not cover; nothing is published. <see cref="PublishResult.Message"/>
+    /// lists every problem. The same entry may be fine for another platform.
+    /// </summary>
+    SkippedInvalidEntry,
 
     /// <summary>Publishing failed; see <see cref="PublishResult.Error"/>. May be partial, see <see cref="PublishResult.ObservationId"/>.</summary>
     Failed,

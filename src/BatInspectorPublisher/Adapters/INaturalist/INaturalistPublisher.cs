@@ -9,7 +9,8 @@ namespace BatInspectorPublisher.Adapters.INaturalist;
 
 /// <summary>
 /// Publishes candidates to iNaturalist: resolve taxon, duplicate check, create the observation,
-/// attach spectrogram (photo) and audio (sound). A dry run (the default) resolves the taxon but
+/// attach spectrogram (photo) and audio (sound). Before anything else, the platform
+/// validation refuses what iNaturalist would reject. A dry run (the default) resolves the taxon but
 /// writes nothing. An observation that an earlier run left without its full evidence is completed
 /// instead of being reported as a duplicate.
 /// </summary>
@@ -19,6 +20,7 @@ public sealed class INaturalistPublisher : IObservationPublisher
     private readonly INaturalistApiClient _api;
     private readonly Func<CancellationToken, Task<string>> _getAccessToken;
     private readonly ILogger _logger;
+    private readonly TimeProvider _time;
 
     /// <summary>
     /// BatInspector group and uncertain-call values that are not taxon names, and the broader taxon each is filed under.
@@ -43,7 +45,7 @@ public sealed class INaturalistPublisher : IObservationPublisher
         HttpClient httpClient,
         INaturalistAuthenticator authenticator,
         ILogger<INaturalistPublisher>? logger = null)
-        : this(options, httpClient, authenticator.EnsureAuthenticatedAsync, logger)
+        : this(options, httpClient, authenticator.EnsureAuthenticatedAsync, logger, null)
     {
     }
 
@@ -51,9 +53,11 @@ public sealed class INaturalistPublisher : IObservationPublisher
         INaturalistOptions options,
         HttpClient httpClient,
         Func<CancellationToken, Task<string>> getAccessToken,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        TimeProvider? time = null)
     {
         _options = options;
+        _time = time ?? TimeProvider.System;
         _logger = logger ?? NullLogger.Instance;
         _api = new INaturalistApiClient(options, httpClient, _logger);
         _getAccessToken = getAccessToken;
@@ -71,6 +75,12 @@ public sealed class INaturalistPublisher : IObservationPublisher
 
         try
         {
+            // iNaturalist's own rules first: no login, no request, nothing written for an entry it would refuse.
+            if (INaturalistValidator.Validate(candidate, evidence, _options, _time.GetUtcNow()) is { } rejection)
+            {
+                return Result(rejection.Status, rejection.Message);
+            }
+
             var jwt = await _getAccessToken(ct);
 
             var lookup = await ResolveTaxonAsync(candidate.ScientificName, jwt, ct);

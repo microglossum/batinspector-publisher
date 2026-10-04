@@ -104,6 +104,32 @@ first exchanged for a JWT with `GET https://www.inaturalist.org/users/api_token`
 host), and that JWT, valid about 24 h, is used for all API calls and stored locally. This is
 undocumented in the official API reference.
 
+## Limits and rules checked before publishing
+
+Before the login and before anything is written, the publisher checks what iNaturalist would reject, and reports it
+as `PublishStatus.SkippedInvalidEntry` (the entry) or `SkippedInvalidEvidence` (the files) with every problem in
+`PublishResult.Message`. This also applies to a dry run. Without it a rejected upload would only fail after the
+observation was created, leaving a public observation without its photo or sound. The rules are taken from
+iNaturalist's open source and forum, not from an official reference, and are not verified against the live service yet.
+
+| Rule | Limit |
+|---|---|
+| File size (spectrogram and audio, each) | 20 MB (`INaturalistOptions.MaxEvidenceBytes`, default 20,000,000 bytes) |
+| Observation date | not in the future (checked with the tolerance of every time zone), not older than 130 years |
+| Latitude | greater than -90 and less than 90 |
+| Longitude | -180 to 180 |
+| Position | not exactly 0, 0 |
+| Species name (`species_guess`) | at most 255 characters |
+| `INaturalistOptions.TagList` | at most 750 characters in total, at most 255 per tag |
+
+Accepted as they are: PNG photos (iNaturalist scales them to 2048 pixels on the longest side) and WAV sounds
+(stored unchanged; MP3 and M4A are accepted by iNaturalist too, but the input format only knows `.wav`).
+iNaturalist documents no duration or sample-rate limit. For orientation: a mono 16 bit recording at 384 kHz takes
+768 kB per second, so about 26 seconds fill 20 MB. If a file is too large, shorten the recording or lower its sample
+rate and run again; nothing was created for that entry.
+
+Error messages that iNaturalist itself sends back are passed through unchanged in `PublishResult.Message`.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

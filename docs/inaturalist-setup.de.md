@@ -103,6 +103,32 @@ Die REST-API von iNaturalist akzeptiert das rohe OAuth-Access-Token nicht als Be
 zuerst per `GET https://www.inaturalist.org/users/api_token` (Host `www`) gegen ein JWT getauscht. Dieses JWT,
 etwa 24 Stunden gültig, dient für alle API-Aufrufe und wird lokal gespeichert. Das steht nicht in der offiziellen API-Referenz.
 
+## Grenzen und Regeln, die vor dem Veröffentlichen geprüft werden
+
+Vor der Anmeldung und bevor etwas geschrieben wird, prüft der Publisher, was iNaturalist ablehnen würde, und meldet es als
+`PublishStatus.SkippedInvalidEntry` (der Eintrag) oder `SkippedInvalidEvidence` (die Dateien) mit allen Problemen in
+`PublishResult.Message`. Das gilt auch für einen Trockenlauf. Ohne diese Prüfung scheitert ein abgelehnter Upload erst, nachdem die
+Beobachtung angelegt wurde, und hinterlässt eine öffentliche Beobachtung ohne Foto oder Ton. Die Regeln stammen aus dem
+Open-Source-Code und dem Forum von iNaturalist, nicht aus einer offiziellen Referenz, und sind noch nicht am Live-Dienst geprüft.
+
+| Regel | Grenze |
+|---|---|
+| Dateigröße (Spektrogramm und Audio, jeweils) | 20 MB (`INaturalistOptions.MaxEvidenceBytes`, Standard 20.000.000 Byte) |
+| Beobachtungsdatum | nicht in der Zukunft (mit der Toleranz aller Zeitzonen geprüft), nicht älter als 130 Jahre |
+| Breitengrad | größer als -90 und kleiner als 90 |
+| Längengrad | -180 bis 180 |
+| Position | nicht genau 0, 0 |
+| Artname (`species_guess`) | höchstens 255 Zeichen |
+| `INaturalistOptions.TagList` | höchstens 750 Zeichen insgesamt, höchstens 255 pro Tag |
+
+Unverändert akzeptiert: PNG-Fotos (iNaturalist skaliert sie auf 2048 Pixel an der längsten Seite) und WAV-Töne
+(unverändert gespeichert; iNaturalist akzeptiert auch MP3 und M4A, das Eingabeformat kennt aber nur `.wav`).
+Für Dauer oder Abtastrate nennt iNaturalist keine Grenze. Zur Orientierung: Eine Mono-Aufnahme mit 16 Bit bei 384 kHz braucht
+768 kB pro Sekunde, 20 MB sind also nach etwa 26 Sekunden voll. Ist eine Datei zu groß, die Aufnahme kürzen oder die Abtastrate
+senken und den Lauf wiederholen; für diesen Eintrag wurde nichts angelegt.
+
+Fehlermeldungen, die iNaturalist selbst zurückschickt, werden unverändert in `PublishResult.Message` durchgereicht.
+
 ## Fehlersuche
 
 | Symptom | Ursache / Lösung |

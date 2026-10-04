@@ -1,28 +1,27 @@
 using BatInspectorPublisher.Core.Models;
 using BatInspectorPublisher.Core.Results;
+using BatInspectorPublisher.Core.Validation;
 
 namespace BatInspectorPublisher.Core;
 
 /// <summary>
-/// Reads the evidence files of one candidate exactly once and checks them, so that what is
+/// Reads the evidence files of one candidate exactly once and has <see cref="EntryValidator"/> check them, so that what is
 /// validated is what gets uploaded. Only one candidate's evidence is held in memory at a time.
 /// </summary>
 internal static class EvidenceLoader
 {
-    private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-
     /// <summary>Outcome of loading: the evidence, or the skip status with the reason.</summary>
     internal readonly record struct Outcome(EvidenceFiles? Files, PublishStatus Status, string? Message);
 
     public static async Task<Outcome> LoadAsync(ObservationCandidate candidate, CancellationToken ct)
     {
-        var png = await ReadAsync(candidate.SpectrogramPath, "spectrogram", IsPng, "not a PNG image", ct);
+        var png = await ReadAsync(candidate.SpectrogramPath, "spectrogram", EvidenceKind.Spectrogram, ct);
         if (png.Problem is not null)
         {
             return Rejected(png);
         }
 
-        var wav = await ReadAsync(candidate.AudioPath, "audio", IsWav, "not a WAV recording", ct);
+        var wav = await ReadAsync(candidate.AudioPath, "audio", EvidenceKind.Audio, ct);
         if (wav.Problem is not null)
         {
             return Rejected(wav);
@@ -33,7 +32,7 @@ internal static class EvidenceLoader
 
     private static Outcome Rejected(ReadOutcome read) => new(null, read.Status, read.Problem);
 
-    private static async Task<ReadOutcome> ReadAsync(string path, string role, Func<byte[], bool> hasSignature, string signatureProblem, CancellationToken ct)
+    private static async Task<ReadOutcome> ReadAsync(string path, string role, EvidenceKind kind, CancellationToken ct)
     {
         if (!File.Exists(path))
         {
@@ -50,26 +49,13 @@ internal static class EvidenceLoader
             return new(null, PublishStatus.SkippedInvalidEvidence, $"The {role} file cannot be read: {path} ({ex.Message})");
         }
 
-        if (content.Length == 0)
+        if (EntryValidator.ValidateEvidenceContent(kind, content) is { } problem)
         {
-            return new(null, PublishStatus.SkippedInvalidEvidence, $"The {role} file is empty: {path}");
-        }
-
-        if (!hasSignature(content))
-        {
-            return new(null, PublishStatus.SkippedInvalidEvidence, $"The {role} file is {signatureProblem}: {path}");
+            return new(null, PublishStatus.SkippedInvalidEvidence, $"The {role} file is {problem}: {path}");
         }
 
         return new(new EvidenceFile(Path.GetFileName(path), content), default, null);
     }
-
-    private static bool IsPng(byte[] content) => content.AsSpan().StartsWith(PngSignature);
-
-    // RIFF container with a WAVE form type: "RIFF" <size> "WAVE".
-    private static bool IsWav(byte[] content) =>
-        content.Length >= 12
-        && content.AsSpan(0, 4).SequenceEqual("RIFF"u8)
-        && content.AsSpan(8, 4).SequenceEqual("WAVE"u8);
 
     private readonly record struct ReadOutcome(EvidenceFile? File, PublishStatus Status, string? Problem);
 }

@@ -31,6 +31,15 @@ public sealed class INaturalistOptions
     /// <summary>Text placed at the start of every observation description (German, as users are German speaking).</summary>
     public string DescriptionPrefix { get; init; } = "Automatisierte passive akustische Erfassung (BatInspector, batdetect2 + manuelle Prüfung).";
 
+    /// <summary>
+    /// Largest spectrogram or audio file the publisher uploads, in bytes (decimal: 20 MB = 20,000,000). A larger file
+    /// is skipped as <c>SkippedInvalidEvidence</c> before the observation is created: iNaturalist rejects it at the
+    /// upload, which would leave a public observation without its evidence. iNaturalist's limit is 20 MB per file
+    /// according to its forum (not in its documentation; the unit is unknown, so this default is the safe reading).
+    /// Raise it if iNaturalist changes the limit.
+    /// </summary>
+    public long MaxEvidenceBytes { get; init; } = 20_000_000;
+
     /// <summary>Radius in km for the "does this observation already exist" check.</summary>
     public double DuplicateCheckRadiusKm { get; init; } = 0.1;
 

@@ -112,7 +112,7 @@ BatInspector is open source ([chrmue44/BatInspector](https://github.com/chrmue44
 
 `ExportOrchestrator.RunAsync` returns one `PublishResult` per candidate with a `PublishStatus`:
 `Created`, `WouldCreate` (dry run), `SkippedDuplicate`, `SkippedUnresolvedTaxon`,
-`SkippedMissingEvidence`, `SkippedInvalidEvidence` (unreadable, empty, or not a PNG / WAV file), `Resumed`, `Failed`, `Cancelled`.
+`SkippedMissingEvidence`, `SkippedInvalidEvidence` (unreadable, empty, not a PNG / WAV file, or larger than the platform accepts), `SkippedInvalidEntry` (the entry breaks a rule of this platform, such as a date or position it rejects), `Resumed`, `Failed`, `Cancelled`.
 
 A failed or cancelled result may be partial (observation created, evidence incomplete): then `ObservationId` is set, `SpectrogramAttached` / `AudioAttached` say what is there,
 and `InterruptedStep` names the stage that stopped. If the stop came while the observation was being created, its existence is unknown; the next run finds out.
