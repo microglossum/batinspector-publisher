@@ -103,6 +103,8 @@ Konfigurationsdateien und keine Umgebungsvariablen.
 
 ## Eingabeformat
 
+Die vollständige Referenz (jedes Feld, Zeitzonen, Artnamen, was abgelehnt wird und was nur warnt) steht in [docs/input-format.de.md](docs/input-format.de.md). Eine Zusammenfassung:
+
 ```json
 {
   "SchemaVersion": 1,
@@ -137,6 +139,8 @@ Konfigurationsdateien und keine Umgebungsvariablen.
 BatInspector ist Open Source ([chrmue44/BatInspector](https://github.com/chrmue44/BatInspector)); sein Code ist die Referenz dafür, was ein Feld oder Wert bedeutet (zum Beispiel die Artenliste in `BatInfo.cs`). Der Export und seine neuesten Werte können auf einem anderen Branch als `main` liegen oder noch nicht veröffentlicht sein, der öffentliche Code kann also hinter dem zurückliegen, was BatInspector tatsächlich schreibt.
 
 ## Ergebnisse
+
+Was welches iNaturalist-Feld erhält, die Schritte eines Laufs und was öffentlich wird: [docs/inaturalist.de.md](docs/inaturalist.de.md).
 
 `ExportOrchestrator.RunAsync` liefert pro Kandidat ein `PublishResult` mit einem `PublishStatus`:
 `Created`, `WouldCreate` und `WouldResume` (Probelauf), `SkippedDuplicate`, `SkippedUnresolvedTaxon`,

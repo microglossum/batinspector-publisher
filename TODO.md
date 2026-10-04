@@ -18,6 +18,7 @@ Checklist for the live test (things stubs cannot prove):
 - Resume (new, written from memory of the v1 API, never seen live): the v1 `/observations` search results must carry `description`, `photos` and `sounds`, and `description` must come back as sent (the match ignores whitespace differences only).
   If a field is missing the observation is deliberately left alone (`SkippedDuplicate`), so a wrong assumption fails safe but resume never triggers. Check with a real half-created observation (stop after the photo, or delete the sound in the web UI).
   Also check that an observation with a not yet processed upload already lists its photo or sound.
+- Duplicate check and descendants (documented in `docs/inaturalist.md`, never seen live): v1 `/observations?taxon_id=` should include descendant taxa. Check that an entry filed under Chiroptera (`Nyctaloid`) or *Myotis* (`Mbart`) really matches your own species-level observation of that day and place (it would then be skipped as a duplicate), and that a species entry does not match a Chiroptera observation. Decide whether the group values need a stricter match (for example by `species_guess`).
 - Dry run: run it against an entry that is already published and against a half-created one, and check that it says `SkippedDuplicate` and `WouldResume` and that a commit run then agrees.
 - The duplicate check sends `mine_only=true` to v1 `/observations`. Confirm the parameter exists and really restricts to the user's own observations; if it is ignored, the check matches other users' observations and reports false duplicates. Compare the result with and without it (and with `user_id` / `user_login` as the alternative).
 - Login port fallback: occupy port 45679 and run the SmokeTest `login`. The login then listens on an OS-assigned port and iNaturalist must accept that redirect URI. The owner confirmed iNaturalist accepts a changed loopback port; the source (Doorkeeper 5.6.6, read 2026-10-02) says the port of a loopback IP redirect URI (`127.0.0.1`, not `localhost`) is ignored when matching. Not yet seen live.
@@ -65,18 +66,6 @@ Two levels: **error** (the entry is rejected) and **warning** (reported in `Inpu
 Platform limits belong in the adapter's own validation (`INaturalistValidator`), not in `Core`.
 
 - The signature checks are not a full format validation (a file can start like a PNG and still be something else); decide whether that is enough.
-
-### Documentation: input file and per-platform mapping
-
-Two kinds of reference pages under `docs/`, each bilingual (English source, `*.de.md` twin), with diagrams where they help:
-
-- **Input file reference** (for example `docs/input-format.md`): how the library interprets the BatInspector export and what it expects. Cover every field (required or optional, type, unit, example), the Europe/Berlin interpretation of `Date`,
-  the reference-recording rule (one entry per species, night and place), species name normalization, evidence rules (absolute paths, `.png` / `.wav`, checked content), the per-entry validation and `Rejected`, and what a rejected entry or a skipped candidate looks like to the host.
-  The README keeps a short summary and links here.
-- **One page per adapter / output platform** (`docs/inaturalist.md`; naturgucker only after its API is known): what lands where. A table or diagram from each input field to the platform field (`SpeciesLatin` to taxon, `Date` to `observed_on_string` as a date only,
-  coordinates to position and place guess, `Comment`, temperature and humidity to the description text, spectrogram to photo, audio to sound), plus the processing flow (taxon resolution, duplicate check, create, attach), the `PublishStatus` outcomes and what is public and irreversible.
-  Prefer an SVG or Mermaid diagram that renders on GitHub. Check that `scripts/validate-config.sh` copes with it.
-- Keep `docs/inaturalist-setup.md` (registration and OAuth) separate and link the pages to each other.
 
 ### Test the Windows-only code (DPAPI) without a Windows machine
 
@@ -153,6 +142,7 @@ Blocked: there is no public API documentation, so the auth and submission model 
 
 - Identify and contact NABU/naturgucker developers: API (REST?), auth (API key, OAuth, basic, manual file import?), rate limits,
   terms for automated submission, whether this bat-monitoring use case is welcome.
+- Write `docs/naturgucker.md` (bilingual, like `docs/inaturalist.md`) together with the adapter.
 - Then implement `Adapters/Naturgucker` (currently an internal stub) with its own auth, and only then revisit
   `IObservationPublisher` before 1.0. Do not guess its shape in the meantime.
 
