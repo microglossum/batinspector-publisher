@@ -23,24 +23,6 @@ public class INaturalistValidatorTests
         Assert.Null(Validate());
     }
 
-    [Fact]
-    public void Validate_PlatformNeutralChecks_RunToo()
-    {
-        // A host may call the publisher without the orchestrator; Core's checks must still apply.
-        var result = Validate(TestData.Candidate() with { ObservedAt = Now.AddMinutes(1).ToOffset(TimeSpan.FromHours(2)), Latitude = 0, Longitude = 0 });
-
-        Assert.Equal(PublishStatus.SkippedInvalidEntry, result?.Status);
-        Assert.Contains("in the future", result?.Message);
-        Assert.Contains("GPS", result?.Message);
-    }
-
-    [Fact]
-    public void Validate_EvidencePaths_AreNotJudged()
-    {
-        // The publisher gets the evidence already loaded; the relative test paths do not matter.
-        Assert.Null(Validate(TestData.Candidate(spectrogram: "relative.png", audio: "relative.wav")));
-    }
-
     [Theory]
     [InlineData(1896, 10, 4, false)]
     [InlineData(1896, 10, 3, true)]
@@ -150,7 +132,7 @@ public class INaturalistValidatorTests
     {
         var evidence = new EvidenceFiles(new EvidenceFile("s.png", new byte[10]), new EvidenceFile("a.wav", new byte[30_000_000]));
 
-        var result = Validate(TestData.Candidate() with { Latitude = 0, Longitude = 0 }, evidence);
+        var result = Validate(TestData.Candidate() with { Latitude = 90 }, evidence);
 
         Assert.Equal(PublishStatus.SkippedInvalidEntry, result?.Status);
     }

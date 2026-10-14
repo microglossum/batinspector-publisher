@@ -1,7 +1,6 @@
 using System.Globalization;
 using BatInspectorPublisher.Core.Models;
 using BatInspectorPublisher.Core.Results;
-using BatInspectorPublisher.Core.Validation;
 
 namespace BatInspectorPublisher.Adapters.INaturalist;
 
@@ -10,9 +9,9 @@ namespace BatInspectorPublisher.Adapters.INaturalist;
 /// written. A request that breaks one of these rules fails with an undocumented error text, and for the evidence it
 /// would fail only after the observation was created, leaving a public observation without its photo or sound.
 /// <para>
-/// The platform-neutral checks (<see cref="EntryValidator"/>: name, time and zone, coordinate ranges, the position 0, 0,
-/// a time in the future) run first, so that a host calling <see cref="INaturalistPublisher"/> without the orchestrator
-/// gets them too; this class adds only what iNaturalist is stricter about.
+/// The orchestrator has already run the platform-neutral checks (<c>EntryValidator</c>: name, time and zone,
+/// coordinate ranges, the position 0, 0, a time in the future) before the publisher sees a candidate; this class adds
+/// only what iNaturalist is stricter about.
 /// </para>
 /// <para>
 /// Sources (iNaturalist open source, read 2026-10-04, not verified live): the Rails <c>Observation</c> model validations
@@ -36,13 +35,6 @@ internal static class INaturalistValidator
     /// <summary>Returns null when the candidate and its evidence pass; otherwise every problem found, in one rejection.</summary>
     public static Rejection? Validate(ObservationCandidate candidate, EvidenceFiles evidence, INaturalistOptions options, DateTimeOffset now)
     {
-        // Worded like the orchestrator's rejection, since it is the same check.
-        var neutral = EntryValidator.ValidateForPublishing(candidate, now);
-        if (neutral.Count > 0)
-        {
-            return new(PublishStatus.SkippedInvalidEntry, string.Join("; ", neutral));
-        }
-
         var entry = EntryProblems(candidate, options, now);
         if (entry.Count > 0)
         {

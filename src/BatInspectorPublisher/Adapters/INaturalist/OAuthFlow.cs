@@ -10,14 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace BatInspectorPublisher.Adapters.INaturalist;
 
 /// <summary>
-/// Shows the authorization URL to the user. The default implementation opens the system browser;
-/// a host application can pass its own to present the URL in its UI.
-/// </summary>
-/// <param name="authorizeUrl">The iNaturalist authorization URL the user must open.</param>
-/// <param name="ct">Cancellation token.</param>
-public delegate Task AuthorizationPrompt(Uri authorizeUrl, CancellationToken ct);
-
-/// <summary>
 /// OAuth 2.0 Authorization Code + PKCE against iNaturalist: hands the authorize URL to the
 /// <see cref="AuthorizationPrompt"/>, catches the redirect on a temporary loopback HTTP listener
 /// and exchanges the returned code for tokens.

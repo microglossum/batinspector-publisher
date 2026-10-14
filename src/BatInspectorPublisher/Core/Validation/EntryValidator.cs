@@ -62,13 +62,6 @@ internal static class EntryValidator
     }
 
     /// <summary>
-    /// The platform-neutral checks on what a publisher puts on a platform, for a publisher called without the
-    /// orchestrator. The evidence paths are left out: a publisher gets the evidence already loaded.
-    /// </summary>
-    public static List<ValidationIssue> ValidateForPublishing(ObservationCandidate candidate, DateTimeOffset now) =>
-        ValidateValues(EntryValues.From(candidate) with { SpectrogramPath = null, AudioPath = null }, now);
-
-    /// <summary>
     /// Air temperatures (°C) a recorder can plausibly measure. Sensors report error codes such as -127 or 85 that fall
     /// outside this range.
     /// </summary>

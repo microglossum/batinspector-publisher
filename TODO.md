@@ -73,15 +73,7 @@ Each of these is trivial now and a breaking change after 1.0:
 
 - `InputSchemaReader.CurrentSchemaVersion` is a public `const`, which is inlined into the host at compile time (a host that is not recompiled keeps the old value): make it a static property.
 - `InputSchemaReader.Read(Stream)` disposes the caller's stream (`StreamReader` without `leaveOpen`): leave it open, or document it.
-- Give the public enums (`PublishStatus`, `PublishStep`, `INaturalistLoginFailure`) explicit values and a sensible order (`Resumed` and `Cancelled` come after `Failed` today); needed before results are ever serialized.
-- One public type per file: `PublishOptions` (in `IObservationPublisher.cs`), `AuthorizationPrompt` (in the internal `OAuthFlow.cs`), `ProtectedFileTokenStore` (in `INaturalistTokenStore.cs`).
 - Decide whether an async `InputSchemaReader.ReadFileAsync` belongs in the API (the rest is async; the file is small).
-- Decide whether `IObservationPublisher.PublishAsync` stays callable without `ExportOrchestrator`. Today a host can call it directly with any `EvidenceFiles`, which skips the evidence checks (empty, PNG / WAV signature); the iNaturalist validator repeats Core's value checks for that path. Making the members internal (the orchestrator stays the only entry point) would remove the second path and the double check.
-
-Before 1.0 as well, documentation only:
-
-- **State the re-run duty in the `IObservationPublisher` XML docs.** "Re-runs rely on the duplicate check" is a decided project rule, but only the iNaturalist adapter implements it and the interface contract does not mention it, so a second adapter could drop it silently. Say that a repeated commit run of the same candidate must be safe (skip or complete what an earlier run created, reported as `SkippedDuplicate` / `Resumed`), and that a publisher which cannot do this must say so in its own docs.
-- **Mark the iNaturalist-shaped result types as provisional** in their XML docs: `PublishStep`, `SpectrogramAttached` / `AudioAttached`, `WouldResume` / `Resumed` may not occur, or not mean the same, on every platform (see the naturgucker item under Blocked).
 
 ### Tests
 

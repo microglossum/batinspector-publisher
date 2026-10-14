@@ -165,15 +165,15 @@ public class INaturalistPublisherTests
     }
 
     [Fact]
-    public async Task Publish_FutureDate_IsSkippedWithTheInjectedClock()
+    public async Task Publish_DateTooFarBack_IsSkippedWithTheInjectedClock()
     {
-        var clock = new FixedTime(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var clock = new FixedTime(new DateTimeOffset(2157, 1, 1, 0, 0, 0, TimeSpan.Zero));
         var publisher = new INaturalistPublisher(TestData.Options(), new HttpClient(_http), _ => Task.FromResult("jwt-token"), time: clock);
 
         var result = await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions());
 
         Assert.Equal(PublishStatus.SkippedInvalidEntry, result.Status);
-        Assert.Contains("in the future", result.Message);
+        Assert.Contains("130 years", result.Message);
     }
 
     private sealed class FixedTime(DateTimeOffset utcNow) : TimeProvider

@@ -83,8 +83,11 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         Message = "Created iNaturalist observation {ObservationId} of {Species}")]
     private static partial void LogCreated(ILogger logger, string? observationId, string species);
 
-    /// <inheritdoc />
-    public async Task<PublishResult> PublishAsync(ObservationCandidate candidate, EvidenceFiles evidence, PublishOptions options, CancellationToken ct = default)
+    Task<PublishResult> IObservationPublisher.PublishAsync(ObservationCandidate candidate, EvidenceFiles evidence, PublishOptions options, CancellationToken ct) =>
+        PublishAsync(candidate, evidence, options, ct);
+
+    /// <summary>Publishes one candidate that the orchestrator has checked; see <see cref="IObservationPublisher"/>.</summary>
+    internal async Task<PublishResult> PublishAsync(ObservationCandidate candidate, EvidenceFiles evidence, PublishOptions options, CancellationToken ct = default)
     {
         var step = PublishStep.Preparation;
         string? observationId = null;
@@ -96,7 +99,8 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
 
         try
         {
-            // iNaturalist's own rules first: no login, no request, nothing written for an entry it would refuse.
+            // iNaturalist's own rules first (the orchestrator has run the platform-neutral ones): no login, no request,
+            // nothing written for an entry it would refuse.
             if (INaturalistValidator.Validate(candidate, evidence, _options, _time.GetUtcNow()) is { } rejection)
             {
                 return Result(rejection.Status, rejection.Message);

@@ -7,6 +7,11 @@ namespace BatInspectorPublisher.Core;
 /// Publishes observations to one platform. Each adapter owns everything platform-specific:
 /// authentication, species resolution, duplicate detection, payload shape and evidence upload.
 /// There is deliberately no shared auth abstraction - platforms differ too much.
+/// <para>
+/// A host creates a publisher (such as <c>INaturalistPublisher</c>) and hands it to <see cref="ExportOrchestrator"/>, the only
+/// way to publish: the orchestrator checks every candidate and its evidence before the publisher sees it, so publishing
+/// cannot bypass those checks. The interface cannot be implemented outside this package; a new platform is a new adapter here.
+/// </para>
 /// </summary>
 public interface IObservationPublisher
 {
@@ -14,31 +19,22 @@ public interface IObservationPublisher
     string PlatformId { get; }
 
     /// <summary>
-    /// Publishes one candidate. Expected per-candidate problems (unknown species, duplicate,
+    /// Publishes one candidate that <see cref="ExportOrchestrator"/> has already checked (platform-neutral values,
+    /// evidence read and checked). Expected per-candidate problems (unknown species, duplicate,
     /// HTTP errors) are reported as a <see cref="PublishResult"/>, not thrown. Cancellation through
     /// <paramref name="ct"/> is reported as <see cref="PublishStatus.Cancelled"/> carrying whatever was
     /// already created on the platform; a publisher that throws <see cref="OperationCanceledException"/>
     /// instead is tolerated by <see cref="ExportOrchestrator"/>, but then that information is lost.
+    /// <para>
+    /// Re-runs must be safe: hosts re-run a file after an interruption, and the package relies on the publisher's duplicate
+    /// check instead of keeping state. A repeated commit run of the same candidate must not create a second observation;
+    /// it skips what an earlier run created (<see cref="PublishStatus.SkippedDuplicate"/>) or completes it
+    /// (<see cref="PublishStatus.Resumed"/>). A publisher that cannot do this must say so in its own documentation.
+    /// </para>
     /// </summary>
     /// <param name="candidate">The observation to publish.</param>
     /// <param name="evidence">The candidate's evidence, already read and checked. Upload exactly these bytes; do not re-read the files.</param>
     /// <param name="options">Publish options.</param>
     /// <param name="ct">Cancellation token.</param>
-    Task<PublishResult> PublishAsync(ObservationCandidate candidate, EvidenceFiles evidence, PublishOptions options, CancellationToken ct = default);
-}
-
-/// <summary>Options for a publish call.</summary>
-public sealed record PublishOptions
-{
-    /// <summary>
-    /// When false (the default) nothing is written to the platform: the publisher only reports what
-    /// it would do. A publisher must not skip a read-only step that decides the outcome (such as the duplicate check) in a dry run,
-    /// or the preview misreports it. Publishing is irreversible and public, so it must be requested explicitly.
-    /// <para>
-    /// A dry run goes through every step except the writes and reports what a commit run would do. It is optional.
-    /// <c>InputDocument.Rejected</c> and <c>InputDocument.Warnings</c> do not depend on it; <see cref="ExportOrchestrator"/> reports them in a
-    /// <see cref="Results.RunReport"/>, a run over the candidates alone does not, so a host that skips the dry run should show them to the user before it commits.
-    /// </para>
-    /// </summary>
-    public bool Commit { get; init; }
+    internal Task<PublishResult> PublishAsync(ObservationCandidate candidate, EvidenceFiles evidence, PublishOptions options, CancellationToken ct = default);
 }

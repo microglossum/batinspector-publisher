@@ -232,8 +232,8 @@ Open-Source-Code und dem Forum von iNaturalist, nicht aus einer offiziellen Refe
 | Artname (`species_guess`) | höchstens 255 Zeichen |
 | `INaturalistOptions.TagList` | höchstens 750 Zeichen insgesamt, höchstens 255 pro Tag |
 
-Einige Zeilen sind die plattformneutralen Prüfungen der Eingabedatei (siehe `docs/input-format.de.md`); der Publisher führt sie
-ebenfalls aus, sodass auch ein Host, der ihn ohne `ExportOrchestrator` aufruft, sie bekommt. Die Regeln für den Eintrag kommen
+Einige Zeilen sind die plattformneutralen Prüfungen der Eingabedatei (siehe `docs/input-format.de.md`), die `ExportOrchestrator`
+für jeden Kandidaten ausführt, bevor der Publisher ihn sieht. Die Regeln für den Eintrag kommen
 zuerst: Scheitert eine, ist das Ergebnis `SkippedInvalidEntry`, und die Dateigrößen werden noch nicht geprüft.
 iNaturalist lehnt außerdem ein Datum nach dem heutigen Tag in der Zeitzone des Kontos ab, die das Paket nicht kennt. Eine Aufnahme,
 die nicht in der Zukunft liegt, kann diese Regel nur verletzen, wenn ihre eigene Zeitzone der des Kontos voraus ist; eine solche

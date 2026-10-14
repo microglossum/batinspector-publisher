@@ -228,8 +228,8 @@ iNaturalist's open source and forum, not from an official reference, and are not
 | Species name (`species_guess`) | at most 255 characters |
 | `INaturalistOptions.TagList` | at most 750 characters in total, at most 255 per tag |
 
-Some rows are the platform-neutral checks of the input file (see `docs/input-format.md`); the publisher runs them too, so a
-host that calls it without `ExportOrchestrator` gets them as well. The entry rules come first: if one fails, the result is
+Some rows are the platform-neutral checks of the input file (see `docs/input-format.md`), which `ExportOrchestrator` runs on
+every candidate before the publisher sees it. The entry rules come first: if one fails, the result is
 `SkippedInvalidEntry` and the file sizes are not checked yet.
 iNaturalist also refuses a date after today in the time zone of the user's account, which the package does not know. A
 recording that is not in the future can only break that rule when its own zone is ahead of the account's; such a request
