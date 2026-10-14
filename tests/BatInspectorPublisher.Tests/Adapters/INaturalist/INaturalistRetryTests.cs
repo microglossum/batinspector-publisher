@@ -23,6 +23,7 @@ public class INaturalistRetryTests
         RetryBaseDelay = TimeSpan.FromSeconds(baseSeconds),
         MaxRetryDelay = TimeSpan.FromSeconds(maxSeconds),
         MinRequestInterval = TimeSpan.FromSeconds(intervalSeconds),
+        AllowAnyRequestInterval = true,
     };
 
     private Task Wait(TimeSpan wait, CancellationToken ct)
@@ -322,7 +323,25 @@ public class INaturalistRetryTests
         Assert.Throws<ArgumentException>(() => Client(Options(maxAttempts: 0)));
         Assert.Throws<ArgumentException>(() => Client(Options(baseSeconds: -1)));
         Assert.Throws<ArgumentException>(() => Client(Options(maxSeconds: -1)));
-        Assert.Throws<ArgumentException>(() => Client(Options(intervalSeconds: -1)));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(0.5)]
+    public void Options_RequestIntervalUnderOneSecond_IsRefused(double seconds)
+    {
+        var options = new INaturalistOptions { ClientId = "c", MinRequestInterval = TimeSpan.FromSeconds(seconds) };
+
+        var ex = Assert.Throws<ArgumentException>(() => Client(options));
+
+        Assert.Equal("MinRequestInterval", ex.ParamName);
+    }
+
+    [Fact]
+    public void Options_RequestIntervalOfOneSecond_IsAccepted()
+    {
+        _ = Client(new INaturalistOptions { ClientId = "c", MinRequestInterval = TimeSpan.FromSeconds(1) });
     }
 
     [Fact]

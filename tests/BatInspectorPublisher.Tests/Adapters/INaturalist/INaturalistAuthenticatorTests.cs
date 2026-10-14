@@ -244,6 +244,65 @@ public class INaturalistAuthenticatorTests
         Assert.Throws<ArgumentException>(() => Create(options: new INaturalistOptions { ClientId = "x", RedirectUri = "myapp://callback" }));
     }
 
+    [Theory]
+    [InlineData("http://example.com:45679/callback")]
+    [InlineData("http://203.0.113.1:45679/callback")]
+    [InlineData("https://127.0.0.1:45679/callback")]
+    public void Constructor_RedirectUriNotOnThisMachine_Throws(string redirectUri)
+    {
+        // The authorization code is sent to this address over plain http.
+        var ex = Assert.Throws<ArgumentException>(() => Create(options: new INaturalistOptions { ClientId = "x", RedirectUri = redirectUri }));
+
+        Assert.Equal("RedirectUri", ex.ParamName);
+    }
+
+    [Theory]
+    [InlineData("http://127.0.0.1:45679/callback")]
+    [InlineData("http://localhost:45679/callback")]
+    [InlineData("http://[::1]:45679/callback")]
+    public void Constructor_LoopbackRedirectUri_IsAccepted(string redirectUri)
+    {
+        _ = Create(options: new INaturalistOptions { ClientId = "x", RedirectUri = redirectUri });
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Constructor_AuthorizationTimeoutNotPositive_Throws(int seconds)
+    {
+        var options = new INaturalistOptions { ClientId = "x", AuthorizationTimeout = TimeSpan.FromSeconds(seconds) };
+
+        var ex = Assert.Throws<ArgumentException>(() => Create(options: options));
+
+        Assert.Equal("AuthorizationTimeout", ex.ParamName);
+    }
+
+    [Fact]
+    public async Task Login_ReturnsTheUsernameAndKeepsTheTokensInTheStore()
+    {
+        var redirect = $"http://127.0.0.1:{TestData.FreeTcpPort()}/callback";
+        _http
+            .On("POST /oauth/token", HttpStatusCode.OK, """{ "access_token": "oauth" }""")
+            .On("GET /users/api_token", HttpStatusCode.OK, """{ "api_token": "login-jwt" }""")
+            .On("GET /v1/users/me", HttpStatusCode.OK, """{ "results": [ { "login": "bat-fan" } ] }""");
+        var auth = Create((url, ct) =>
+        {
+            var state = System.Web.HttpUtility.ParseQueryString(url.Query)["state"];
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(50);
+                using var client = new HttpClient();
+                await client.GetAsync($"{redirect}?code=c&state={state}");
+            });
+            return Task.CompletedTask;
+        }, TestData.Options(redirect));
+
+        var username = await auth.LoginAsync();
+
+        Assert.Equal("bat-fan", username);
+        Assert.Equal("login-jwt", _store.Token!.AccessToken);
+    }
+
     [Fact]
     public void Logout_ClearsStoredToken()
     {

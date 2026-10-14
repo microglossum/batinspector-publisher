@@ -125,6 +125,10 @@ Ohne beide Dateien wird nichts veröffentlicht.
   veröffentlicht wird, nicht beim Lesen.
 - Jede Datei wird pro Kandidat **einmal** gelesen und geprüft: nicht leer; das Spektrogramm beginnt mit der PNG-Signatur,
   die Audiodatei ist ein RIFF-Container vom Typ WAVE. Hochgeladen werden genau die geprüften Bytes, was geprüft wurde, wird also gesendet.
+- **Die Eingabedatei bestimmt, welche lokalen Dateien öffentlich werden.** Jeder absolute `.png`-/`.wav`-Pfad mit gültiger
+  Signatur wird hochgeladen, egal wo die Datei liegt. Das Paket vertraut der Exportdatei wie BatInspector, das sie schreibt;
+  behandeln Sie die Datei wie das Recht, mit diesem Konto zu veröffentlichen, und veröffentlichen Sie keine Eingabedatei aus
+  einer Quelle, der Sie nicht vertrauen.
 - Das ist eine Prüfung der ersten Bytes, keine vollständige Formatprüfung. Eine Datei kann wie ein PNG beginnen und trotzdem
   etwas anderes sein. Grenzen der Plattform (Größe, akzeptierte Formate) prüft der Adapter, bevor etwas geschrieben wird.
 

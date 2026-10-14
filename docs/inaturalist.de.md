@@ -119,7 +119,7 @@ die Bestimmung auf iNaturalist verfeinern. `todo` und jeder andere Wert, der kei
 ## Erneuter Lauf: Duplikate und Fortsetzen
 
 Bevor etwas angelegt wird, fragt der Publisher iNaturalist nach den **eigenen** Beobachtungen des angemeldeten Nutzers (`user_id`, seine numerische Nutzer-ID)
-des aufgelösten Taxons am selben Kalendertag im Umkreis von `INaturalistOptions.DuplicateCheckRadiusKm` (Standard 0,1 km = 100 m).
+des aufgelösten Taxons am selben Kalendertag im Umkreis von `INaturalistOptions.DuplicateCheckRadiusKm` (Standard 0,1 km = 100 m; es muss eine endliche Zahl über 0 sein, sonst startet der Publisher nicht, weil die Prüfung nichts fände).
 
 - **Nichts gefunden:** Die Beobachtung wird angelegt.
 - **Etwas gefunden, und es ist vollständig oder nicht als die dieses Eintrags erkennbar:** `SkippedDuplicate`. Die vorhandene

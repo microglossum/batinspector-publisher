@@ -116,7 +116,7 @@ identification on iNaturalist. `todo` and every other value that is not a taxon 
 ## Re-running: duplicates and resume
 
 Before creating anything the publisher asks iNaturalist for **the logged-in user's own** observations (`user_id`, the numeric user id) of the resolved
-taxon, on the same calendar day, within `INaturalistOptions.DuplicateCheckRadiusKm` (default 0.1 km = 100 m).
+taxon, on the same calendar day, within `INaturalistOptions.DuplicateCheckRadiusKm` (default 0.1 km = 100 m; it must be a finite number above 0, otherwise the publisher refuses to start, because the check would find nothing).
 
 - **Nothing found:** the observation is created.
 - **Something found, and it is complete or not recognizable as this entry's:** `SkippedDuplicate`. The existing observation

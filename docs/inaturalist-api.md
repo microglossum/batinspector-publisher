@@ -6,8 +6,8 @@ Every HTTP request `BatInspectorPublisher` makes to iNaturalist, with its parame
 whether the behavior has been seen live. The package contacts no other host. What each step means for an entry is in
 [inaturalist.md](inaturalist.md); registration, login and rate limits are in [inaturalist-setup.md](inaturalist-setup.md).
 
-The base URLs are options (`INaturalistOptions.ApiBaseUrlV1`, `ApiBaseUrlV2`, `OAuthAuthorizeUrl`, `OAuthTokenUrl`,
-`ApiTokenExchangeUrl`); the defaults are used below.
+The base URLs are fixed and not an option: the client secret and the tokens go to whatever host is set, so a host cannot
+redirect them. Only the package's tests change them.
 
 **Verified live** means seen against the real service. **Not yet live** means written from iNaturalist's open source,
 the API documentation or the forum and waiting for the first live test.

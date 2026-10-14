@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace BatInspectorPublisher.Adapters.INaturalist;
 
 /// <summary>
@@ -32,4 +34,11 @@ public sealed record INaturalistToken
 
     /// <summary>True once the token is within 5 minutes of expiry (or past it), so callers refresh proactively.</summary>
     public bool IsLikelyExpired(DateTimeOffset now) => now >= ExpiresAtUtc - TimeSpan.FromMinutes(5);
+
+    /// <summary>Prints only the user and the expiry: the generated <c>ToString()</c> would print both tokens into a log or a message.</summary>
+    private bool PrintMembers(StringBuilder builder)
+    {
+        builder.Append("Username = ").Append(Username).Append(", ExpiresAtUtc = ").Append(ExpiresAtUtc);
+        return true;
+    }
 }

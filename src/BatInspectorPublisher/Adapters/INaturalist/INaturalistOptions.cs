@@ -17,12 +17,14 @@ public sealed class INaturalistOptions
     /// Must match a redirect URI registered for the OAuth application exactly, including the port.
     /// The login listens on this port first. If it is in use, the login retries on OS-assigned loopback
     /// ports with the same host and path; iNaturalist ignores the port of a loopback redirect URI when
-    /// matching, so the one registered URI is enough. The host must be 127.0.0.1,
-    /// not localhost: HttpListener matches the request's Host header text verbatim.
+    /// matching, so the one registered URI is enough. The host must be a loopback address (127.0.0.1, localhost or [::1]):
+    /// the authorization code is sent there over plain http, so it must not leave this machine. 127.0.0.1 is the
+    /// registered and tested form; HttpListener matches the request's Host header text verbatim, so the browser
+    /// must be sent to the host exactly as it is spelled here.
     /// </summary>
     public string RedirectUri { get; init; } = "http://127.0.0.1:45679/callback";
 
-    /// <summary>How long to wait for the user to finish the browser login.</summary>
+    /// <summary>How long to wait for the user to finish the browser login. Must be greater than zero.</summary>
     public TimeSpan AuthorizationTimeout { get; init; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
@@ -36,15 +38,18 @@ public sealed class INaturalistOptions
     public string DescriptionPrefix { get; init; } = "Automatisierte passive akustische Erfassung (BatInspector, batdetect2 + manuelle Prüfung).";
 
     /// <summary>
-    /// Largest spectrogram or audio file the publisher uploads, in bytes (decimal: 20 MB = 20,000,000). A larger file
+    /// Largest spectrogram or audio file the publisher uploads, in bytes (decimal: 20 MB = 20,000,000); between 1 and
+    /// 20,000,000, so this option can only make the check stricter. A larger file
     /// is skipped as <c>SkippedInvalidEvidence</c> before the observation is created: iNaturalist rejects it at the
     /// upload, which would leave a public observation without its evidence. iNaturalist's limit is 20 MB per file
     /// according to its forum (not in its documentation; the unit is unknown, so this default is the safe reading).
-    /// Raise it if iNaturalist changes the limit.
     /// </summary>
     public long MaxEvidenceBytes { get; init; } = 20_000_000;
 
-    /// <summary>Radius in km for the "does this observation already exist" check.</summary>
+    /// <summary>
+    /// Radius in km for the "does this observation already exist" check. Must be a finite number greater than zero: with
+    /// no radius the check would find nothing and every re-run would create the observations again.
+    /// </summary>
     public double DuplicateCheckRadiusKm { get; init; } = 0.1;
 
     /// <summary>
@@ -70,28 +75,37 @@ public sealed class INaturalistOptions
     /// <summary>
     /// Minimum time between the starts of two requests of one <see cref="INaturalistPublisher"/> (or <see cref="INaturalistAuthenticator"/>).
     /// iNaturalist throttles at 100 requests per minute and asks clients to stay at 60 or fewer; the default of one second keeps a
-    /// batch under that. <see cref="TimeSpan.Zero"/> turns pacing off.
+    /// batch under that. At least one second: shorter intervals risk throttling or blocking the registered application.
     /// </summary>
     public TimeSpan MinRequestInterval { get; init; } = TimeSpan.FromSeconds(1);
 
-    /// <summary>iNaturalist API v1 base URL.</summary>
-    public string ApiBaseUrlV1 { get; init; } = "https://api.inaturalist.org/v1";
+    /// <summary>iNaturalist API v1 base URL. Internal: the client secret and tokens go to whatever is set here, so only tests change it.</summary>
+    internal string ApiBaseUrlV1 { get; init; } = "https://api.inaturalist.org/v1";
 
     /// <summary>iNaturalist API v2 base URL.</summary>
-    public string ApiBaseUrlV2 { get; init; } = "https://api.inaturalist.org/v2";
+    internal string ApiBaseUrlV2 { get; init; } = "https://api.inaturalist.org/v2";
 
     /// <summary>OAuth authorize endpoint.</summary>
-    public string OAuthAuthorizeUrl { get; init; } = "https://www.inaturalist.org/oauth/authorize";
+    internal string OAuthAuthorizeUrl { get; init; } = "https://www.inaturalist.org/oauth/authorize";
 
     /// <summary>OAuth token endpoint.</summary>
-    public string OAuthTokenUrl { get; init; } = "https://www.inaturalist.org/oauth/token";
+    internal string OAuthTokenUrl { get; init; } = "https://www.inaturalist.org/oauth/token";
 
     /// <summary>
     /// iNaturalist quirk (undocumented in the API reference): the REST API does not accept a raw
     /// OAuth access token as Bearer (401). The token must first be exchanged for a JWT here, using
     /// the OAuth token as Bearer. Note the host is www.inaturalist.org, not api.
     /// </summary>
-    public string ApiTokenExchangeUrl { get; init; } = "https://www.inaturalist.org/users/api_token";
+    internal string ApiTokenExchangeUrl { get; init; } = "https://www.inaturalist.org/users/api_token";
+
+    /// <summary>Lets tests turn pacing off. Not public: the minimum interval protects the registered application.</summary>
+    internal bool AllowAnyRequestInterval { get; init; }
+
+    /// <summary>iNaturalist's recommendation is about 60 requests per minute (not verified live).</summary>
+    internal static readonly TimeSpan MinAllowedRequestInterval = TimeSpan.FromSeconds(1);
+
+    /// <summary>iNaturalist's upload limit per file according to its forum, in bytes (decimal reading of 20 MB).</summary>
+    internal const long MaxAllowedEvidenceBytes = 20_000_000;
 
     internal void ValidateForRequests()
     {
@@ -100,9 +114,16 @@ public sealed class INaturalistOptions
             throw new ArgumentException("INaturalistOptions.MaxAttempts must be at least 1 (1 = no retry).", nameof(MaxAttempts));
         }
 
-        if (RetryBaseDelay < TimeSpan.Zero || MaxRetryDelay < TimeSpan.Zero || MinRequestInterval < TimeSpan.Zero)
+        if (RetryBaseDelay < TimeSpan.Zero || MaxRetryDelay < TimeSpan.Zero)
         {
-            throw new ArgumentException("INaturalistOptions.RetryBaseDelay, MaxRetryDelay and MinRequestInterval must not be negative.");
+            throw new ArgumentException("INaturalistOptions.RetryBaseDelay and MaxRetryDelay must not be negative.");
+        }
+
+        if (!AllowAnyRequestInterval && MinRequestInterval < MinAllowedRequestInterval)
+        {
+            throw new ArgumentException(
+                $"INaturalistOptions.MinRequestInterval must be at least {MinAllowedRequestInterval.TotalSeconds:0} second: iNaturalist asks clients to stay at about 60 requests per minute and may throttle or block the application.",
+                nameof(MinRequestInterval));
         }
     }
 
@@ -112,6 +133,20 @@ public sealed class INaturalistOptions
     /// <summary>Checks what would otherwise reject every candidate the same way.</summary>
     internal void ValidateForPublishing()
     {
+        if (!double.IsFinite(DuplicateCheckRadiusKm) || DuplicateCheckRadiusKm <= 0)
+        {
+            throw new ArgumentException(
+                "INaturalistOptions.DuplicateCheckRadiusKm must be a finite number greater than 0; without a radius the duplicate check finds nothing and a re-run creates the observations again.",
+                nameof(DuplicateCheckRadiusKm));
+        }
+
+        if (MaxEvidenceBytes is < 1 or > MaxAllowedEvidenceBytes)
+        {
+            throw new ArgumentException(
+                $"INaturalistOptions.MaxEvidenceBytes must be between 1 and {MaxAllowedEvidenceBytes:N0}; iNaturalist rejects a larger file only after the observation exists.",
+                nameof(MaxEvidenceBytes));
+        }
+
         // Every observation also gets its resume marker tag, so its length is reserved.
         var tags = TagList.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         var maxLength = MaxTagListLength - ResumeMarker.Length - ", ".Length;
@@ -135,9 +170,16 @@ public sealed class INaturalistOptions
             throw new ArgumentException("INaturalistOptions.ClientId must be set to the Client ID of your registered iNaturalist OAuth application.", nameof(ClientId));
         }
 
-        if (!Uri.TryCreate(RedirectUri, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttp)
+        if (!Uri.TryCreate(RedirectUri, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttp || !uri.IsLoopback)
         {
-            throw new ArgumentException("INaturalistOptions.RedirectUri must be an absolute http loopback URI, e.g. http://127.0.0.1:45679/callback.", nameof(RedirectUri));
+            throw new ArgumentException(
+                "INaturalistOptions.RedirectUri must be an absolute http URI on this machine (127.0.0.1, localhost or [::1]), e.g. http://127.0.0.1:45679/callback; the authorization code is sent there unencrypted.",
+                nameof(RedirectUri));
+        }
+
+        if (AuthorizationTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentException("INaturalistOptions.AuthorizationTimeout must be greater than zero.", nameof(AuthorizationTimeout));
         }
     }
 }

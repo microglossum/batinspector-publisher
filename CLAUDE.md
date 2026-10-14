@@ -60,6 +60,8 @@ Flow: BatInspector's export file is read into candidates (one reference recordin
 - Library code never writes to the console. Use `ILogger` (optional, NullLogger default) and structured results.
 - Never log tokens or token-bearing response bodies.
 - Public API is minimal and fully XML-documented; wire models and API clients stay `internal`.
+  - A new `public` type is a deliberate API decision: add it to the allowlist in `ArchitectureTests`, or the test fails. Default to `internal`; tests see internals through `InternalsVisibleTo`, so never widen visibility for a test.
+  - Hosts get no way to weaken a safety check (pacing, duplicate radius, size limit, base URLs, loopback redirect) or to get a token: options are validated in the constructors, and test-only switches (`AllowAnyRequestInterval`, base URLs) are `internal`.
 - Tests use hand-written HTTP stubs, never live APIs. Windows-only behavior uses `[WindowsOnlyFact]`.
 - Keep `CHANGELOG.md` (Keep a Changelog) updated under `[Unreleased]`.
 - The library multi-targets `net8.0;net10.0`. Do not use APIs that exist only on net10.0 without a `#if`.

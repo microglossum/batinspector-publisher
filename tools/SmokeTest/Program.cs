@@ -6,6 +6,7 @@
 //   dotnet run -- renew                       ages the stored API token by 2 days, then renews it silently from the stored OAuth token
 //   dotnet run -- dry-run <input.json>        full simulation (login, taxon, duplicate check), writes nothing
 //   dotnet run -- publish <input.json>        REAL, public, irreversible; asks for confirmation
+// whoami and renew call internals (the silent token renewal), made visible to this project in Debug builds only.
 // Keep real observation data (input files, evidence) under local/, which is git-ignored.
 using System.Diagnostics;
 using System.Text.Json;
@@ -38,8 +39,8 @@ var auth = new INaturalistAuthenticator(options, http, store, prompt);
 switch (command)
 {
     case "login":
-        var token = await auth.LoginAsync();
-        Console.WriteLine($"Logged in as {token.Username}.");
+        var username = await auth.LoginAsync();
+        Console.WriteLine($"Logged in as {username}.");
         return 0;
 
     case "whoami":

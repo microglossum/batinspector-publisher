@@ -7,7 +7,8 @@ namespace BatInspectorPublisher.Adapters.INaturalist;
 /// <summary>
 /// Owns iNaturalist login: interactive OAuth (Authorization Code + PKCE), local token storage,
 /// refresh and the OAuth-to-JWT exchange. Hosts can call <see cref="LoginAsync"/> from a "connect"
-/// button; <see cref="INaturalistPublisher"/> calls <see cref="EnsureAuthenticatedAsync"/> itself.
+/// button; <see cref="INaturalistPublisher"/> obtains and renews the API token itself. The tokens never leave
+/// this package except through the <see cref="INaturalistTokenStore"/> the host passes in.
 /// </summary>
 public sealed partial class INaturalistAuthenticator
 {
@@ -58,12 +59,13 @@ public sealed partial class INaturalistAuthenticator
     public string? StoredUsername => _store.Load()?.Username;
 
     /// <summary>Runs the interactive browser login and stores the result.</summary>
-    public async Task<INaturalistToken> LoginAsync(CancellationToken ct = default)
+    /// <returns>The iNaturalist login of the authorized user. The tokens are kept in the token store only.</returns>
+    public async Task<string> LoginAsync(CancellationToken ct = default)
     {
         await _gate.WaitAsync(ct);
         try
         {
-            return await LoginCoreAsync(ct);
+            return (await LoginCoreAsync(ct)).Username!;
         }
         finally
         {
@@ -75,7 +77,7 @@ public sealed partial class INaturalistAuthenticator
     /// Returns a valid API token: the stored one, a silently renewed one (from the stored OAuth token,
     /// or a refresh token if one exists), or - only if neither is possible - the result of a new interactive login.
     /// </summary>
-    public async Task<string> EnsureAuthenticatedAsync(CancellationToken ct = default)
+    internal async Task<string> EnsureAuthenticatedAsync(CancellationToken ct = default)
     {
         await _gate.WaitAsync(ct);
         try

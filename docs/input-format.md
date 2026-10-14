@@ -122,6 +122,9 @@ Nothing is published without both files.
   are never resolved against the working directory. The file must exist when the entry is published, not when it is read.
 - Each file is read **once** per candidate and checked: not empty; the spectrogram starts with the PNG signature, the audio
   is a RIFF container of type WAVE. The checked bytes are what gets uploaded, so what was validated is what is sent.
+- **The input file decides which local files become public.** Any absolute `.png` / `.wav` path with a valid signature is
+  uploaded, wherever it lies. The package trusts the export file as it trusts BatInspector, which writes it; treat the file as
+  you would treat the right to publish from this account, and do not publish an input file from a source you do not trust.
 - This is a check of the first bytes, not a full format validation. A file can start like a PNG and still be something
   else. Platform limits (size, accepted formats) are checked by the adapter before anything is written.
 

@@ -164,6 +164,43 @@ public class INaturalistPublisherTests
         Assert.Equal("TagList", ex.ParamName);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-0.1)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void Constructor_DuplicateRadiusThatFindsNothing_Throws(double radiusKm)
+    {
+        // Without a usable radius the duplicate check finds nothing and every re-run publishes again.
+        var options = new INaturalistOptions { ClientId = "c", DuplicateCheckRadiusKm = radiusKm };
+
+        var ex = Assert.Throws<ArgumentException>(() => new INaturalistPublisher(options, new HttpClient(_http), _ => Task.FromResult("jwt")));
+
+        Assert.Equal("DuplicateCheckRadiusKm", ex.ParamName);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(20_000_001)]
+    public void Constructor_MaxEvidenceBytesOutsideTheServerLimit_Throws(long bytes)
+    {
+        // A larger limit would let a file through that iNaturalist refuses only after the observation exists.
+        var options = new INaturalistOptions { ClientId = "c", MaxEvidenceBytes = bytes };
+
+        var ex = Assert.Throws<ArgumentException>(() => new INaturalistPublisher(options, new HttpClient(_http), _ => Task.FromResult("jwt")));
+
+        Assert.Equal("MaxEvidenceBytes", ex.ParamName);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(20_000_000)]
+    public void Constructor_MaxEvidenceBytesWithinTheServerLimit_IsAccepted(long bytes)
+    {
+        _ = new INaturalistPublisher(new INaturalistOptions { ClientId = "c", MaxEvidenceBytes = bytes }, new HttpClient(_http), _ => Task.FromResult("jwt"));
+    }
+
     [Fact]
     public void Constructor_EmptyTagList_IsAccepted()
     {
@@ -835,7 +872,7 @@ public class INaturalistPublisherTests
     {
         // An observation created with an older wording or another DescriptionPrefix is still completed.
         WithExisting(ExistingObservations(photos: "[]", sounds: "[]").Replace("\"tags\"", "\"description\": \"Alter Text.\", \"tags\""));
-        var options = new INaturalistOptions { ClientId = "c", DescriptionPrefix = "Ganz anderer Text.", MinRequestInterval = TimeSpan.Zero };
+        var options = new INaturalistOptions { ClientId = "c", DescriptionPrefix = "Ganz anderer Text.", MinRequestInterval = TimeSpan.Zero, AllowAnyRequestInterval = true };
         var publisher = new INaturalistPublisher(options, new HttpClient(_http), _ => Task.FromResult("jwt-token"));
 
         var result = await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });

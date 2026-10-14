@@ -82,9 +82,9 @@ The login completes when iNaturalist redirects to the redirect URI; a temporary 
 catches that request; other requests to it are ignored. `AuthorizationTimeout` (default 5 minutes) bounds the wait.
 
 The login keeps two tokens (see [Token storage](#token-storage)): iNaturalist's OAuth access token, which does not expire,
-and the API token, a JWT that every API call sends and that is valid for about 24 hours. `EnsureAuthenticatedAsync` (called
-by the publisher for every candidate) returns the stored API token while it is valid. When the API token has expired (or is
-within 5 minutes of it), it exchanges the stored OAuth token for a new one, silently and without a browser. So the browser
+and the API token, a JWT that every API call sends and that is valid for about 24 hours. The publisher
+asks for the API token for every candidate (internally; the tokens are not handed to the host) and gets the stored one while it is valid. When the API token has expired (or is
+within 5 minutes of it), the authenticator exchanges the stored OAuth token for a new one, silently and without a browser. So the browser
 login is needed **once**, until the user revokes the application's access on iNaturalist or the stored login is removed.
 A new browser login only happens when no login is stored or iNaturalist rejects the stored OAuth token (401 or 403).
 A network error during the renewal never starts a login; that candidate ends as `Failed` and the run stops.
@@ -107,7 +107,9 @@ prefetch, another local program) and answers it with 404; only the redirect carr
 ends the wait.
 
 The host must be `127.0.0.1` in both places: `HttpListener` matches the request's `Host` header
-text verbatim, so `localhost` would get a 404 from a listener bound to `127.0.0.1`.
+text verbatim, so `localhost` would get a 404 from a listener bound to `127.0.0.1`. The package refuses a redirect URI that is
+not on this machine (`127.0.0.1`, `localhost` or `[::1]`, over http) when the authenticator is created, because the authorization
+code is sent there unencrypted.
 
 ### Where the loopback login does not work
 
@@ -199,7 +201,7 @@ A "connect / disconnect iNaturalist" UI needs these members of `INaturalistAuthe
 |---|---|
 | `HasStoredToken` | True when the store holds a readable login. It does not ask iNaturalist: an expired API token still counts (the next request renews it), and so does a login whose access the user has revoked, until the renewal is rejected. |
 | `StoredUsername` | The iNaturalist login of the stored user, for a "connected as ..." label, or null. |
-| `LoginAsync()` | "Connect": runs the browser login and stores the result, replacing a stored login. Throws when it fails (`INaturalistLoginException`, `PlatformNotSupportedException`, `INaturalistApiException`; `OperationCanceledException` when cancelled). |
+| `LoginAsync()` | "Connect": runs the browser login and stores the result, replacing a stored login. Returns the iNaturalist login of the user (the tokens stay in the token store). Throws when it fails (`INaturalistLoginException`, `PlatformNotSupportedException`, `INaturalistApiException`; `OperationCanceledException` when cancelled). |
 | `Logout()` | "Disconnect": deletes the stored token. It does not revoke the application's access on iNaturalist; the user does that in the iNaturalist account settings. The next run needs a new browser login. |
 
 `HasStoredToken` and `StoredUsername` read the store on every access (with the default store: read the file and, on Windows,
@@ -215,7 +217,7 @@ iNaturalist's open source and forum, not from an official reference, and are not
 
 | Rule | Limit |
 |---|---|
-| File size (spectrogram and audio, each) | 20 MB (`INaturalistOptions.MaxEvidenceBytes`, default 20,000,000 bytes) |
+| File size (spectrogram and audio, each) | 20 MB (`INaturalistOptions.MaxEvidenceBytes`, default 20,000,000 bytes; the option can only lower it, a value above 20,000,000 or below 1 is refused when the publisher is created) |
 | Observation date | not in the future (a moment after now, as for the input file), not older than 130 years |
 | Latitude | a number greater than -90 and less than 90 |
 | Longitude | a number from -180 to 180 |
@@ -248,7 +250,7 @@ token exchange when the stored API token has expired. The package therefore pace
 **Pacing (on by default).** `INaturalistOptions.MinRequestInterval` (default one second) is the minimum time between the starts
 of two requests, so a run stays at about 60 requests per minute and a candidate takes about five seconds. The spacing holds per
 `INaturalistPublisher` (the authenticator keeps its own, it sends rarely): do not run several publishers in parallel against one
-account. `TimeSpan.Zero` turns pacing off. The package does not count requests; iNaturalist's recommended practices also name a
+account. The option must be at least one second (an `ArgumentException` otherwise), so pacing cannot be switched off. The package does not count requests; iNaturalist's recommended practices also name a
 daily volume, so split a very large file over several days.
 
 **Retries (off by default).** `INaturalistOptions.MaxAttempts` is the number of tries per request, the first one included.

@@ -7,8 +7,8 @@ Angabe, ob das Verhalten schon live gesehen wurde. Das Paket kontaktiert keinen 
 bedeutet, steht in [inaturalist.de.md](inaturalist.de.md); Registrierung, Anmeldung und Ratenbegrenzung stehen in
 [inaturalist-setup.de.md](inaturalist-setup.de.md).
 
-Die Basis-URLs sind Optionen (`INaturalistOptions.ApiBaseUrlV1`, `ApiBaseUrlV2`, `OAuthAuthorizeUrl`, `OAuthTokenUrl`,
-`ApiTokenExchangeUrl`); unten stehen die Standardwerte.
+Die Basis-URLs sind fest und keine Option: Client Secret und Tokens gehen an den eingestellten Host, eine Host-Anwendung kann
+sie also nicht umleiten. Nur die Tests des Pakets ändern sie.
 
 **Live bestätigt** heißt: gegen den echten Dienst gesehen. **Noch nicht live** heißt: aus dem Open-Source-Code, der
 API-Dokumentation oder dem Forum von iNaturalist abgeleitet und noch nicht im ersten Live-Test geprüft.

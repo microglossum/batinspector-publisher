@@ -82,9 +82,9 @@ Standardmäßig öffnet sich der Systembrowser. Um die URL in der eigenen Oberfl
 ein temporärer lokaler Listener fängt diese Anfrage ab, andere Anfragen an ihn werden ignoriert. `AuthorizationTimeout` (Standard 5 Minuten) begrenzt die Wartezeit.
 
 Die Anmeldung hält zwei Tokens (siehe [Token-Speicherung](#token-speicherung)): das OAuth-Access-Token von iNaturalist, das nicht
-abläuft, und das API-Token, ein JWT, das jeder API-Aufruf mitschickt und das etwa 24 Stunden gilt. `EnsureAuthenticatedAsync` (vom
-Publisher für jeden Kandidaten aufgerufen) liefert das gespeicherte API-Token, solange es gültig ist. Ist das API-Token abgelaufen
-(oder läuft es in weniger als 5 Minuten ab), tauscht es das gespeicherte OAuth-Token still und ohne Browser gegen ein neues. Die
+abläuft, und das API-Token, ein JWT, das jeder API-Aufruf mitschickt und das etwa 24 Stunden gilt. Der
+Publisher holt sich das API-Token für jeden Kandidaten selbst (intern; die Tokens werden nicht an die Host-Anwendung gegeben) und bekommt das gespeicherte, solange es gültig ist. Ist das API-Token abgelaufen
+(oder läuft es in weniger als 5 Minuten ab), tauscht der Authenticator das gespeicherte OAuth-Token still und ohne Browser gegen ein neues. Die
 Browser-Anmeldung ist also **einmal** nötig, bis die Person den Zugriff der Anwendung bei iNaturalist widerruft oder die gespeicherte
 Anmeldung entfernt wird. Eine neue Browser-Anmeldung gibt es nur, wenn keine Anmeldung gespeichert ist oder iNaturalist das
 gespeicherte OAuth-Token ablehnt (401 oder 403). Ein Netzwerkfehler bei der Erneuerung startet nie eine Anmeldung; der Kandidat endet als `Failed`, und der Lauf hält an.
@@ -107,7 +107,9 @@ Solange die Anmeldung wartet, ignoriert der Listener jede Anfrage, die nicht zu 
 Umleitung mit dem `state` dieser Anmeldung beendet das Warten.
 
 Der Host muss an beiden Stellen `127.0.0.1` sein: `HttpListener` vergleicht den `Host`-Header wörtlich, ein
-Listener auf `127.0.0.1` antwortet bei `localhost` mit 404.
+Listener auf `127.0.0.1` antwortet bei `localhost` mit 404. Das Paket lehnt eine Redirect URI ab, die nicht auf diesem Rechner
+liegt (`127.0.0.1`, `localhost` oder `[::1]`, über http), und zwar beim Erzeugen des Authenticators, weil der Autorisierungscode
+unverschlüsselt dorthin geschickt wird.
 
 ### Wo die Loopback-Anmeldung nicht funktioniert
 
@@ -201,7 +203,7 @@ Eine Oberfläche "Mit iNaturalist verbinden / trennen" braucht diese Member von 
 |---|---|
 | `HasStoredToken` | true, wenn der Speicher eine lesbare Anmeldung enthält. Es fragt nicht bei iNaturalist nach: Ein abgelaufenes API-Token zählt auch (die nächste Anfrage erneuert es), ebenso eine Anmeldung, deren Zugriff die Person widerrufen hat, bis die Erneuerung abgelehnt wird. |
 | `StoredUsername` | Der iNaturalist-Login der gespeicherten Person, für eine Anzeige "verbunden als ...", oder null. |
-| `LoginAsync()` | "Verbinden": führt die Browser-Anmeldung aus und speichert das Ergebnis; eine gespeicherte Anmeldung wird ersetzt. Wirft, wenn sie scheitert (`INaturalistLoginException`, `PlatformNotSupportedException`, `INaturalistApiException`; `OperationCanceledException` bei Abbruch). |
+| `LoginAsync()` | "Verbinden": führt die Browser-Anmeldung aus und speichert das Ergebnis; eine gespeicherte Anmeldung wird ersetzt. Liefert den iNaturalist-Login des Nutzers (die Tokens bleiben im Token-Speicher). Wirft, wenn sie scheitert (`INaturalistLoginException`, `PlatformNotSupportedException`, `INaturalistApiException`; `OperationCanceledException` bei Abbruch). |
 | `Logout()` | "Trennen": löscht das gespeicherte Token. Den Zugriff der Anwendung bei iNaturalist widerruft es nicht; das geschieht in den Kontoeinstellungen von iNaturalist. Der nächste Lauf braucht eine neue Browser-Anmeldung. |
 
 `HasStoredToken` und `StoredUsername` lesen bei jedem Zugriff den Speicher (beim Standardspeicher: die Datei lesen und unter Windows
@@ -217,7 +219,7 @@ Open-Source-Code und dem Forum von iNaturalist, nicht aus einer offiziellen Refe
 
 | Regel | Grenze |
 |---|---|
-| Dateigröße (Spektrogramm und Audio, jeweils) | 20 MB (`INaturalistOptions.MaxEvidenceBytes`, Standard 20.000.000 Byte) |
+| Dateigröße (Spektrogramm und Audio, jeweils) | 20 MB (`INaturalistOptions.MaxEvidenceBytes`, Standard 20.000.000 Byte; die Option kann den Wert nur senken, ein Wert über 20.000.000 oder unter 1 wird beim Erzeugen des Publishers abgelehnt) |
 | Beobachtungsdatum | nicht in der Zukunft (ein Zeitpunkt nach jetzt, wie bei der Eingabedatei), nicht älter als 130 Jahre |
 | Breitengrad | eine Zahl größer als -90 und kleiner als 90 |
 | Längengrad | eine Zahl von -180 bis 180 |
@@ -250,7 +252,7 @@ Token-Austausch, wenn das gespeicherte API-Token abgelaufen ist. Das Paket takte
 **Taktung (standardmäßig an).** `INaturalistOptions.MinRequestInterval` (Standard eine Sekunde) ist die Mindestzeit zwischen den Starts
 zweier Anfragen. Ein Lauf bleibt damit bei etwa 60 Anfragen pro Minute, ein Kandidat dauert etwa fünf Sekunden. Der Abstand gilt je
 `INaturalistPublisher` (der Authenticator hat einen eigenen, er sendet selten): nicht mehrere Publisher parallel gegen ein Konto laufen lassen.
-`TimeSpan.Zero` schaltet die Taktung ab. Das Paket zählt keine Anfragen; die empfohlene Vorgehensweise von iNaturalist nennt auch eine
+Die Option muss mindestens eine Sekunde betragen (sonst `ArgumentException`), die Taktung lässt sich also nicht abschalten. Das Paket zählt keine Anfragen; die empfohlene Vorgehensweise von iNaturalist nennt auch eine
 Tagesmenge, eine sehr große Datei also auf mehrere Tage verteilen.
 
 **Wiederholungen (standardmäßig aus).** `INaturalistOptions.MaxAttempts` ist die Zahl der Versuche pro Anfrage, der erste eingerechnet.
