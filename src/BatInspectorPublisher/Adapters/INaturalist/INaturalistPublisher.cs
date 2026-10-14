@@ -283,9 +283,12 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
 
         public string Missing() => PhotoAttached ? "the audio" : SoundAttached ? "the spectrogram" : "the spectrogram and the audio";
 
-        public string Partial() => ObservationId is null
-            ? ""
-            : $" The observation {ObservationId} was already created; its evidence is incomplete.";
+        /// <summary>What exists on iNaturalist after an interruption, as a sentence to append; empty when nothing was written.</summary>
+        public string Partial() => ObservationId is not null
+            ? $" The observation {ObservationId} was already created; its evidence is incomplete."
+            : Step == PublishStep.CreateObservation
+                ? " The observation may or may not exist on iNaturalist; a later run finds it and completes it."
+                : "";
     }
 
     private static bool SameName(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);

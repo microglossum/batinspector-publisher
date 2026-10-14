@@ -578,6 +578,49 @@ public class INaturalistPublisherTests
         Assert.Null(result.ObservationId);
     }
 
+    private StubHttpHandler CreateAnswers(string createResponse) => _http
+        .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, TestData.PipistrellusTaxa)
+        .On("GET /v1/users/me", HttpStatusCode.OK, UserProfile)
+        .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0 }""")
+        .On("POST /v2/observations", HttpStatusCode.OK, createResponse)
+        .On("POST /v2/observation_photos", HttpStatusCode.OK, "{}")
+        .On("POST /v2/observation_sounds", HttpStatusCode.OK, "{}");
+
+    [Fact]
+    public async Task Publish_CreateResponseWithOnlyAUuid_IsCreatedAndAttachesByUuid()
+    {
+        // Seen in practice: v2 answered with a uuid and no numeric id.
+        CreateAnswers("""{ "results": [ { "uuid": "uuid-1" } ] }""");
+        var logger = new CapturingLogger();
+        var publisher = new INaturalistPublisher(TestData.Options(), new HttpClient(_http), _ => Task.FromResult("jwt-token"), logger);
+
+        var result = await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.Created, result.Status);
+        Assert.Equal("uuid-1", result.ObservationId);
+        Assert.Null(result.Url);
+        var uploads = _http.Requests.Where(r => r.Uri.AbsolutePath is "/v2/observation_photos" or "/v2/observation_sounds").ToList();
+        Assert.Equal(2, uploads.Count);
+        Assert.All(uploads, r => Assert.Contains("uuid-1", r.Body));
+        Assert.Single(logger.Entries, e => e.Level == Microsoft.Extensions.Logging.LogLevel.Warning && e.Message.Contains("uuid-1"));
+    }
+
+    [Theory]
+    [InlineData("""{ "results": [] }""")]
+    [InlineData("""{ "results": [ { "id": 5 } ] }""")]
+    public async Task Publish_CreateResponseWithoutAnObservation_FailsAtTheCreateStep(string createResponse)
+    {
+        // The request was sent, so the observation may exist: the step says so, and resume finds it later.
+        CreateAnswers(createResponse);
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.Failed, result.Status);
+        Assert.Equal(PublishStep.CreateObservation, result.InterruptedStep);
+        Assert.Contains("may or may not exist", result.Message);
+        Assert.DoesNotContain(_http.Requests, r => r.Uri.AbsolutePath is "/v2/observation_photos" or "/v2/observation_sounds");
+    }
+
     [Fact]
     public async Task Publish_Created_LogsTheObservationIdAtInformation()
     {
