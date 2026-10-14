@@ -1,5 +1,7 @@
 # BatInspectorPublisher
 
+![BatInspectorPublisher-Icon: eine Fledermaus über einem Upload-Pfeil](assets/icon.png)
+
 [![CI](https://github.com/microglossum/batinspector-publisher/actions/workflows/ci.yml/badge.svg)](https://github.com/microglossum/batinspector-publisher/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-512BD4)

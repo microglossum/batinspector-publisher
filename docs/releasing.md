@@ -44,8 +44,10 @@ Add a bullet under `## [Unreleased]` in `CHANGELOG.md` for everything users of t
    `[Unreleased]: https://github.com/microglossum/batinspector-publisher/compare/vX.Y.Z...HEAD` and
    `[X.Y.Z]: https://github.com/microglossum/batinspector-publisher/compare/vPREVIOUS...vX.Y.Z` (first release: `.../releases/tag/vX.Y.Z`).
 3. Commit `Release X.Y.Z`, create the annotated tag `git tag -a vX.Y.Z -m "X.Y.Z"`, push the commit and the tag (owner's OK first).
-4. The release workflow (to be written, see `TODO.md`; it checks out with `fetch-depth: 0` so MinVer sees the tag) packs, pushes to nuget.org
-   and creates the GitHub Release with the notes from step 2 and the `.nupkg` attached; `-` versions are pre-releases.
+4. The release workflow (`.github/workflows/release.yml`, starts on the pushed `v*` tag; it checks out with `fetch-depth: 0` so MinVer sees the tag) runs the tests, packs,
+   pushes to nuget.org through trusted publishing (`NuGet/login`, secret `NUGET_USER` = profile name, no API key) and creates the GitHub Release with the notes from step 2 and the `.nupkg` / `.snupkg` attached; `-` versions are pre-releases.
+   It fails before publishing anything if the tagged commit is not on `main`, if the packed version differs from the tag, or if `CHANGELOG.md` has no section for the tag.
+   A manual run (Actions > Release > Run workflow) is a dry run: build, test, pack and the `[Unreleased]` notes check, but no login, push or GitHub Release. Use it before the first tag and after changing the workflow. Do not register an author-signing certificate on nuget.org: it would make nuget.org reject the unsigned push.
 5. Check the package page on nuget.org (indexing takes a few minutes) and install it into a scratch project.
 
 ## Release notes from the changelog

@@ -42,3 +42,4 @@ First version: reads BatInspector's export file and publishes one observation pe
 - Logging through `ILogger` (optional): source-generated messages with stable event IDs and names, no token at any level, a created observation's id at Information right after creation, a `Failed` candidate at Error with its exception. See `docs/logging.md`.
 - Documentation states the intended host (single-user desktop or CLI; web, server and multi-user hosting is not supported) in the README's "Who this is for".
 - Documentation in English and German: README, setup guide, input file reference, iNaturalist mapping (`docs/inaturalist.md`), the requests sent to iNaturalist (`docs/inaturalist-api.md`) and the logging contract.
+- Package icon (a bat above an upload arrow).

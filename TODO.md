@@ -66,38 +66,33 @@ Waits until BatInspector runs off Windows:
 
 ### GitHub Actions
 
-- `tech/setup-repo` is currently the default branch and `main` does not exist on the remote, so Dependabot PRs target the working branch. Push `main`, make it the default, let Dependabot retarget;
-- release workflow per `docs/releasing.md`: checkout with `fetch-depth: 0` (MinVer reads the tag), pack, push to nuget.org, create the GitHub Release with notes extracted from `CHANGELOG.md`;
-- harden the workflow: pin actions to commit SHAs (Dependabot keeps them current) and set `permissions: contents: read` at the top (check what gitleaks needs on pull requests);
+- `tech/setup-repo` is currently the default branch and `main` does not exist on the remote, so Dependabot PRs target the working branch. Push `main`, make it the default, let Dependabot retarget. Needed before the first release: the README links, the CI badge and the package's release-notes link all point to `main` and 404 on nuget.org until it exists (seen in the upload preview 2026-10-14);
+- after the push: run `release.yml` once by hand (Actions > Release > Run workflow, a dry run: build, test, pack, notes, no push; the "Run workflow" button only appears once the file is on the default branch) and check that it is green. The workflow has never run; its tag path (login, push, GitHub Release, the check that the tagged commit is on `main`) can only be tested by a real tag;
+- check that the gitleaks job still works with the workflow-level `permissions: contents: read` on pull requests (added 2026-10-14; the action may need `pull-requests: read`), and that Dependabot keeps the SHA-pinned actions (`# vN` comments) current;
 - optional: a musl test leg in an Alpine job container (`mcr.microsoft.com/dotnet/sdk:10.0-alpine`), only if a consumer runs on Alpine;
 - remove `.github/actionlint.yaml` once a released actionlint knows the `ubuntu-26.04` label;
 - the actionlint version in the `validate-config` job is pinned by hand (Dependabot does not see it): bump it together with the devcontainer feature now and then.
 
 ### First NuGet release
 
-The package ID `BatInspectorPublisher` was free on nuget.org on 2026-10-02. Steps:
+Runbook: `docs/releasing.md`. Open before the first tag:
 
-1. Create a nuget.org account (sign in with a Microsoft account) and enable 2FA. Not done yet (2026-10-14). Everything up to the tag can be prepared without it; the trusted publishing policy and the README preview need it.
-2. Optional: reserve the ID prefix `BatInspector*` (free request, gives the verified badge).
-3. Create a trusted publishing policy on nuget.org (checked 2026-10-14, Microsoft docs updated 2026-09: available, no long-lived key): repository owner `microglossum`, repository `batinspector-publisher`, workflow file name only (for example `release.yml`), optional GitHub environment; scope: publish new packages and versions, glob `BatInspectorPublisher*`.
-4. Store the nuget.org profile name (not the e-mail address) as the GitHub secret `NUGET_USER`. No API key is stored.
-5. Tag-triggered release workflow, see `docs/releasing.md`: job permission `id-token: write`, step `NuGet/login@v1`, then `dotnet nuget push` with its output key. The temporary key lives 1 hour and each OIDC token is used once, so log in right before the push.
-6. First release as `0.1.0-preview.N`. Versions are immutable: they can be unlisted but not deleted.
-
-Prerequisites: the first live test, CHANGELOG, README check.
+- Prerequisites: the first live test (above), `main` as the default branch and the dry run of `release.yml` (see "GitHub Actions"), a `CHANGELOG.md` section for the version.
+- Check that 2FA is enabled on the nuget.org account.
+- Preview the package page again once `main` exists (`dotnet pack src/BatInspectorPublisher -c Release -o artifacts`, upload the `.nupkg` on nuget.org "Upload Package", stop before "Submit"): the README links, the CI badge, the icon at the top of `README.md` (raw.githubusercontent.com URL on `main`; relative images do not render on nuget.org) and the release-notes link all point to `main` and 404 until it exists.
+- First release as `0.1.0-preview.N`. Versions are immutable: they can be unlisted but not deleted.
+- After the first version is out: narrow the trusted publishing policy scope to "Push only new package versions"; if `release.yml` is ever renamed, update the policy (it matches the file name).
+- Optional, owner skipped it for now (2026-10-14): reserve the ID prefix `BatInspectorPublisher` (not `BatInspector*`, which would also claim the BatInspector project's IDs) by e-mail to `account@nuget.org`, best after the first release.
 
 ### NuGet package quality: open items
 
-Checked 2026-10-14 against Microsoft's package authoring best practices, library guidance (NuGet, dependencies) and package validation docs. Already in place: `Copyright`, `PackageReleaseNotes` (link to `CHANGELOG.md` on `main`), `EnablePackageValidation` (net8.0 and net10.0 expose the same API; verified by `dotnet pack`), SDK-style project, SemVer with `-preview.N`, description, authors, tags, SPDX licence expression, README, repository URL, SourceLink, `snupkg`, deterministic CI build, minimal dependencies with minimum versions.
-
-- Adopt before the first release: preview the README as nuget.org renders it (upload the package on the nuget.org "Upload Package" page, which needs the account; images must come from an allowed domain, relative image paths do not render; the one relative link in `README.md` is now absolute to be safe).
-- Adopt, small: `PackageIcon` (PNG, 128x128 recommended by the package guide, 64x64 by the library guide, transparent background, optional); reserve the prefix `BatInspector*` (free, gives the verified badge).
+- Optional: replace the placeholder icon `assets/icon.png` (128x128, transparent corners) with a better one.
 - Later: `PackageValidationBaselineVersion` once a stable version exists (it compares against a stable release, so a `0.x` preview has none); `Microsoft.CodeAnalysis.PublicApiAnalyzers` only if the `ArchitectureTests` allowlist stops being enough (it already fails on an unplanned public type, but does not track members).
-- Not researched yet: trimming and AOT annotations, package signing, SBOM, a DocFX site.
+- Not researched yet: trimming and AOT annotations, SBOM, a DocFX site.
 
 ### GitHub repository polish (settings on github.com, after the first push)
 
-- About box: description, topics (`bats`, `bioacoustics`, `inaturalist`, `citizen-science`, `dotnet`, `nuget`), social preview image.
+- About box: description, topics (`bats`, `bioacoustics`, `inaturalist`, `citizen-science`, `dotnet`, `nuget`), social preview image (GitHub wants 1280x640 px; compose it from `assets/icon.png`).
 - Security: enable private vulnerability reporting (needed by `SECURITY.md`), secret scanning with push protection, Dependabot alerts.
 - Ruleset for `main`: require the CI checks, no force pushes. Optional: squash merge only, delete branches after merge.
 - After the first NuGet release: add the NuGet version and downloads badges to both READMEs.
