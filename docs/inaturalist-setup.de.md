@@ -223,7 +223,7 @@ Open-Source-Code und dem Forum von iNaturalist, nicht aus einer offiziellen Refe
 | Längengrad | eine Zahl von -180 bis 180 |
 | Position | nicht genau 0, 0 |
 | Artname (`species_guess`) | höchstens 255 Zeichen |
-| `INaturalistOptions.TagList` | höchstens 750 Zeichen insgesamt, höchstens 255 pro Tag; geprüft beim Erzeugen des Publishers (`ArgumentException`), da sie jeden Eintrag ablehnen würde |
+| `INaturalistOptions.TagList` | höchstens 723 Zeichen insgesamt (mit ", " verbunden), höchstens 255 pro Tag: iNaturalist akzeptiert 750, und 27 sind für das Fortsetzungs-Tag reserviert, das jede Beobachtung bekommt. Geprüft beim Erzeugen des Publishers (`ArgumentException`), da sie jeden Eintrag ablehnen würde |
 
 Einige Zeilen sind die plattformneutralen Prüfungen der Eingabedatei (siehe `docs/input-format.de.md`), die `ExportOrchestrator`
 für jeden Kandidaten ausführt, bevor der Publisher ihn sieht. Die Regeln für den Eintrag kommen

@@ -81,9 +81,10 @@ dieser Endpunkt nicht (live geprüft, 2026-10-14).
 | `user_id` | die ID aus Anfrage 4 | Beschränkt die Suche auf die eigenen Beobachtungen. |
 
 Gelesen wird nur die erste Ergebnisseite (Standardgröße); `total_results` entscheidet, ob etwas existiert, die ersten Ergebnisse
-zeigen, ob es vollständig ist. Aus jedem Ergebnis nutzt das Paket `id`, `uuid`, `description`, `photos` und `sounds` (alle in der
-Antwort vorhanden, live geprüft). Ob `description` genau so zurückkommt, wie sie gesendet wurde, und ob ein noch nicht verarbeiteter
-Upload schon aufgelistet wird, ist **noch nicht live** geprüft.
+zeigen, ob es vollständig ist. Aus jedem Ergebnis nutzt das Paket `id`, `uuid`, `tags`, `photos` und `sounds` (`id`, `uuid`, `photos`
+und `sounds` sind in der Antwort vorhanden, live geprüft). Ob `tags` als Liste von Zeichenketten zurückkommt, die das mit Anfrage 7
+gesendete `batinspector:`-Tag enthält, und ob ein noch nicht verarbeiteter Upload schon aufgelistet wird, ist **noch nicht live**
+geprüft. Ein `tags`-Wert anderer Form wird ignoriert, Fortsetzen greift dann nicht.
 
 **`mine` und `mine_only` wirken nicht.** Die v1-API ignoriert beide, auch mit gültiger Anmeldung: Eine Suche nach Chiroptera lieferte mit
 und ohne sie dieselben 291317 Ergebnisse, mit `user_id` 6 (live geprüft, 2026-10-14). Sie hätten Beobachtungen anderer Nutzer als
@@ -100,7 +101,8 @@ Serverfehler, einem Netzwerkfehler oder einem Timeout nicht wiederholt (eine Wie
 
 **7. `POST /v2/observations`**, JSON-Body `{"observation": {...}}` mit `taxon_id`, `observed_on_string` (`yyyy-MM-dd`), `latitude`,
 `longitude`, `place_guess` (die Koordinaten als Text), `species_guess` (der Name aus der Datei), `description` (deutscher Text, siehe
-[inaturalist.de.md](inaturalist.de.md#die-beschreibung)) und `tag_list`. Aus der Antwort wird `results[0].uuid` zum Anhängen der Belege gebraucht;
+[inaturalist.de.md](inaturalist.de.md#die-beschreibung)) und `tag_list` (`INaturalistOptions.TagList` und das
+`batinspector:`-Tag des Eintrags). Aus der Antwort wird `results[0].uuid` zum Anhängen der Belege gebraucht;
 die numerische `id` fehlt manchmal, dann trägt das Ergebnis die uuid und keine URL.
 
 **8. `POST /v2/observation_photos`** und **9. `POST /v2/observation_sounds`**: je eine Multipart-Anfrage, die die Datei hochlädt

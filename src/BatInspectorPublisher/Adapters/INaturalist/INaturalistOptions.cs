@@ -26,8 +26,9 @@ public sealed class INaturalistOptions
     public TimeSpan AuthorizationTimeout { get; init; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// Comma-separated tags added to every observation. At most 750 characters in total and 255 per tag (iNaturalist's limits);
-    /// a longer list makes the <see cref="INaturalistPublisher"/> constructor throw.
+    /// Comma-separated tags added to every observation. The publisher adds one more, <c>batinspector:</c> and 12 hex digits,
+    /// which marks the observation for resuming. iNaturalist accepts 750 characters in total and 255 per tag, so this list may
+    /// have at most 723 characters (joined with ", "); a longer list makes the <see cref="INaturalistPublisher"/> constructor throw.
     /// </summary>
     public string TagList { get; init; } = "bat,acoustic-monitoring,batinspector";
 
@@ -111,10 +112,14 @@ public sealed class INaturalistOptions
     /// <summary>Checks what would otherwise reject every candidate the same way.</summary>
     internal void ValidateForPublishing()
     {
+        // Every observation also gets its resume marker tag, so its length is reserved.
         var tags = TagList.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        if (string.Join(", ", tags).Length > MaxTagListLength)
+        var maxLength = MaxTagListLength - ResumeMarker.Length - ", ".Length;
+        if (string.Join(", ", tags).Length > maxLength)
         {
-            throw new ArgumentException($"INaturalistOptions.TagList is longer than {MaxTagListLength} characters, which iNaturalist does not accept.", nameof(TagList));
+            throw new ArgumentException(
+                $"INaturalistOptions.TagList is longer than {maxLength} characters; with the tag every observation gets for resuming, iNaturalist would not accept it.",
+                nameof(TagList));
         }
 
         if (tags.Any(tag => tag.Length > MaxTagLength))

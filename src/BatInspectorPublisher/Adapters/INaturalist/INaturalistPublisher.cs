@@ -193,7 +193,8 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
                 $"Dry run: would create an observation of {candidate.ScientificName}{filedAs} (taxon_id={taxon.Id}) and attach the spectrogram and the audio.");
         }
 
-        var match = existing.Results.FirstOrDefault(o => IsIncompleteOwnObservation(o, payload.Description));
+        var marker = ResumeMarker.For(candidate);
+        var match = existing.Results.FirstOrDefault(o => IsIncompleteOwnObservation(o, marker));
         if (match is null)
         {
             if (existing.Results.FirstOrDefault(o => o.Id != 0 || o.Uuid.Length > 0) is { } known)
@@ -205,8 +206,7 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         }
 
         // An earlier run created this observation and stopped before its evidence was complete.
-        // Only an observation whose description is exactly what this entry produces is completed;
-        // anything else of the user's stays untouched.
+        // Only an observation carrying this entry's marker tag is completed; anything else of the user's stays untouched.
         state.Found(match);
         return new ResumePlan(match.Uuid,
             $"Dry run: would complete the incomplete observation {state.ObservationId} by attaching {state.Missing()}.");
@@ -356,19 +356,16 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         : (uuid.Length > 0 ? uuid : null, null);
 
     /// <summary>
-    /// True for an observation this package evidently created for the same entry (identical description,
-    /// which includes the exact time, measurements and comment) that still lacks its spectrogram or audio.
+    /// True for an observation this package created for the same entry (it carries the entry's
+    /// <see cref="ResumeMarker"/>) that still lacks its spectrogram or audio.
     /// When photos or sounds are not reported, the state is unknown and nothing is touched.
     /// </summary>
-    private static bool IsIncompleteOwnObservation(ExistingObservation observation, string? description) =>
+    private static bool IsIncompleteOwnObservation(ExistingObservation observation, string marker) =>
         observation.Uuid.Length > 0
         && observation.Photos is not null
         && observation.Sounds is not null
         && (observation.Photos.Count == 0 || observation.Sounds.Count == 0)
-        && NormalizeText(observation.Description) == NormalizeText(description);
-
-    private static string NormalizeText(string? text) =>
-        string.Join(' ', (text ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        && ResumeMarker.IsIn(observation.TagNames, marker);
 
     internal ObservationPayload BuildPayload(ObservationCandidate candidate, int taxonId, string? taxonName = null) => new()
     {
@@ -380,6 +377,6 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         PlaceGuess = string.Create(CultureInfo.InvariantCulture, $"{candidate.Latitude:F5}, {candidate.Longitude:F5}"),
         SpeciesGuess = candidate.ScientificName,
         Description = DescriptionBuilder.Build(candidate, _options.DescriptionPrefix, taxonName),
-        TagList = _options.TagList,
+        TagList = _options.TagList.Trim().Length == 0 ? ResumeMarker.For(candidate) : $"{_options.TagList},{ResumeMarker.For(candidate)}",
     };
 }

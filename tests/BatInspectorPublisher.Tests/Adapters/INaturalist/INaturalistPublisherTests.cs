@@ -721,11 +721,12 @@ public class INaturalistPublisherTests
         Assert.Contains(logger.Entries, e => e.Level == Microsoft.Extensions.Logging.LogLevel.Information && e.Message.Contains("123"));
     }
 
-    private string ExistingObservations(string photos, string sounds, string? description = null)
+    /// <summary>One existing observation; by default it carries the marker tag of <see cref="Candidate"/>, as one created by an earlier run.</summary>
+    private static string ExistingObservations(string photos, string sounds, string? tags = null)
     {
-        description ??= CreatePublisher().BuildPayload(Candidate(), 99).Description;
+        tags ??= JsonSerializer.Serialize(new[] { "bat", ResumeMarker.For(Candidate()) });
         return $$"""
-            { "total_results": 1, "results": [ { "id": 123, "uuid": "uuid-1", "description": {{JsonSerializer.Serialize(description)}}, "photos": {{photos}}, "sounds": {{sounds}} } ] }
+            { "total_results": 1, "results": [ { "id": 123, "uuid": "uuid-1", "tags": {{tags}}, "photos": {{photos}}, "sounds": {{sounds}} } ] }
             """;
     }
 
@@ -797,10 +798,19 @@ public class INaturalistPublisherTests
         Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
     }
 
-    [Fact]
-    public async Task Publish_IncompleteObservationWithADifferentDescription_IsLeftAlone()
+    public static TheoryData<string> TagsWithoutThisEntrysMarker => new()
     {
-        WithExisting(ExistingObservations(photos: "[]", sounds: "[]", description: "Selbst eingetragen, ohne Belege."));
+        "[]",
+        """["bat", "batinspector:000000000000"]""", // the marker of another entry
+        """[ { "tag": "x" } ]""", // an unexpected shape
+        "null",
+    };
+
+    [Theory]
+    [MemberData(nameof(TagsWithoutThisEntrysMarker))]
+    public async Task Publish_IncompleteObservationWithoutThisEntrysMarker_IsLeftAlone(string tags)
+    {
+        WithExisting(ExistingObservations(photos: "[]", sounds: "[]", tags: tags));
 
         var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
 
@@ -810,10 +820,10 @@ public class INaturalistPublisherTests
     }
 
     [Fact]
-    public async Task Publish_IncompleteObservationIgnoringWhitespaceDifferences_IsStillRecognized()
+    public async Task Publish_IncompleteObservationWithTheMarkerInAnotherCase_IsRecognized()
     {
-        var description = CreatePublisher().BuildPayload(Candidate(), 99).Description!.Replace(" ", "  ") + "\n";
-        WithExisting(ExistingObservations(photos: "[]", sounds: "[]", description: description));
+        var tags = JsonSerializer.Serialize(new[] { ResumeMarker.For(Candidate()).ToUpperInvariant() });
+        WithExisting(ExistingObservations(photos: "[]", sounds: "[]", tags: tags));
 
         var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
 
@@ -821,10 +831,23 @@ public class INaturalistPublisherTests
     }
 
     [Fact]
+    public async Task Publish_ResumeDoesNotDependOnTheDescription()
+    {
+        // An observation created with an older wording or another DescriptionPrefix is still completed.
+        WithExisting(ExistingObservations(photos: "[]", sounds: "[]").Replace("\"tags\"", "\"description\": \"Alter Text.\", \"tags\""));
+        var options = new INaturalistOptions { ClientId = "c", DescriptionPrefix = "Ganz anderer Text.", MinRequestInterval = TimeSpan.Zero };
+        var publisher = new INaturalistPublisher(options, new HttpClient(_http), _ => Task.FromResult("jwt-token"));
+
+        var result = await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.Resumed, result.Status);
+    }
+
+    [Fact]
     public async Task Publish_ExistingObservationWithUnreportedMedia_IsNeverTouched()
     {
-        var description = JsonSerializer.Serialize(CreatePublisher().BuildPayload(Candidate(), 99).Description);
-        WithExisting($$"""{ "total_results": 1, "results": [ { "id": 123, "uuid": "uuid-1", "description": {{description}} } ] }""");
+        var tags = JsonSerializer.Serialize(new[] { ResumeMarker.For(Candidate()) });
+        WithExisting($$"""{ "total_results": 1, "results": [ { "id": 123, "uuid": "uuid-1", "tags": {{tags}} } ] }""");
 
         var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
 
@@ -858,7 +881,43 @@ public class INaturalistPublisherTests
         Assert.Equal(99, payload.TaxonId);
         Assert.Equal("2026-06-11", payload.ObservedOnString);
         Assert.Equal("Pipistrellus pipistrellus", payload.SpeciesGuess);
-        Assert.Equal("bat,acoustic-monitoring,batinspector", payload.TagList);
+        Assert.Equal($"bat,acoustic-monitoring,batinspector,{ResumeMarker.For(TestData.Candidate())}", payload.TagList);
+    }
+
+    [Fact]
+    public void BuildPayload_EmptyTagList_SendsOnlyTheMarker()
+    {
+        var publisher = new INaturalistPublisher(new INaturalistOptions { ClientId = "c", TagList = " " }, new HttpClient(_http), _ => Task.FromResult("jwt"));
+
+        Assert.Equal(ResumeMarker.For(TestData.Candidate()), publisher.BuildPayload(TestData.Candidate(), 99).TagList);
+    }
+
+    [Fact]
+    public void ResumeMarker_IsStableAndIdentifiesTheEntry()
+    {
+        var candidate = TestData.Candidate();
+        var marker = ResumeMarker.For(candidate);
+
+        Assert.Matches("^batinspector:[0-9a-f]{12}$", marker);
+        Assert.Equal(ResumeMarker.Length, marker.Length);
+        // Not part of the identity: what only enriches the description.
+        Assert.Equal(marker, ResumeMarker.For(candidate with { Comment = "neu", TemperatureCelsius = 3, LocalName = null }));
+        // The same instant written in another offset is the same entry.
+        Assert.Equal(marker, ResumeMarker.For(candidate with { ObservedAt = candidate.ObservedAt.ToUniversalTime() }));
+        Assert.NotEqual(marker, ResumeMarker.For(candidate with { ObservedAt = candidate.ObservedAt.AddSeconds(1) }));
+        Assert.NotEqual(marker, ResumeMarker.For(candidate with { ScientificName = "Pipistrellus nathusii" }));
+        Assert.NotEqual(marker, ResumeMarker.For(candidate with { Latitude = candidate.Latitude + 0.00001 }));
+    }
+
+    [Fact]
+    public void Constructor_TagListThatLeavesNoRoomForTheMarker_Throws()
+    {
+        var fits = string.Join(",", Enumerable.Repeat(new string('t', 239), 3)); // 3 x 239 + 2 x 2 = 721 characters
+        var tooLong = fits + "ttt"; // 724, one more than the 723 left next to the marker
+
+        _ = new INaturalistPublisher(new INaturalistOptions { ClientId = "c", TagList = fits }, new HttpClient(_http), _ => Task.FromResult("jwt"));
+        Assert.Throws<ArgumentException>(() =>
+            new INaturalistPublisher(new INaturalistOptions { ClientId = "c", TagList = tooLong }, new HttpClient(_http), _ => Task.FromResult("jwt")));
     }
 
     [Fact]

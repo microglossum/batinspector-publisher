@@ -20,7 +20,7 @@ flowchart TD
     D -->|no| S2["SkippedUnresolvedTaxon"]
     D -->|yes| E{"Own observation of this<br/>taxon, day and place?"}
     E -->|"yes, complete"| S3["SkippedDuplicate"]
-    E -->|"yes, same description,<br/>photo or sound missing"| G{"Commit?"}
+    E -->|"yes, with this entry's tag,<br/>photo or sound missing"| G{"Commit?"}
     E -->|no| H{"Commit?"}
     G -->|no| W1["WouldResume"]
     G -->|yes| K["attach what is missing"]
@@ -60,7 +60,8 @@ The steps use these iNaturalist endpoints (every request with its parameters is 
 | `PathToPng` | photo | The spectrogram, uploaded under its file name. |
 | `PathToWav` | sound | The recording, uploaded under its file name. |
 | `SpeciesLocal` | not sent | |
-| (options) | `tag_list` | `INaturalistOptions.TagList`, default `bat,acoustic-monitoring,batinspector`. |
+| (options) | `tag_list` | `INaturalistOptions.TagList`, default `bat,acoustic-monitoring,batinspector`, plus the resume tag of the entry (see below). |
+| `SpeciesLatin`, `Date`, `Latitude`, `Longitude` | `tag_list` | One more tag, `batinspector:` and 12 hex digits: a short hash of the species as in the file, the instant in UTC and the coordinates. It marks the observation as the one this package created for the entry, see [Re-running](#re-running-duplicates-and-resume). |
 
 Not sent: the time of day, a positional accuracy, geoprivacy, captive/cultivated flags. The package does not handle
 sensitive species; iNaturalist obscures the coordinates of taxa it considers sensitive by itself.
@@ -83,7 +84,7 @@ For the entry in the [example](input-format.md#example) the description reads:
 > Automatisierte passive akustische Erfassung (BatInspector, batdetect2 + manuelle Prüfung). Exemplarische Ruferkennung vom 13.06.2026 04:26:34 Uhr MESZ. Temperatur: 20,5 °C. Luftfeuchte: 92,4 %. Beleg: Spektrogramm und Audioaufnahme dieser Ruferkennung.
 
 `PublishResult.Description` carries the text, also in a dry run, so the host can show what would become public. The
-description also identifies an observation as one this package created for the entry (see [Re-running](#re-running-duplicates-and-resume)).
+wording may change between versions; a later run recognizes its observations by their tag, not by the text.
 
 ## Species and taxon
 
@@ -120,9 +121,10 @@ taxon, on the same calendar day, within `INaturalistOptions.DuplicateCheckRadius
 - **Nothing found:** the observation is created.
 - **Something found, and it is complete or not recognizable as this entry's:** `SkippedDuplicate`. The existing observation
   is named in `ObservationId` when known. It is never touched.
-- **Something found, with a description identical to the one this entry produces (whitespace aside) and photo or sound missing:**
+- **Something found that carries this entry's `batinspector:` tag, with photo or sound missing:**
   an earlier run created it and stopped before its evidence was complete. The missing evidence is attached
   (`Resumed`, in a dry run `WouldResume`). Only an observation that is evidently this package's is completed.
+  The tag is visible on the observation; a user who removes it only turns this off for that observation, which is then left alone.
 
 If the search result does not tell whether photos and sounds exist, the observation is deliberately left alone
 (`SkippedDuplicate`): a wrong assumption fails safe.

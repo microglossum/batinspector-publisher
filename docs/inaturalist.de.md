@@ -21,7 +21,7 @@ flowchart TD
     D -->|nein| S2["SkippedUnresolvedTaxon"]
     D -->|ja| E{"Eigene Beobachtung dieses<br/>Taxons, Tages und Ortes?"}
     E -->|"ja, vollständig"| S3["SkippedDuplicate"]
-    E -->|"ja, gleiche Beschreibung,<br/>Foto oder Ton fehlt"| G{"Commit?"}
+    E -->|"ja, mit dem Tag dieses Eintrags,<br/>Foto oder Ton fehlt"| G{"Commit?"}
     E -->|nein| H{"Commit?"}
     G -->|nein| W1["WouldResume"]
     G -->|ja| K["Fehlendes anhängen"]
@@ -61,7 +61,8 @@ Die Schritte verwenden diese Endpunkte von iNaturalist (jede Anfrage mit ihren P
 | `PathToPng` | Foto | Das Spektrogramm, hochgeladen unter seinem Dateinamen. |
 | `PathToWav` | Ton | Die Aufnahme, hochgeladen unter ihrem Dateinamen. |
 | `SpeciesLocal` | nicht gesendet | |
-| (Optionen) | `tag_list` | `INaturalistOptions.TagList`, Standard `bat,acoustic-monitoring,batinspector`. |
+| (Optionen) | `tag_list` | `INaturalistOptions.TagList`, Standard `bat,acoustic-monitoring,batinspector`, dazu das Fortsetzungs-Tag des Eintrags (siehe unten). |
+| `SpeciesLatin`, `Date`, `Latitude`, `Longitude` | `tag_list` | Ein weiteres Tag, `batinspector:` und 12 Hex-Ziffern: ein kurzer Hash aus der Art wie in der Datei, dem Zeitpunkt in UTC und den Koordinaten. Es kennzeichnet die Beobachtung als die, die dieses Paket für den Eintrag angelegt hat, siehe [Erneuter Lauf](#erneuter-lauf-duplikate-und-fortsetzen). |
 
 Nicht gesendet werden: die Uhrzeit, eine Positionsgenauigkeit, Geoprivacy, Captive/Cultivated-Kennzeichen. Das Paket behandelt
 sensible Arten nicht; iNaturalist verschleiert die Koordinaten von Taxa, die es für sensibel hält, selbst.
@@ -83,9 +84,8 @@ Für den Eintrag im [Beispiel](input-format.de.md#beispiel) lautet die Beschreib
 
 > Automatisierte passive akustische Erfassung (BatInspector, batdetect2 + manuelle Prüfung). Exemplarische Ruferkennung vom 13.06.2026 04:26:34 Uhr MESZ. Temperatur: 20,5 °C. Luftfeuchte: 92,4 %. Beleg: Spektrogramm und Audioaufnahme dieser Ruferkennung.
 
-`PublishResult.Description` enthält den Text, auch im Probelauf, damit der Host zeigen kann, was öffentlich würde. Die
-Beschreibung erkennt außerdem eine Beobachtung als eine, die dieses Paket für den Eintrag angelegt hat (siehe
-[Erneuter Lauf](#erneuter-lauf-duplikate-und-fortsetzen)).
+`PublishResult.Description` enthält den Text, auch im Probelauf, damit der Host zeigen kann, was öffentlich würde. Die Formulierung
+kann sich zwischen Versionen ändern; ein späterer Lauf erkennt seine Beobachtungen an ihrem Tag, nicht am Text.
 
 ## Art und Taxon
 
@@ -124,9 +124,10 @@ des aufgelösten Taxons am selben Kalendertag im Umkreis von `INaturalistOptions
 - **Nichts gefunden:** Die Beobachtung wird angelegt.
 - **Etwas gefunden, und es ist vollständig oder nicht als die dieses Eintrags erkennbar:** `SkippedDuplicate`. Die vorhandene
   Beobachtung steht in `ObservationId`, wenn sie bekannt ist. Sie wird nie angefasst.
-- **Etwas gefunden, mit einer Beschreibung, die (bis auf Leerraum) der entspricht, die dieser Eintrag erzeugt, und es fehlt
-  Foto oder Ton:** Ein früherer Lauf hat sie angelegt und ist vor dem vollständigen Beleg abgebrochen. Der fehlende Beleg
-  wird angehängt (`Resumed`, im Probelauf `WouldResume`). Es wird nur eine Beobachtung vervollständigt, die eindeutig von diesem Paket stammt.
+- **Etwas gefunden, das das `batinspector:`-Tag dieses Eintrags trägt, und es fehlt Foto oder Ton:** Ein früherer Lauf hat sie
+  angelegt und ist vor dem vollständigen Beleg abgebrochen. Der fehlende Beleg wird angehängt (`Resumed`, im Probelauf
+  `WouldResume`). Es wird nur eine Beobachtung vervollständigt, die eindeutig von diesem Paket stammt. Das Tag ist an der
+  Beobachtung sichtbar; wer es entfernt, schaltet das nur für diese Beobachtung ab, die dann unberührt bleibt.
 
 Sagt das Suchergebnis nicht, ob Fotos und Töne vorhanden sind, bleibt die Beobachtung mit Absicht unberührt
 (`SkippedDuplicate`): Eine falsche Annahme bleibt so folgenlos.

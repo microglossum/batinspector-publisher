@@ -63,8 +63,16 @@ internal sealed class ExistingObservation
     [JsonPropertyName("uuid")]
     public string Uuid { get; set; } = string.Empty;
 
-    [JsonPropertyName("description")]
-    public string? Description { get; set; }
+    /// <summary>
+    /// The observation's tags. Read as raw elements, because the shape in v1 search results is not confirmed live: string
+    /// elements are taken as tags, anything else is ignored (then resume does not trigger, which is safe).
+    /// </summary>
+    [JsonPropertyName("tags")]
+    public List<JsonElement>? Tags { get; set; }
+
+    /// <summary>The string elements of <see cref="Tags"/>.</summary>
+    public IEnumerable<string> TagNames =>
+        (Tags ?? []).Where(t => t.ValueKind == JsonValueKind.String).Select(t => t.GetString()!);
 
     [JsonPropertyName("photos")]
     public List<JsonElement>? Photos { get; set; }

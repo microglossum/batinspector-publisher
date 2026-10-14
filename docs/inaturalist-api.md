@@ -76,9 +76,10 @@ Nothing is cached: every candidate asks again. Inactive taxa are not returned by
 | `user_id` | the id from request 4 | Restricts the search to the user's own observations. |
 
 Only the first page of results is read (the default page size); `total_results` decides whether something exists, the first
-results tell whether it is complete. From each result the package uses `id`, `uuid`, `description`, `photos` and `sounds`
-(all present in the answer, checked live). Whether `description` comes back exactly as sent, and whether an upload that is not
-processed yet is already listed, is **not yet live**.
+results tell whether it is complete. From each result the package uses `id`, `uuid`, `tags`, `photos` and `sounds`
+(`id`, `uuid`, `photos` and `sounds` present in the answer, checked live). Whether `tags` comes back as a list of strings that
+holds the `batinspector:` tag sent with request 7, and whether an upload that is not processed yet is already listed, is
+**not yet live**. A `tags` value of another shape is ignored, so resume does not trigger.
 
 **`mine` and `mine_only` do not work.** The v1 API ignores both, even with a valid login: a Chiroptera search returned the
 same 291317 results with and without them, and 6 with `user_id` (checked live, 2026-10-14). They would have matched other users'
@@ -95,7 +96,8 @@ server error, a network error or a timeout (a repeat could create a second obser
 
 **7. `POST /v2/observations`**, JSON body `{"observation": {...}}` with `taxon_id`, `observed_on_string` (`yyyy-MM-dd`),
 `latitude`, `longitude`, `place_guess` (the coordinates as text), `species_guess` (the name from the file), `description`
-(German text, see [inaturalist.md](inaturalist.md#the-description)) and `tag_list`. The answer's `results[0].uuid` is needed to
+(German text, see [inaturalist.md](inaturalist.md#the-description)) and `tag_list` (`INaturalistOptions.TagList` plus the
+entry's `batinspector:` tag). The answer's `results[0].uuid` is needed to
 attach the evidence; the numeric `id` is sometimes missing, then the result carries the uuid and no URL.
 
 **8. `POST /v2/observation_photos`** and **9. `POST /v2/observation_sounds`**: one multipart request each that uploads the file

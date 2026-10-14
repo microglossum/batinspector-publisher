@@ -221,7 +221,7 @@ iNaturalist's open source and forum, not from an official reference, and are not
 | Longitude | a number from -180 to 180 |
 | Position | not exactly 0, 0 |
 | Species name (`species_guess`) | at most 255 characters |
-| `INaturalistOptions.TagList` | at most 750 characters in total, at most 255 per tag; checked when the publisher is created (`ArgumentException`), since it would reject every entry |
+| `INaturalistOptions.TagList` | at most 723 characters in total (joined with ", "), at most 255 per tag: iNaturalist accepts 750, and 27 are reserved for the resume tag each observation gets. Checked when the publisher is created (`ArgumentException`), since it would reject every entry |
 
 Some rows are the platform-neutral checks of the input file (see `docs/input-format.md`), which `ExportOrchestrator` runs on
 every candidate before the publisher sees it. The entry rules come first: if one fails, the result is
