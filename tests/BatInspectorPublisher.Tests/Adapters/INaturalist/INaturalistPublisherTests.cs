@@ -486,6 +486,94 @@ public class INaturalistPublisherTests
         Assert.Equal(HttpStatusCode.Unauthorized, ((INaturalistApiException)result.Error!).StatusCode);
     }
 
+    private static HttpResponseMessage Answer(HttpStatusCode status, string body) =>
+        new(status) { Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json") };
+
+    /// <summary>Answers 401 to the first <paramref name="rejections"/> requests, then <paramref name="body"/>.</summary>
+    private static Func<HttpResponseMessage> RejectFirst(int rejections, string body)
+    {
+        var calls = 0;
+        return () => ++calls <= rejections ? Answer(HttpStatusCode.Unauthorized, "expired") : Answer(HttpStatusCode.OK, body);
+    }
+
+    private INaturalistPublisher PublisherWithRenewal(List<string> renewed, Func<string, string>? renew = null) =>
+        new(TestData.Options(), new HttpClient(_http), _ => Task.FromResult("jwt-token"), renewAccessToken: (rejected, _) =>
+        {
+            renewed.Add(rejected);
+            return Task.FromResult(renew?.Invoke(rejected) ?? "fresh-token");
+        });
+
+    [Fact]
+    public async Task Publish_401OnAWrite_RenewsTheTokenOnceAndRepeatsTheRequest()
+    {
+        _http
+            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, TestData.PipistrellusTaxa)
+            .On("GET /v1/users/me", HttpStatusCode.OK, UserProfile)
+            .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0 }""")
+            .On("POST /v2/observations", RejectFirst(1, """{ "results": [ { "id": 123, "uuid": "uuid-1" } ] }"""))
+            .On("POST /v2/observation_photos", HttpStatusCode.OK, "{}")
+            .On("POST /v2/observation_sounds", HttpStatusCode.OK, "{}");
+        var renewed = new List<string>();
+
+        var result = await PublisherWithRenewal(renewed).PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.Created, result.Status);
+        Assert.Equal(["jwt-token"], renewed);
+        var creates = _http.Requests.Where(r => r.Method == "POST" && r.Uri.AbsolutePath == "/v2/observations").ToList();
+        Assert.Equal(["jwt-token", "fresh-token"], creates.Select(r => r.BearerToken));
+        Assert.All(_http.Requests.Where(r => r.Uri.AbsolutePath.Contains("observation_")), r => Assert.Equal("fresh-token", r.BearerToken));
+    }
+
+    [Fact]
+    public async Task Publish_401InADryRun_IsRenewedToo()
+    {
+        _http
+            .On("GET /v2/taxa/autocomplete", RejectFirst(1, TestData.PipistrellusTaxa))
+            .On("GET /v1/users/me", HttpStatusCode.OK, UserProfile)
+            .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0 }""");
+        var renewed = new List<string>();
+
+        var result = await PublisherWithRenewal(renewed).PublishAsync(Candidate(), Evidence(), new PublishOptions());
+
+        Assert.Equal(PublishStatus.WouldCreate, result.Status);
+        Assert.Single(renewed);
+    }
+
+    [Fact]
+    public async Task Publish_401AfterTheRenewal_FailsWithoutAnotherRenewal()
+    {
+        _http.On("GET /v2/taxa/autocomplete", HttpStatusCode.Unauthorized, "still not");
+        var renewed = new List<string>();
+
+        var result = await PublisherWithRenewal(renewed).PublishAsync(Candidate(), Evidence(), new PublishOptions());
+
+        Assert.Equal(PublishStatus.Failed, result.Status);
+        Assert.Equal(HttpStatusCode.Unauthorized, ((INaturalistApiException)result.Error!).StatusCode);
+        Assert.Single(renewed);
+        Assert.False(result.StopsRun);
+    }
+
+    [Fact]
+    public async Task Publish_RenewalFailsAfterTheObservationWasCreated_StopsTheRunAndNamesTheObservation()
+    {
+        _http
+            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, TestData.PipistrellusTaxa)
+            .On("GET /v1/users/me", HttpStatusCode.OK, UserProfile)
+            .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0 }""")
+            .On("POST /v2/observations", HttpStatusCode.OK, """{ "results": [ { "id": 123, "uuid": "uuid-1" } ] }""")
+            .On("POST /v2/observation_photos", HttpStatusCode.Unauthorized, "revoked");
+        var publisher = new INaturalistPublisher(TestData.Options(), new HttpClient(_http), _ => Task.FromResult("jwt-token"),
+            renewAccessToken: (_, _) => throw new INaturalistLoginException(INaturalistLoginFailure.Denied, "Authorization was denied."));
+
+        var result = await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.Failed, result.Status);
+        Assert.True(result.StopsRun);
+        Assert.Equal("123", result.ObservationId);
+        Assert.Equal(PublishStep.AttachSpectrogram, result.InterruptedStep);
+        Assert.Contains("observation 123 was already created", result.Message);
+    }
+
     [Fact]
     public async Task Publish_CancelledBeforeAnythingWasCreated_ReportsCancelledWithoutObservation()
     {

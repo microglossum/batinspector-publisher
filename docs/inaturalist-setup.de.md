@@ -87,7 +87,10 @@ Publisher für jeden Kandidaten aufgerufen) liefert das gespeicherte API-Token, 
 (oder läuft es in weniger als 5 Minuten ab), tauscht es das gespeicherte OAuth-Token still und ohne Browser gegen ein neues. Die
 Browser-Anmeldung ist also **einmal** nötig, bis die Person den Zugriff der Anwendung bei iNaturalist widerruft oder die gespeicherte
 Anmeldung entfernt wird. Eine neue Browser-Anmeldung gibt es nur, wenn keine Anmeldung gespeichert ist oder iNaturalist das
-gespeicherte OAuth-Token ablehnt (401 oder 403). Ein Netzwerkfehler bei der Erneuerung startet nie eine Anmeldung; der Kandidat endet als `Failed`.
+gespeicherte OAuth-Token ablehnt (401 oder 403). Ein Netzwerkfehler bei der Erneuerung startet nie eine Anmeldung; der Kandidat endet als `Failed`, und der Lauf hält an.
+Lehnt iNaturalist das API-Token früher als erwartet ab (eine API-Anfrage antwortet mit 401), erneuert der Publisher es auf dieselbe
+Weise und wiederholt diese eine Anfrage, einmal pro Kandidat. Das ist auch beim Schreiben sicher, weil iNaturalist die Anfrage vor der
+Verarbeitung abgelehnt hat; ein zweites 401 lässt den Kandidaten als `Failed` enden.
 
 ### Port 45679
 
@@ -256,7 +259,7 @@ Der Standard 1 wiederholt nicht: Ein vorübergehender Fehler beendet den Kandida
 
 | Anfrage | Wiederholt nach | Nicht wiederholt nach |
 |---|---|---|
-| Lesen: Taxon-Suche, Duplikatprüfung, Benutzerprofil, Token-Austausch | 429, 500, 502, 503, 504, einem Netzwerkfehler, einem Timeout | jedem anderen Status (400, 401, 404, 422, ...) |
+| Lesen: Taxon-Suche, Duplikatprüfung, Benutzerprofil, Token-Austausch | 429, 500, 502, 503, 504, einem Netzwerkfehler, einem Timeout | jedem anderen Status (400, 401, 404, 422, ...); ein 401 erneuert stattdessen das API-Token, siehe [Anmelden](#3-anmelden) |
 | Schreiben: Beobachtung anlegen, Spektrogramm anhängen, Audio anhängen | 429 (vor der Verarbeitung abgelehnt); einer Verbindung, die nicht aufgebaut werden konnte (kein Netz, DNS, TLS-Handshake) | 500, 502, 503, 504, einem Netzwerkfehler nach dem Senden, einem Timeout |
 
 Eine Schreibanfrage, die so scheitert, kann schon verarbeitet worden sein; ein erneutes Senden könnte eine zweite Beobachtung oder einen

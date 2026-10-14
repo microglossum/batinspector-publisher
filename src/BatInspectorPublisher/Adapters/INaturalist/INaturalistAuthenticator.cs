@@ -86,45 +86,75 @@ public sealed partial class INaturalistAuthenticator
                 return stored.AccessToken;
             }
 
-            // iNaturalist OAuth access tokens never expire and no refresh tokens are issued (its
-            // Doorkeeper config: access_token_expires_in nil), so an expired API JWT is replaced
-            // silently by exchanging the stored OAuth token again. The browser login happens once.
-            // Only a rejection of the token (revoked) falls through to another login; a network
-            // error propagates instead of unexpectedly opening a browser.
-            if (stored?.OAuthAccessToken is { Length: > 0 } oauthToken)
-            {
-                try
-                {
-                    var jwt = await _api.ExchangeOAuthTokenForJwtAsync(oauthToken, ct);
-                    return SaveRenewed(stored, jwt, oauthToken, stored.RefreshToken).AccessToken;
-                }
-                catch (INaturalistApiException ex) when (ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-                {
-                    LogStoredTokenRejected(_logger, ex);
-                }
-            }
-
-            if (stored?.RefreshToken is { Length: > 0 } refreshToken)
-            {
-                try
-                {
-                    var refreshed = await _flow.RefreshAsync(refreshToken, ct);
-                    var jwt = await _api.ExchangeOAuthTokenForJwtAsync(refreshed.AccessToken, ct);
-                    // Some servers omit refresh_token when it did not rotate: keep the old one.
-                    return SaveRenewed(stored, jwt, refreshed.AccessToken, refreshed.RefreshToken ?? stored.RefreshToken).AccessToken;
-                }
-                catch (Exception ex) when (ex is INaturalistApiException or InvalidOperationException)
-                {
-                    LogRefreshFailed(_logger, ex);
-                }
-            }
-
-            return (await LoginCoreAsync(ct)).AccessToken;
+            return await RenewCoreAsync(stored, ct);
         }
         finally
         {
             _gate.Release();
         }
+    }
+
+    /// <summary>
+    /// Returns a new API token after iNaturalist rejected <paramref name="rejectedToken"/> before it was due to expire: the
+    /// stored OAuth token is exchanged again, silently; only if that is rejected too does the browser login start. When the
+    /// stored token was already replaced (another candidate renewed it), the replacement is returned without a request.
+    /// </summary>
+    internal async Task<string> RenewAsync(string rejectedToken, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            var stored = _store.Load();
+            if (stored is not null && stored.AccessToken != rejectedToken && !stored.IsLikelyExpired(DateTimeOffset.UtcNow))
+            {
+                return stored.AccessToken;
+            }
+
+            return await RenewCoreAsync(stored, ct);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>Gets a new API token from the stored login, or from a new interactive login when it is unusable. Call under the gate.</summary>
+    private async Task<string> RenewCoreAsync(INaturalistToken? stored, CancellationToken ct)
+    {
+        // iNaturalist OAuth access tokens never expire and no refresh tokens are issued (its
+        // Doorkeeper config: access_token_expires_in nil), so an expired API JWT is replaced
+        // silently by exchanging the stored OAuth token again. The browser login happens once.
+        // Only a rejection of the token (revoked) falls through to another login; a network
+        // error propagates instead of unexpectedly opening a browser.
+        if (stored?.OAuthAccessToken is { Length: > 0 } oauthToken)
+        {
+            try
+            {
+                var jwt = await _api.ExchangeOAuthTokenForJwtAsync(oauthToken, ct);
+                return SaveRenewed(stored, jwt, oauthToken, stored.RefreshToken).AccessToken;
+            }
+            catch (INaturalistApiException ex) when (ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                LogStoredTokenRejected(_logger, ex);
+            }
+        }
+
+        if (stored?.RefreshToken is { Length: > 0 } refreshToken)
+        {
+            try
+            {
+                var refreshed = await _flow.RefreshAsync(refreshToken, ct);
+                var jwt = await _api.ExchangeOAuthTokenForJwtAsync(refreshed.AccessToken, ct);
+                // Some servers omit refresh_token when it did not rotate: keep the old one.
+                return SaveRenewed(stored, jwt, refreshed.AccessToken, refreshed.RefreshToken ?? stored.RefreshToken).AccessToken;
+            }
+            catch (Exception ex) when (ex is INaturalistApiException or InvalidOperationException)
+            {
+                LogRefreshFailed(_logger, ex);
+            }
+        }
+
+        return (await LoginCoreAsync(ct)).AccessToken;
     }
 
     /// <summary>Forgets the stored login.</summary>

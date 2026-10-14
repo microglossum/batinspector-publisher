@@ -87,7 +87,10 @@ by the publisher for every candidate) returns the stored API token while it is v
 within 5 minutes of it), it exchanges the stored OAuth token for a new one, silently and without a browser. So the browser
 login is needed **once**, until the user revokes the application's access on iNaturalist or the stored login is removed.
 A new browser login only happens when no login is stored or iNaturalist rejects the stored OAuth token (401 or 403).
-A network error during the renewal never starts a login; that candidate ends as `Failed`.
+A network error during the renewal never starts a login; that candidate ends as `Failed` and the run stops.
+If iNaturalist rejects the API token earlier than expected (any API request answers 401), the publisher renews it the same
+way and repeats that one request, once per candidate. That is safe for a write too, because iNaturalist refused the request
+before processing it; a second 401 ends the candidate as `Failed`.
 
 ### Port 45679
 
@@ -254,7 +257,7 @@ The default 1 does not retry: a transient failure ends the candidate as `Failed`
 
 | Request | Retried after | Not retried after |
 |---|---|---|
-| Reads: taxon search, duplicate check, user profile, token exchange | 429, 500, 502, 503, 504, a network error, a timeout | any other status (400, 401, 404, 422, ...) |
+| Reads: taxon search, duplicate check, user profile, token exchange | 429, 500, 502, 503, 504, a network error, a timeout | any other status (400, 401, 404, 422, ...); a 401 renews the API token instead, see [Log in](#3-log-in) |
 | Writes: create the observation, attach the spectrogram, attach the audio | 429 (refused before processing); a connection that could not be set up (no network, DNS, TLS handshake) | 500, 502, 503, 504, a network error after sending, a timeout |
 
 A write that fails that way may already have been processed, and sending it again could create a second observation or a

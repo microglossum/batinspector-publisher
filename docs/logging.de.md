@@ -39,7 +39,7 @@ Jede Meldung hat eine feste Ereignis-ID und einen Namen, damit die Anwendung dan
 | 2100 | OAuth-Anmeldung | 2101 `OAuthTokenRequest`, 2102 `OAuthCannotListen`, 2103 `OAuthFallbackPort`, 2104 `OAuthIgnoredRequest` |
 | 2200 | `ProtectedFileTokenStore` | 2201 `TokenFileUnreadable` |
 | 3000 | iNaturalist-REST-Aufrufe | 3001 `HttpCall`, 3002 `NoNumericObservationId`, 3003 `RequestRetrying` |
-| 4000 | `INaturalistPublisher` | 4001 `ObservationResuming`, 4002 `ObservationCreated` |
+| 4000 | `INaturalistPublisher` | 4001 `ObservationResuming`, 4002 `ObservationCreated`, 4003 `ApiTokenRejected` |
 
 ## Einen Logger anschließen
 

@@ -45,7 +45,8 @@ source shows, and no refresh token is issued; a `refresh_token` grant exists in 
 
 **3. `GET /users/api_token`** (host `www`, not `api`): the OAuth token as Bearer. The answer is `{"api_token": "<JWT>"}`. The REST API
 rejects a raw OAuth token with 401, so this exchange is required. The JWT is valid for about 24 hours and is renewed silently
-from the stored OAuth token.
+from the stored OAuth token, also earlier when an API request (4 to 9) answers 401; that request is then sent once more with
+the new JWT.
 
 **4. `GET /v1/users/me`**: JWT as Bearer. Used from `results[0]`:
 

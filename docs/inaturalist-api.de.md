@@ -48,7 +48,8 @@ Quellcode nicht ab, und es wird kein Refresh-Token ausgegeben; ein `refresh_toke
 
 **3. `GET /users/api_token`** (Host `www`, nicht `api`): das OAuth-Token als Bearer. Die Antwort ist `{"api_token": "<JWT>"}`. Die
 REST-API lehnt ein rohes OAuth-Token mit 401 ab, deshalb ist dieser Tausch nötig. Das JWT gilt etwa 24 Stunden und wird still aus
-dem gespeicherten OAuth-Token erneuert.
+dem gespeicherten OAuth-Token erneuert, auch früher, wenn eine API-Anfrage (4 bis 9) mit 401 antwortet; diese Anfrage wird dann einmal
+mit dem neuen JWT wiederholt.
 
 **4. `GET /v1/users/me`**: JWT als Bearer. Aus `results[0]` wird verwendet:
 

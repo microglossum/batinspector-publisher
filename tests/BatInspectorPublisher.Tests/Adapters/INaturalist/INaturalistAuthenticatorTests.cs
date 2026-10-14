@@ -77,6 +77,30 @@ public class INaturalistAuthenticatorTests
         Assert.Equal("oauth", _store.Token.OAuthAccessToken); // kept so later renewals need no browser
     }
 
+    [Fact]
+    public async Task Renew_RejectedStoredToken_ExchangesTheOAuthTokenAgainWithoutBrowser()
+    {
+        _store.Token = Token(DateTimeOffset.UtcNow) with { OAuthAccessToken = "oauth" };
+        _http.On("GET /users/api_token", HttpStatusCode.OK, """{ "api_token": "fresh-jwt" }""");
+
+        var jwt = await Create(NeverPrompt).RenewAsync("stored-jwt", default);
+
+        Assert.Equal("fresh-jwt", jwt);
+        Assert.Equal("fresh-jwt", _store.Token!.AccessToken);
+        Assert.Equal("oauth", _http.Requests.Single().BearerToken);
+    }
+
+    [Fact]
+    public async Task Renew_TokenAlreadyReplaced_ReturnsTheReplacementWithoutNetwork()
+    {
+        _store.Token = Token(DateTimeOffset.UtcNow) with { AccessToken = "newer-jwt", OAuthAccessToken = "oauth" };
+
+        var jwt = await Create(NeverPrompt).RenewAsync("stored-jwt", default);
+
+        Assert.Equal("newer-jwt", jwt);
+        Assert.Empty(_http.Requests);
+    }
+
     private static readonly AuthorizationPrompt NeverPrompt = (_, _) => throw new InvalidOperationException("The browser login must not be started.");
 
     [Fact]

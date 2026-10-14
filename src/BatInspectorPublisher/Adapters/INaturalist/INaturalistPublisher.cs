@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using BatInspectorPublisher.Core;
 using BatInspectorPublisher.Core.Models;
 using BatInspectorPublisher.Core.Results;
@@ -20,6 +21,7 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
     private readonly INaturalistOptions _options;
     private readonly INaturalistApiClient _api;
     private readonly Func<CancellationToken, Task<string>> _getAccessToken;
+    private readonly Func<string, CancellationToken, Task<string>> _renewAccessToken;
     private readonly ILogger _logger;
     private readonly TimeProvider _time;
 
@@ -57,7 +59,7 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         HttpClient httpClient,
         INaturalistAuthenticator authenticator,
         ILogger<INaturalistPublisher>? logger = null)
-        : this(options, httpClient, authenticator.EnsureAuthenticatedAsync, logger, null)
+        : this(options, httpClient, authenticator.EnsureAuthenticatedAsync, logger, null, renewAccessToken: authenticator.RenewAsync)
     {
     }
 
@@ -67,7 +69,8 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         Func<CancellationToken, Task<string>> getAccessToken,
         ILogger? logger = null,
         TimeProvider? time = null,
-        Func<TimeSpan, CancellationToken, Task>? delay = null)
+        Func<TimeSpan, CancellationToken, Task>? delay = null,
+        Func<string, CancellationToken, Task<string>>? renewAccessToken = null)
     {
         options.ValidateForPublishing();
         _options = options;
@@ -75,6 +78,7 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         _logger = logger ?? NullLogger.Instance;
         _api = new INaturalistApiClient(options, httpClient, _logger, _time, delay);
         _getAccessToken = getAccessToken;
+        _renewAccessToken = renewAccessToken ?? ((_, ct) => getAccessToken(ct));
     }
 
     [LoggerMessage(EventId = 4001, EventName = "ObservationResuming", Level = LogLevel.Information,
@@ -84,6 +88,10 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
     [LoggerMessage(EventId = 4002, EventName = "ObservationCreated", Level = LogLevel.Information,
         Message = "Created iNaturalist observation {ObservationId} of {Species}")]
     private static partial void LogCreated(ILogger logger, string? observationId, string species);
+
+    [LoggerMessage(EventId = 4003, EventName = "ApiTokenRejected", Level = LogLevel.Warning,
+        Message = "iNaturalist rejected the API token before it was due to expire; renewing it and repeating the request once")]
+    private static partial void LogTokenRejected(ILogger logger);
 
     Task<PublishResult> IObservationPublisher.PublishAsync(ObservationCandidate candidate, EvidenceFiles evidence, PublishOptions options, CancellationToken ct) =>
         PublishAsync(candidate, evidence, options, ct);
@@ -117,9 +125,8 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
             // Includes an OperationCanceledException that is not the caller's, such as an HttpClient timeout.
             if (state.SigningIn)
             {
-                return Result(PublishStatus.Failed,
-                    ex.Message + " Without a login nothing can be published, so the run stops here.", ex, state.Step) with
-                { StopsRun = true };
+                var stop = ex.Message + state.Partial() + " Without a login nothing can be published, so the run stops here.";
+                return Result(PublishStatus.Failed, stop, ex, state.Step) with { StopsRun = true };
             }
 
             return Result(PublishStatus.Failed, ex.Message + state.Partial(), ex, state.Step);
@@ -163,10 +170,10 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
 
         // A login that fails here would fail (and may open the browser) for every following candidate: it stops the run.
         state.SigningIn = true;
-        var jwt = await _getAccessToken(ct);
+        state.Jwt = await _getAccessToken(ct);
         state.SigningIn = false;
 
-        var lookup = await ResolveTaxonAsync(candidate.ScientificName, jwt, ct);
+        var lookup = await CallAsync(state, jwt => ResolveTaxonAsync(candidate.ScientificName, jwt, ct), ct);
         if (lookup.Taxon is not { } taxon)
         {
             return new Done(PublishStatus.SkippedUnresolvedTaxon, lookup.Problem!);
@@ -175,14 +182,14 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         state.TaxonName = taxon.Name;
         var payload = BuildPayload(candidate, taxon.Id, taxon.Name);
         state.Description = payload.Description;
-        var userId = await _api.GetAuthenticatedUserIdAsync(jwt, ct);
-        var existing = await _api.FindExistingObservationsAsync(
-            taxon.Id, userId, DateOnly.FromDateTime(candidate.ObservedAt.DateTime), candidate.Latitude, candidate.Longitude, jwt, ct);
+        var userId = await CallAsync(state, jwt => _api.GetAuthenticatedUserIdAsync(jwt, ct), ct);
+        var existing = await CallAsync(state, jwt => _api.FindExistingObservationsAsync(
+            taxon.Id, userId, DateOnly.FromDateTime(candidate.ObservedAt.DateTime), candidate.Latitude, candidate.Longitude, jwt, ct), ct);
 
         if (existing.TotalResults == 0)
         {
             var filedAs = SameName(taxon.Name, candidate.ScientificName) ? "" : $" as {taxon.Name}";
-            return new CreatePlan(payload, jwt,
+            return new CreatePlan(payload,
                 $"Dry run: would create an observation of {candidate.ScientificName}{filedAs} (taxon_id={taxon.Id}) and attach the spectrogram and the audio.");
         }
 
@@ -201,7 +208,7 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         // Only an observation whose description is exactly what this entry produces is completed;
         // anything else of the user's stays untouched.
         state.Found(match);
-        return new ResumePlan(match.Uuid, jwt,
+        return new ResumePlan(match.Uuid,
             $"Dry run: would complete the incomplete observation {state.ObservationId} by attaching {state.Missing()}.");
     }
 
@@ -217,7 +224,7 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         else
         {
             state.Step = PublishStep.CreateObservation;
-            var created = await _api.CreateObservationAsync(((CreatePlan)plan).Payload, plan.Jwt, ct);
+            var created = await CallAsync(state, jwt => _api.CreateObservationAsync(((CreatePlan)plan).Payload, jwt, ct), ct);
             uuid = created.Uuid;
             (state.ObservationId, state.Url) = Identify(created.Id, created.Uuid);
             // Logged at once: if anything after this fails, this line is the trail to the observation.
@@ -227,14 +234,14 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         if (!state.PhotoAttached)
         {
             state.Step = PublishStep.AttachSpectrogram;
-            await _api.AttachPhotoAsync(uuid, evidence.Spectrogram, plan.Jwt, ct);
+            await CallAsync(state, jwt => _api.AttachPhotoAsync(uuid, evidence.Spectrogram, jwt, ct), ct);
             state.PhotoAttached = true;
         }
 
         if (!state.SoundAttached)
         {
             state.Step = PublishStep.AttachAudio;
-            await _api.AttachSoundAsync(uuid, evidence.Audio, plan.Jwt, ct);
+            await CallAsync(state, jwt => _api.AttachSoundAsync(uuid, evidence.Audio, jwt, ct), ct);
             state.SoundAttached = true;
         }
 
@@ -243,6 +250,35 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
             : new Done(PublishStatus.Created, $"Created observation {state.ObservationId}.");
     }
 
+    /// <summary>
+    /// Runs one API request with the candidate's token. On the first 401 for this candidate the token is renewed (silently
+    /// from the stored login; the browser only if that is revoked) and the request is repeated once. That is safe for a
+    /// write too: iNaturalist refused the request before processing it. A failed renewal stops the run like a failed login.
+    /// </summary>
+    private async Task<T> CallAsync<T>(PublishState state, Func<string, Task<T>> request, CancellationToken ct)
+    {
+        try
+        {
+            return await request(state.Jwt!);
+        }
+        catch (INaturalistApiException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized && !state.TokenRenewed)
+        {
+            LogTokenRejected(_logger);
+            state.TokenRenewed = true;
+            state.SigningIn = true;
+            state.Jwt = await _renewAccessToken(state.Jwt!, ct);
+            state.SigningIn = false;
+            return await request(state.Jwt);
+        }
+    }
+
+    private Task CallAsync(PublishState state, Func<string, Task> request, CancellationToken ct) =>
+        CallAsync(state, async jwt =>
+        {
+            await request(jwt);
+            return true;
+        }, ct);
+
     /// <summary>What <see cref="PlanAsync"/> decided.</summary>
     private abstract record Plan;
 
@@ -250,13 +286,13 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
     private sealed record Done(PublishStatus Status, string Message) : Plan;
 
     /// <summary>Writes a commit run makes, and what a dry run reports instead.</summary>
-    private abstract record WritePlan(string Jwt, PublishStatus DryRunStatus, string DryRunMessage) : Plan;
+    private abstract record WritePlan(PublishStatus DryRunStatus, string DryRunMessage) : Plan;
 
-    private sealed record CreatePlan(ObservationPayload Payload, string Jwt, string DryRunMessage)
-        : WritePlan(Jwt, PublishStatus.WouldCreate, DryRunMessage);
+    private sealed record CreatePlan(ObservationPayload Payload, string DryRunMessage)
+        : WritePlan(PublishStatus.WouldCreate, DryRunMessage);
 
-    private sealed record ResumePlan(string Uuid, string Jwt, string DryRunMessage)
-        : WritePlan(Jwt, PublishStatus.WouldResume, DryRunMessage);
+    private sealed record ResumePlan(string Uuid, string DryRunMessage)
+        : WritePlan(PublishStatus.WouldResume, DryRunMessage);
 
     /// <summary>
     /// What is known about one candidate's observation so far. Kept outside the steps so that a failure or a cancellation
@@ -266,6 +302,11 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
     {
         public PublishStep Step { get; set; } = PublishStep.Preparation;
         public bool SigningIn { get; set; }
+
+        /// <summary>The API token for this candidate's requests; replaced once if iNaturalist rejects it.</summary>
+        public string? Jwt { get; set; }
+
+        public bool TokenRenewed { get; set; }
         public string? TaxonName { get; set; }
         public string? Description { get; set; }
         public string? ObservationId { get; set; }
