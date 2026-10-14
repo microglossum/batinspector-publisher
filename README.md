@@ -35,7 +35,7 @@ Built for a **single-user desktop application** (BatInspector) or a command-line
 * A UI thread may call it: every `await` uses `ConfigureAwait(false)`, so nothing returns to the caller's thread and blocking on a
   result cannot deadlock the package.
 * One user on one machine: the iNaturalist login opens the system browser and listens on a local port
-  ([where this does not work](docs/inaturalist-setup.md#where-the-loopback-login-does-not-work)).
+  ([where this does not work](https://github.com/microglossum/batinspector-publisher/blob/main/docs/inaturalist-setup.md#where-the-loopback-login-does-not-work)).
 * One run at a time per account, on a trusted input file (BatInspector's own output).
 
 **Web, server and multi-user hosting is not supported and not planned.**

@@ -77,30 +77,23 @@ Waits until BatInspector runs off Windows:
 
 The package ID `BatInspectorPublisher` was free on nuget.org on 2026-10-02. Steps:
 
-1. Create a nuget.org account (sign in with a Microsoft account) and enable 2FA.
+1. Create a nuget.org account (sign in with a Microsoft account) and enable 2FA. Not done yet (2026-10-14). Everything up to the tag can be prepared without it; the trusted publishing policy and the README preview need it.
 2. Optional: reserve the ID prefix `BatInspector*` (free request, gives the verified badge).
-3. Create an API key with Push scope, restricted to the glob `BatInspectorPublisher*`, with an expiry date.
-   Alternative: nuget.org trusted publishing via GitHub OIDC, which avoids a long-lived key (verify current availability).
-4. Store the key as the GitHub secret `NUGET_API_KEY`.
-5. Tag-triggered release workflow, see `docs/releasing.md`.
+3. Create a trusted publishing policy on nuget.org (checked 2026-10-14, Microsoft docs updated 2026-09: available, no long-lived key): repository owner `microglossum`, repository `batinspector-publisher`, workflow file name only (for example `release.yml`), optional GitHub environment; scope: publish new packages and versions, glob `BatInspectorPublisher*`.
+4. Store the nuget.org profile name (not the e-mail address) as the GitHub secret `NUGET_USER`. No API key is stored.
+5. Tag-triggered release workflow, see `docs/releasing.md`: job permission `id-token: write`, step `NuGet/login@v1`, then `dotnet nuget push` with its output key. The temporary key lives 1 hour and each OIDC token is used once, so log in right before the push.
 6. First release as `0.1.0-preview.N`. Versions are immutable: they can be unlisted but not deleted.
 
 Prerequisites: the first live test, CHANGELOG, README check.
 
-### Research: how to build really good NuGet packages
+### NuGet package quality: open items
 
-Before the first release, research current best practice for a high-quality package, then decide what to adopt:
+Checked 2026-10-14 against Microsoft's package authoring best practices, library guidance (NuGet, dependencies) and package validation docs. Already in place: `Copyright`, `PackageReleaseNotes` (link to `CHANGELOG.md` on `main`), `EnablePackageValidation` (net8.0 and net10.0 expose the same API; verified by `dotnet pack`), SDK-style project, SemVer with `-preview.N`, description, authors, tags, SPDX licence expression, README, repository URL, SourceLink, `snupkg`, deterministic CI build, minimal dependencies with minimum versions.
 
-- Microsoft's .NET library guidance (learn.microsoft.com/dotnet/standard/library-guidance) and NuGet's package authoring best practices.
-- Metadata and discoverability: README rendering on nuget.org, package icon, release notes link.
-- API quality: public API tracking (`Microsoft.CodeAnalysis.PublicApiAnalyzers`), package validation with a baseline version (`EnablePackageValidation`), nullable annotations, XML docs coverage.
-- Compatibility: multi-targeting choices, minimum dependency versions, trimming and AOT annotations, minimal dependencies.
-- Supply chain: package signing, trusted publishing (OIDC) instead of long-lived API keys, NuGet audit, SBOM.
-- Documentation: a docs site (DocFX on GitHub Pages) versus README only, samples, how a consumer discovers the BatInspector integration.
-- Release hygiene: pre-release flow (`-preview.N`, `-rc.N`), deprecation and unlisting policy, prefix reservation.
-- Look at well-regarded small packages and copy what works.
-
-Output: a short decision list in this file (adopt, later, skip) and the resulting items in CI and the csproj.
+- Adopt before the first release: preview the README as nuget.org renders it (upload the package on the nuget.org "Upload Package" page, which needs the account; images must come from an allowed domain, relative image paths do not render; the one relative link in `README.md` is now absolute to be safe).
+- Adopt, small: `PackageIcon` (PNG, 128x128 recommended by the package guide, 64x64 by the library guide, transparent background, optional); reserve the prefix `BatInspector*` (free, gives the verified badge).
+- Later: `PackageValidationBaselineVersion` once a stable version exists (it compares against a stable release, so a `0.x` preview has none); `Microsoft.CodeAnalysis.PublicApiAnalyzers` only if the `ArchitectureTests` allowlist stops being enough (it already fails on an unplanned public type, but does not track members).
+- Not researched yet: trimming and AOT annotations, package signing, SBOM, a DocFX site.
 
 ### GitHub repository polish (settings on github.com, after the first push)
 
@@ -133,6 +126,5 @@ Blocked: there is no public API documentation, so the auth and submission model 
 - Versioned serialized result schema: only when BatInspector wants to persist results.
 - Re-check iNaturalist API terms (not the rate limits, see the live test) for automated submission.
 - Logging: `ActivitySource` and metrics (OpenTelemetry), if a host wants them.
-- Confirm BatInspector's license is compatible with MIT; add NOTICE if a dependency requires it.
-- JSON Schema file for the input format and a contract test, if BatInspector produces the file.
+- BatInspector's licence is unclear (checked 2026-10-14): the `LICENSE` file on its `master` branch is CC BY-NC-SA 4.0, `BatInspector/Licenses.txt` says CC BY-NC 4.0, and GitHub detects none. Ask the owner which applies, then replace the "unclear" note in `CLAUDE.md` with the answer. This package contains none of its code, reads only the file format and links to it, so MIT stays possible; keep it that way (a copy of its code would bring the NC / SA terms along). NOTICE: no dependency requires one so far.
 - Deprecation policy for schema changes.

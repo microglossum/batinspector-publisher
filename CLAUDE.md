@@ -112,5 +112,5 @@ Validate non-C# files with `scripts/validate-config.sh` (VS Code task "validate 
 ## BatInspector (producer of the input file)
 
 BatInspector is open source: <https://github.com/chrmue44/BatInspector>. Look there to learn what it writes (field meanings, species list); `gh` is not logged in, so use `curl` on `api.github.com` / `raw.githubusercontent.com`.
-The public code can lag behind: a feature or integration may sit on a non-`main` branch or not be pushed at all. If something is missing or unclear, say so and ask the owner instead of guessing. BatInspector is CC BY-NC 4.0: read it for facts, never copy its code into this MIT repo.
+The public code can lag behind: a feature or integration may sit on a non-`main` branch or not be pushed at all. If something is missing or unclear, say so and ask the owner instead of guessing. BatInspector's licence is **unclear** (checked 2026-10-14): its `LICENSE` file on `master` is CC BY-NC-SA 4.0, `BatInspector/Licenses.txt` says CC BY-NC 4.0, and GitHub detects none; the owner has not said which applies (open question in `TODO.md`). Either way it is non-commercial and not MIT: read it for facts, never copy its code (or its species list as a file) into this MIT repo.
 The old prototypes live on in the owner's other repo; do not look for them here.
