@@ -86,146 +86,193 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
     Task<PublishResult> IObservationPublisher.PublishAsync(ObservationCandidate candidate, EvidenceFiles evidence, PublishOptions options, CancellationToken ct) =>
         PublishAsync(candidate, evidence, options, ct);
 
-    /// <summary>Publishes one candidate that the orchestrator has checked; see <see cref="IObservationPublisher"/>.</summary>
+    /// <summary>
+    /// Publishes one candidate that the orchestrator has checked; see <see cref="IObservationPublisher"/>.
+    /// Two steps: <see cref="PlanAsync"/> decides with reads only what a commit run would do, and
+    /// <see cref="ExecuteAsync"/>, the only place that writes, does it. The commit check sits between them, once.
+    /// </summary>
     internal async Task<PublishResult> PublishAsync(ObservationCandidate candidate, EvidenceFiles evidence, PublishOptions options, CancellationToken ct = default)
     {
-        var step = PublishStep.Preparation;
-        string? observationId = null;
-        string? url = null;
-        var photoAttached = false;
-        var soundAttached = false;
-        string? taxonName = null;
-        string? description = null;
-
+        var state = new PublishState();
         try
         {
-            // iNaturalist's own rules first (the orchestrator has run the platform-neutral ones): no login, no request,
-            // nothing written for an entry it would refuse.
-            if (INaturalistValidator.Validate(candidate, evidence, _options, _time.GetUtcNow()) is { } rejection)
+            var plan = await PlanAsync(candidate, evidence, state, ct);
+            var outcome = plan switch
             {
-                return Result(rejection.Status, rejection.Message);
-            }
-
-            var jwt = await _getAccessToken(ct);
-
-            var lookup = await ResolveTaxonAsync(candidate.ScientificName, jwt, ct);
-            if (lookup.Taxon is not { } taxon)
-            {
-                return Result(PublishStatus.SkippedUnresolvedTaxon, lookup.Problem!);
-            }
-
-            taxonName = taxon.Name;
-            var payload = BuildPayload(candidate, taxon.Id, taxon.Name);
-            description = payload.Description;
-            var userId = await _api.GetAuthenticatedUserIdAsync(jwt, ct);
-            var existing = await _api.FindExistingObservationsAsync(
-                taxon.Id, userId, DateOnly.FromDateTime(candidate.ObservedAt.DateTime), candidate.Latitude, candidate.Longitude, jwt, ct);
-
-            string uuid;
-            var resumed = false;
-            if (existing.TotalResults > 0)
-            {
-                var match = existing.Results.FirstOrDefault(o => IsIncompleteOwnObservation(o, payload.Description));
-                if (match is null)
-                {
-                    var known = existing.Results.FirstOrDefault(o => o.Id != 0 || o.Uuid.Length > 0);
-                    if (known is not null)
-                    {
-                        (observationId, url) = Identify(known.Id, known.Uuid);
-                        photoAttached = known.Photos is { Count: > 0 };
-                        soundAttached = known.Sounds is { Count: > 0 };
-                    }
-
-                    return Result(PublishStatus.SkippedDuplicate, "An equivalent observation already exists on iNaturalist.");
-                }
-
-                // An earlier run created this observation and stopped before its evidence was complete.
-                // Only an observation whose description is exactly what this entry produces is completed;
-                // anything else of the user's stays untouched.
-                (observationId, url) = Identify(match.Id, match.Uuid);
-                uuid = match.Uuid;
-                photoAttached = match.Photos is { Count: > 0 };
-                soundAttached = match.Sounds is { Count: > 0 };
-                resumed = true;
-                if (!options.Commit)
-                {
-                    return Result(PublishStatus.WouldResume, $"Dry run: would complete the incomplete observation {observationId} by attaching {Missing()}.");
-                }
-
-                LogResuming(_logger, observationId, candidate.ScientificName);
-            }
-            else
-            {
-                if (!options.Commit)
-                {
-                    var filedAs = SameName(taxon.Name, candidate.ScientificName) ? "" : $" as {taxon.Name}";
-                    return Result(PublishStatus.WouldCreate,
-                        $"Dry run: would create an observation of {candidate.ScientificName}{filedAs} (taxon_id={taxon.Id}) and attach the spectrogram and the audio.");
-                }
-
-                step = PublishStep.CreateObservation;
-                var created = await _api.CreateObservationAsync(payload, jwt, ct);
-                uuid = created.Uuid;
-                (observationId, url) = Identify(created.Id, created.Uuid);
-                // Logged at once: if anything after this fails, this line is the trail to the observation.
-                LogCreated(_logger, observationId, candidate.ScientificName);
-            }
-
-            if (!photoAttached)
-            {
-                step = PublishStep.AttachSpectrogram;
-                await _api.AttachPhotoAsync(uuid, evidence.Spectrogram, jwt, ct);
-                photoAttached = true;
-            }
-
-            if (!soundAttached)
-            {
-                step = PublishStep.AttachAudio;
-                await _api.AttachSoundAsync(uuid, evidence.Audio, jwt, ct);
-                soundAttached = true;
-            }
-
-            return resumed
-                ? Result(PublishStatus.Resumed, $"Completed the incomplete observation {observationId}.")
-                : Result(PublishStatus.Created, $"Created observation {observationId}.");
+                Done done => done,
+                WritePlan write when !options.Commit => new Done(write.DryRunStatus, write.DryRunMessage),
+                WritePlan write => await ExecuteAsync(candidate, evidence, write, state, ct),
+                _ => throw new InvalidOperationException($"Unknown plan {plan.GetType().Name}."),
+            };
+            return Result(outcome.Status, outcome.Message);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            return Result(PublishStatus.Cancelled, Interrupted("Cancelled"), interruptedStep: step);
+            return Result(PublishStatus.Cancelled, Interrupted("Cancelled"), interruptedStep: state.Step);
         }
         catch (Exception ex)
         {
             // Includes an OperationCanceledException that is not the caller's, such as an HttpClient timeout.
-            return Result(PublishStatus.Failed, ex.Message + Partial(), ex, step);
+            return Result(PublishStatus.Failed, ex.Message + state.Partial(), ex, state.Step);
         }
 
-        string Interrupted(string what) => observationId is not null
-            ? $"{what} during {step}.{Partial()}"
-            : step == PublishStep.CreateObservation
+        string Interrupted(string what) => state.ObservationId is not null
+            ? $"{what} during {state.Step}.{state.Partial()}"
+            : state.Step == PublishStep.CreateObservation
                 ? $"{what} while the observation was being created; it may or may not exist on iNaturalist."
-                : $"{what} during {step}; nothing was created.";
-
-        string Missing() => photoAttached ? "the audio" : soundAttached ? "the spectrogram" : "the spectrogram and the audio";
-
-        string Partial() => observationId is null
-            ? ""
-            : $" The observation {observationId} was already created; its evidence is incomplete.";
+                : $"{what} during {state.Step}; nothing was created.";
 
         PublishResult Result(PublishStatus status, string message, Exception? error = null, PublishStep? interruptedStep = null) => new()
         {
             Candidate = candidate,
             PlatformId = PlatformId,
             Status = status,
-            TaxonName = taxonName,
-            Description = description,
-            ObservationId = observationId,
-            Url = url,
-            SpectrogramAttached = photoAttached,
-            AudioAttached = soundAttached,
+            TaxonName = state.TaxonName,
+            Description = state.Description,
+            ObservationId = state.ObservationId,
+            Url = state.Url,
+            SpectrogramAttached = state.PhotoAttached,
+            AudioAttached = state.SoundAttached,
             Message = message,
             Error = error,
             InterruptedStep = interruptedStep,
         };
+    }
+
+    /// <summary>
+    /// Validation, login, taxon, payload and duplicate check: everything that decides the outcome, with reads only.
+    /// Returns either the final outcome (rejected, unresolved, duplicate) or the writes a commit run makes.
+    /// </summary>
+    private async Task<Plan> PlanAsync(ObservationCandidate candidate, EvidenceFiles evidence, PublishState state, CancellationToken ct)
+    {
+        // iNaturalist's own rules first (the orchestrator has run the platform-neutral ones): no login, no request,
+        // nothing written for an entry it would refuse.
+        if (INaturalistValidator.Validate(candidate, evidence, _options, _time.GetUtcNow()) is { } rejection)
+        {
+            return new Done(rejection.Status, rejection.Message);
+        }
+
+        var jwt = await _getAccessToken(ct);
+
+        var lookup = await ResolveTaxonAsync(candidate.ScientificName, jwt, ct);
+        if (lookup.Taxon is not { } taxon)
+        {
+            return new Done(PublishStatus.SkippedUnresolvedTaxon, lookup.Problem!);
+        }
+
+        state.TaxonName = taxon.Name;
+        var payload = BuildPayload(candidate, taxon.Id, taxon.Name);
+        state.Description = payload.Description;
+        var userId = await _api.GetAuthenticatedUserIdAsync(jwt, ct);
+        var existing = await _api.FindExistingObservationsAsync(
+            taxon.Id, userId, DateOnly.FromDateTime(candidate.ObservedAt.DateTime), candidate.Latitude, candidate.Longitude, jwt, ct);
+
+        if (existing.TotalResults == 0)
+        {
+            var filedAs = SameName(taxon.Name, candidate.ScientificName) ? "" : $" as {taxon.Name}";
+            return new CreatePlan(payload, jwt,
+                $"Dry run: would create an observation of {candidate.ScientificName}{filedAs} (taxon_id={taxon.Id}) and attach the spectrogram and the audio.");
+        }
+
+        var match = existing.Results.FirstOrDefault(o => IsIncompleteOwnObservation(o, payload.Description));
+        if (match is null)
+        {
+            if (existing.Results.FirstOrDefault(o => o.Id != 0 || o.Uuid.Length > 0) is { } known)
+            {
+                state.Found(known);
+            }
+
+            return new Done(PublishStatus.SkippedDuplicate, "An equivalent observation already exists on iNaturalist.");
+        }
+
+        // An earlier run created this observation and stopped before its evidence was complete.
+        // Only an observation whose description is exactly what this entry produces is completed;
+        // anything else of the user's stays untouched.
+        state.Found(match);
+        return new ResumePlan(match.Uuid, jwt,
+            $"Dry run: would complete the incomplete observation {state.ObservationId} by attaching {state.Missing()}.");
+    }
+
+    /// <summary>The writes of a commit run: create the observation (or take the incomplete one), then attach what is missing.</summary>
+    private async Task<Done> ExecuteAsync(ObservationCandidate candidate, EvidenceFiles evidence, WritePlan plan, PublishState state, CancellationToken ct)
+    {
+        string uuid;
+        if (plan is ResumePlan resume)
+        {
+            uuid = resume.Uuid;
+            LogResuming(_logger, state.ObservationId, candidate.ScientificName);
+        }
+        else
+        {
+            state.Step = PublishStep.CreateObservation;
+            var created = await _api.CreateObservationAsync(((CreatePlan)plan).Payload, plan.Jwt, ct);
+            uuid = created.Uuid;
+            (state.ObservationId, state.Url) = Identify(created.Id, created.Uuid);
+            // Logged at once: if anything after this fails, this line is the trail to the observation.
+            LogCreated(_logger, state.ObservationId, candidate.ScientificName);
+        }
+
+        if (!state.PhotoAttached)
+        {
+            state.Step = PublishStep.AttachSpectrogram;
+            await _api.AttachPhotoAsync(uuid, evidence.Spectrogram, plan.Jwt, ct);
+            state.PhotoAttached = true;
+        }
+
+        if (!state.SoundAttached)
+        {
+            state.Step = PublishStep.AttachAudio;
+            await _api.AttachSoundAsync(uuid, evidence.Audio, plan.Jwt, ct);
+            state.SoundAttached = true;
+        }
+
+        return plan is ResumePlan
+            ? new Done(PublishStatus.Resumed, $"Completed the incomplete observation {state.ObservationId}.")
+            : new Done(PublishStatus.Created, $"Created observation {state.ObservationId}.");
+    }
+
+    /// <summary>What <see cref="PlanAsync"/> decided.</summary>
+    private abstract record Plan;
+
+    /// <summary>The final outcome; nothing is (or was) written.</summary>
+    private sealed record Done(PublishStatus Status, string Message) : Plan;
+
+    /// <summary>Writes a commit run makes, and what a dry run reports instead.</summary>
+    private abstract record WritePlan(string Jwt, PublishStatus DryRunStatus, string DryRunMessage) : Plan;
+
+    private sealed record CreatePlan(ObservationPayload Payload, string Jwt, string DryRunMessage)
+        : WritePlan(Jwt, PublishStatus.WouldCreate, DryRunMessage);
+
+    private sealed record ResumePlan(string Uuid, string Jwt, string DryRunMessage)
+        : WritePlan(Jwt, PublishStatus.WouldResume, DryRunMessage);
+
+    /// <summary>
+    /// What is known about one candidate's observation so far. Kept outside the steps so that a failure or a cancellation
+    /// at any point reports what already exists on iNaturalist.
+    /// </summary>
+    private sealed class PublishState
+    {
+        public PublishStep Step { get; set; } = PublishStep.Preparation;
+        public string? TaxonName { get; set; }
+        public string? Description { get; set; }
+        public string? ObservationId { get; set; }
+        public string? Url { get; set; }
+        public bool PhotoAttached { get; set; }
+        public bool SoundAttached { get; set; }
+
+        /// <summary>Takes over an observation that already exists on iNaturalist.</summary>
+        public void Found(ExistingObservation observation)
+        {
+            (ObservationId, Url) = Identify(observation.Id, observation.Uuid);
+            PhotoAttached = observation.Photos is { Count: > 0 };
+            SoundAttached = observation.Sounds is { Count: > 0 };
+        }
+
+        public string Missing() => PhotoAttached ? "the audio" : SoundAttached ? "the spectrogram" : "the spectrogram and the audio";
+
+        public string Partial() => ObservationId is null
+            ? ""
+            : $" The observation {ObservationId} was already created; its evidence is incomplete.";
     }
 
     private static bool SameName(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);

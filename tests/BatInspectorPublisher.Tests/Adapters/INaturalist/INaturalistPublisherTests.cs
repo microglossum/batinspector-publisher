@@ -130,6 +130,27 @@ public class INaturalistPublisherTests
     }
 
     [Theory]
+    [InlineData("create", PublishStatus.WouldCreate)]
+    [InlineData("resume", PublishStatus.WouldResume)]
+    [InlineData("duplicate", PublishStatus.SkippedDuplicate)]
+    public async Task Publish_DryRun_SendsOnlyReadRequestsInEveryBranch(string branch, PublishStatus expected)
+    {
+        // The stub also answers writes, so a write in a dry run shows up here instead of failing on a missing route.
+        _ = branch switch
+        {
+            "create" => HappyPath(),
+            "resume" => WithExisting(ExistingObservations("[]", "[]")),
+            _ => WithExisting(ExistingObservations("[ { \"id\": 1 } ]", "[ { \"id\": 2 } ]")),
+        };
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions());
+
+        Assert.Equal(expected, result.Status);
+        Assert.NotEmpty(_http.Requests);
+        Assert.All(_http.Requests, r => Assert.Equal("GET", r.Method));
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task Publish_EntryINaturalistRefuses_IsSkippedBeforeLoginAndAnyRequest(bool commit)
