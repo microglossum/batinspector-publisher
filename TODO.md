@@ -9,7 +9,7 @@ before every commit (rules in `CLAUDE.md`).
 
 ### First live test against iNaturalist
 
-The publishing code (create, attach) was only tested against stubs. Run a real dry run and then a single real observation (with a test account
+Comes first, before `main` is created (see "Create `main`"). The publishing code (create, attach) was only tested against stubs. Run a real dry run and then a single real observation (with a test account
 or one that may be deleted afterwards) before anything is released. What stubs cannot prove:
 
 - A response with only a uuid and no numeric id leaves `Url` null. Check in a browser whether `https://www.inaturalist.org/observations/{uuid}` resolves (curl gets 403 from www) and use it if so.
@@ -64,9 +64,18 @@ Waits until BatInspector runs off Windows:
 
 ## Open: release and repository
 
+### Create `main` (squash of `tech/setup-repo`)
+
+Decided 2026-10-14: do the first live test (see "First live test against iNaturalist") first, on `tech/setup-repo`, and squash afterwards, so that the fixes it brings are part of the first `main` commit. `main` does not exist yet, so the squash is a root commit:
+
+- Groom this file, then tag the old tip (`git tag archive/setup-repo tech/setup-repo`): the tag keeps the full commit messages, `main` stays clean.
+- `git checkout --orphan main`, commit with a carefully written message (the permanent record: the guiding decisions grouped by theme, not the 40 messages strung together; most decisions are already in `CLAUDE.md` and `CHANGELOG.md`).
+- `git diff tech/setup-repo main` must be empty. Push `main` and the tag only with the owner's OK, then continue with "GitHub Actions" below (default branch, delete `tech/setup-repo`; Dependabot targets the default branch, so its next PRs follow).
+- Check first whether the nuget.org trusted publishing policy or `release.yml` depend on a branch or environment name (`docs/releasing.md`); set the first release tag only on the new `main` commit (MinVer counts the height from there).
+
 ### GitHub Actions
 
-- `tech/setup-repo` is currently the default branch and `main` does not exist on the remote, so Dependabot PRs target the working branch. Push `main`, make it the default, let Dependabot retarget. Needed before the first release: the README links, the CI badge and the package's release-notes link all point to `main` and 404 on nuget.org until it exists (seen in the upload preview 2026-10-14);
+- `tech/setup-repo` is currently the default branch and `main` does not exist on the remote, so Dependabot PRs target the working branch (its branches were all cleared 2026-10-14, the bumps are in). Push `main`, make it the default, so that new Dependabot PRs target `main` (steps above). Needed before the first release: the README links, the CI badge and the package's release-notes link all point to `main` and 404 on nuget.org until it exists (seen in the upload preview 2026-10-14);
 - after the push: run `release.yml` once by hand (Actions > Release > Run workflow, a dry run: build, test, pack, notes, no push; the "Run workflow" button only appears once the file is on the default branch) and check that it is green. The workflow has never run; its tag path (login, push, GitHub Release, the check that the tagged commit is on `main`) can only be tested by a real tag;
 - check that the gitleaks job still works with the workflow-level `permissions: contents: read` on pull requests (added 2026-10-14; the action may need `pull-requests: read`), and that Dependabot keeps the SHA-pinned actions (`# vN` comments) current;
 - optional: a musl test leg in an Alpine job container (`mcr.microsoft.com/dotnet/sdk:10.0-alpine`), only if a consumer runs on Alpine;
