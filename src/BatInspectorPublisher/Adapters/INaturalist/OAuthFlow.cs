@@ -19,6 +19,9 @@ internal sealed partial class OAuthFlow
     /// <summary>How many OS-assigned ports are tried after the configured one is found taken.</summary>
     private const int MaxFallbackPorts = 3;
 
+    /// <summary>Win32 ERROR_ACCESS_DENIED, the <see cref="HttpListenerException.ErrorCode"/> http.sys reports for a prefix the user may not register.</summary>
+    private const int ErrorAccessDenied = 5;
+
     private readonly INaturalistOptions _options;
     private readonly HttpClient _http;
     private readonly AuthorizationPrompt _prompt;
@@ -212,10 +215,18 @@ internal sealed partial class OAuthFlow
             }
             catch (HttpListenerException ex)
             {
-                // Typically "address already in use"; the free port found above can also be taken again before we bind it.
                 listener.Close();
-                lastError = ex;
                 LogCannotListen(_logger, candidate.Port, ex.Message);
+                if (IsAccessDenied(ex))
+                {
+                    // A permission problem, not a taken port: every other port is refused for the same reason.
+                    throw new INaturalistLoginException(INaturalistLoginFailure.ListenerUnavailable,
+                        $"This Windows user is not allowed to listen on {BuildListenerPrefix(candidate.AbsoluteUri)} (access denied). " +
+                        $"Another port does not help; an administrator can grant the right once with: netsh http add urlacl url={BuildListenerPrefix(candidate.AbsoluteUri)} user=<DOMAIN\\user>.", ex);
+                }
+
+                // Typically "address already in use"; the free port found above can also be taken again before we bind it.
+                lastError = ex;
                 continue;
             }
 
@@ -231,6 +242,12 @@ internal sealed partial class OAuthFlow
         throw new INaturalistLoginException(INaturalistLoginFailure.ListenerUnavailable,
             $"The OAuth login cannot listen on port {preferred.Port} or on {MaxFallbackPorts} alternative loopback ports.", lastError);
     }
+
+    /// <summary>
+    /// True for the error http.sys reports when the user has no URL reservation for the prefix. Any other
+    /// <see cref="HttpListenerException"/> is read as "port in use".
+    /// </summary>
+    internal static bool IsAccessDenied(HttpListenerException ex) => ex.ErrorCode == ErrorAccessDenied;
 
     private static int GetFreeLoopbackPort()
     {

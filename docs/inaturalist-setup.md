@@ -102,6 +102,12 @@ enough. Should the browser show iNaturalist's redirect URI error anyway, free th
 port, set `INaturalistOptions.RedirectUri` and register the identical URI at iNaturalist. If no port can
 be opened at all, the login fails with an `INaturalistLoginException` (`Reason` is `ListenerUnavailable`).
 
+On Windows a user without administrator rights may not be allowed to listen on the address at all (Windows error 5,
+"access denied"). Then the login fails at once with `ListenerUnavailable` and a message that says so, and tries no other
+port, because every port is refused for the same reason. An administrator can grant the right once:
+`netsh http add urlacl url=http://127.0.0.1:45679/ user=DOMAIN\user`. Whether a normal user is refused for `127.0.0.1`
+is not verified yet.
+
 While it waits, the listener ignores every request that does not belong to this login (a port scan, a browser
 prefetch, another local program) and answers it with 404; only the redirect carrying this login's `state`
 ends the wait.
@@ -284,7 +290,7 @@ repeated; the candidate ends as `Failed` and a re-run completes it. On slow line
 | Symptom | Cause / fix |
 |---|---|
 | `ArgumentException` about `ClientId` | `INaturalistOptions.ClientId` is empty. |
-| `INaturalistLoginException`, `Reason` = `ListenerUnavailable`, on login | Port in use and no fallback port could be opened, see [Port 45679](#port-45679). |
+| `INaturalistLoginException`, `Reason` = `ListenerUnavailable`, on login | Port in use and no fallback port could be opened, or (Windows, message says "access denied") the user may not listen on the address, see [Port 45679](#port-45679). |
 | iNaturalist error page after clicking Authorize | The registered redirect URI differs from `INaturalistOptions.RedirectUri`. |
 | `INaturalistLoginException`, `Reason` = `TimedOut`, on login | Nobody completed the browser login within `AuthorizationTimeout`. |
 | The run stops after one `Failed` result with an `INaturalistLoginException` in `Error` | No login was stored and the browser login inside the run was denied or timed out. Log in before the run, see [When the login fails during a run](#when-the-login-fails-during-a-run). |

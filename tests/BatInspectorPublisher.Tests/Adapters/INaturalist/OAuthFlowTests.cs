@@ -111,6 +111,14 @@ public class OAuthFlowTests : LoginTestBase
     }
 
     [Fact]
+    public void IsAccessDenied_OnlyForWin32Error5()
+    {
+        Assert.True(OAuthFlow.IsAccessDenied(new HttpListenerException(5)));
+        Assert.False(OAuthFlow.IsAccessDenied(new HttpListenerException(183)));
+        Assert.False(OAuthFlow.IsAccessDenied(new HttpListenerException(98)));
+    }
+
+    [Fact]
     public async Task Authorize_PublicClient_OmitsClientSecret()
     {
         var redirect = NewRedirectUri();

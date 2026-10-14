@@ -102,6 +102,13 @@ genügt also. Zeigt der Browser trotzdem den Redirect-URI-Fehler von iNaturalist
 anderen Port wählen, `INaturalistOptions.RedirectUri` setzen und dieselbe URI bei iNaturalist registrieren.
 Lässt sich gar kein Port öffnen, schlägt die Anmeldung mit einer `INaturalistLoginException` fehl (`Reason` ist `ListenerUnavailable`).
 
+Unter Windows darf ein Benutzer ohne Administratorrechte unter Umständen gar nicht auf der Adresse lauschen
+(Windows-Fehler 5, „Zugriff verweigert"). Dann schlägt die Anmeldung sofort mit `ListenerUnavailable` und einer
+Meldung fehl, die das sagt, und probiert keinen anderen Port, weil jeder Port aus demselben Grund abgelehnt wird.
+Ein Administrator kann das Recht einmalig vergeben:
+`netsh http add urlacl url=http://127.0.0.1:45679/ user=DOMAIN\user`. Ob ein normaler Benutzer für `127.0.0.1`
+tatsächlich abgelehnt wird, ist noch nicht geprüft.
+
 Solange die Anmeldung wartet, ignoriert der Listener jede Anfrage, die nicht zu dieser Anmeldung gehört
 (Portscan, Vorabruf des Browsers, ein anderes lokales Programm), und beantwortet sie mit 404; nur die
 Umleitung mit dem `state` dieser Anmeldung beendet das Warten.
@@ -287,7 +294,7 @@ vervollständigt ihn. Bei langsamen Leitungen einen `HttpClient` mit größerem 
 | Symptom | Ursache / Lösung |
 |---|---|
 | `ArgumentException` zu `ClientId` | `INaturalistOptions.ClientId` ist leer. |
-| `INaturalistLoginException`, `Reason` = `ListenerUnavailable`, bei der Anmeldung | Port belegt und kein Ersatzport ließ sich öffnen, siehe [Port 45679](#port-45679). |
+| `INaturalistLoginException`, `Reason` = `ListenerUnavailable`, bei der Anmeldung | Port belegt und kein Ersatzport ließ sich öffnen, oder (Windows, Meldung nennt „access denied") der Benutzer darf auf der Adresse nicht lauschen, siehe [Port 45679](#port-45679). |
 | iNaturalist-Fehlerseite nach "Authorize" | Die registrierte Redirect URI weicht von `INaturalistOptions.RedirectUri` ab. |
 | `INaturalistLoginException`, `Reason` = `TimedOut`, bei der Anmeldung | Niemand hat die Browser-Anmeldung innerhalb von `AuthorizationTimeout` abgeschlossen. |
 | Der Lauf hält nach einem `Failed`-Ergebnis mit einer `INaturalistLoginException` in `Error` an | Es war keine Anmeldung gespeichert, und die Browser-Anmeldung im Lauf wurde abgelehnt oder lief ab. Vor dem Lauf anmelden, siehe [Wenn die Anmeldung während eines Laufs scheitert](#wenn-die-anmeldung-während-eines-laufs-scheitert). |
