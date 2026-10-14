@@ -87,6 +87,8 @@ Flow: BatInspector's export file is read into candidates (one reference recordin
 
 One-person project: external code contributions are not solicited (bug reports are welcome, a contributed new platform adapter would be the exception). Keep community files minimal; do not add contributor-facing process.
 
+Target host: a single-user rich client (BatInspector, Windows desktop) or a CLI on the user's own machine. Web, server and multi-user hosting is not supported and not planned (decided 2026-10-14): the OAuth login needs the user's browser on the same machine, one authenticator and one pacer serve one account, tokens are per Windows user, and the input file is trusted (evidence paths are read from disk and published). Do not add locking, per-user state or path sandboxing for a server; if a server use case ever appears, it is a new design decision. The user-facing statement is "Who this is for" in `README.md` / `README.de.md`; keep it in step with this paragraph.
+
 ## Git rules
 
 - **No AI attribution.** Commit messages and PR descriptions must not mention Claude or AI and must not contain `Co-Authored-By: Claude` or "Generated with Claude Code" lines. Enforced by `"attribution": {"commit": "", "pr": ""}` in `.claude/settings.json`; if a session or tool still suggests such a line, leave it out.

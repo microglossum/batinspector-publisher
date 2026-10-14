@@ -122,6 +122,7 @@ from how the login works):
 | Browser on another machine than the app (remote desktop, VDI, SSH session) | iNaturalist redirects the browser to `127.0.0.1` of *its* machine, where nothing listens. The login ends with `TimedOut`. | Forward the port to the browser's machine (for SSH: `ssh -L 45679:127.0.0.1:45679 <host>`) and make sure the fixed port is free, because a fallback port cannot be forwarded in advance. Or log in on the machine that has the browser. |
 | Locked-down machine (firewall or security software blocks local listeners) | No port can be opened: `ListenerUnavailable`. Or the browser cannot reach it: `TimedOut`. | Allow the app to listen on the loopback address. If that is not possible, the loopback login is not usable there. |
 | Several users on one machine (terminal server) | The fixed port is taken by another session's login; the fallback ports take over. | Nothing, unless `ListenerUnavailable` appears: then retry when the other login has finished. |
+| A web or multi-user server that logs in on behalf of its users | The browser of a remote user cannot reach the server's loopback port, and one authenticator holds one account. | Not supported, see [Who this is for](../README.md#who-this-is-for). |
 | Sandboxed or packaged apps with loopback isolation (for example MSIX) | The app may be unable to reach its own loopback listener from the browser. | Not supported: the login needs a loopback listener. |
 
 A failed login stores nothing. Cancel and try again; the stray requests of other programs do not end the wait.

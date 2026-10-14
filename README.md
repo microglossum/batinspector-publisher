@@ -28,6 +28,18 @@ BatInspector export (JSON) ──► InputSchemaReader ──► ObservationCand
 
 Targets .NET 8 and .NET 10.
 
+## Who this is for
+
+Built for a **single-user desktop application** (BatInspector) or a command-line tool on the user's own machine:
+
+* A UI thread may call it: every `await` uses `ConfigureAwait(false)`, so nothing returns to the caller's thread and blocking on a
+  result cannot deadlock the package.
+* One user on one machine: the iNaturalist login opens the system browser and listens on a local port
+  ([where this does not work](docs/inaturalist-setup.md#where-the-loopback-login-does-not-work)).
+* One run at a time per account, on a trusted input file (BatInspector's own output).
+
+**Web, server and multi-user hosting is not supported and not planned.**
+
 ## Quick start (iNaturalist)
 
 ```csharp
