@@ -112,7 +112,7 @@ identification on iNaturalist. `todo` and every other value that is not a taxon 
 
 ## Re-running: duplicates and resume
 
-Before creating anything the publisher asks iNaturalist for **your own** observations (`user_id`, your numeric user id) of the resolved
+Before creating anything the publisher asks iNaturalist for **the logged-in user's own** observations (`user_id`, the numeric user id) of the resolved
 taxon, on the same calendar day, within `INaturalistOptions.DuplicateCheckRadiusKm` (default 0.1 km = 100 m).
 
 - **Nothing found:** the observation is created.
@@ -130,51 +130,47 @@ Things to know about this check:
 - It relies on the file holding one reference recording per species, night and place. Several entries for one combination
   are skipped after the first; the dry run cannot foresee that, because it creates nothing, so they all say `WouldCreate`.
 - iNaturalist's `taxon_id` filter is meant to include the descendants of a taxon. An entry for a species is then compared
-  with your observations of that species (and its subspecies), but an entry filed under a broader taxon (`Nyctaloid` under
-  Chiroptera, `Mbart` under *Myotis*) may match any of your observations below that taxon on that day and place and be
+  with the user's observations of that species (and its subspecies), but an entry filed under a broader taxon (`Nyctaloid` under
+  Chiroptera, `Mbart` under *Myotis*) may match any of the user's observations below that taxon on that day and place and be
   skipped as a duplicate. Not verified live yet.
 - Observations that appear or disappear on iNaturalist after the check are not foreseen.
 
 ## Results
 
-`PublishResult.Status` for iNaturalist (the reason is always in `Message`):
+`PublishResult.Status` takes one of these values (the reason is always in `Message`):
 
 | Status | Meaning |
 |---|---|
-| `Created` | Observation created, spectrogram and audio attached. `ObservationId` and `Url` are set. |
-| `WouldCreate` | Dry run: a real run would create it. |
-| `WouldResume` | Dry run: a real run would attach what is missing to an incomplete observation of an earlier run. |
-| `Resumed` | An incomplete observation of an earlier run was completed. No new observation. |
-| `SkippedDuplicate` | An equivalent observation of yours already exists. |
+| `Created` | Observation created, spectrogram and audio attached. `ObservationId` is set, `Url` only when iNaturalist returned a numeric id (see below). |
+| `WouldCreate` | Dry run: a real run would create it. Nothing was written. |
+| `WouldResume` | Dry run: a real run would attach what is missing to an incomplete observation of an earlier run (named in `ObservationId`). Nothing was written. |
+| `Resumed` | An incomplete observation of an earlier run was completed (named in `ObservationId`). No new observation. |
+| `SkippedDuplicate` | An equivalent observation of the user's already exists. It is named in `ObservationId` when known, and left untouched. |
 | `SkippedUnresolvedTaxon` | The name did not resolve to exactly one taxon, see [Species and taxon](#species-and-taxon). |
-| `SkippedInvalidEntry` | The entry breaks a rule of iNaturalist (below) or a platform-neutral rule. Nothing was written. |
+| `SkippedInvalidEntry` | The entry breaks a rule of iNaturalist ([below](#rules-checked-before-anything-is-written)) or a platform-neutral rule. Nothing was written. |
 | `SkippedInvalidEvidence` | A file is unreadable, empty, no PNG / WAV, or larger than `MaxEvidenceBytes`. Nothing was written. |
 | `SkippedMissingEvidence` | A file does not exist. Nothing was written. |
-| `Failed` | An error. May be partial: `ObservationId` is set when the observation exists, `SpectrogramAttached` and `AudioAttached` say what is there, `InterruptedStep` names the stage. |
-| `Cancelled` | The caller cancelled. The same partial information as `Failed`. |
+| `Failed` | An error; the exception is in `Error`. May be partial: `ObservationId` is set when the observation exists, `SpectrogramAttached` and `AudioAttached` say what is there, `InterruptedStep` names the stage. |
+| `Cancelled` | The caller cancelled. The same partial information as `Failed`, without `Error`. |
+
+`ObservationId` is iNaturalist's numeric observation id, and `Url` its public page. If iNaturalist returns only the uuid of an
+observation and no numeric id, `ObservationId` is the uuid and `Url` is null; this applies to every status that names an
+observation.
+
+`Message` is a short English text written by the package, meant for a log or a details view; a host that shows the results
+in another language maps the status, not the text. An error from iNaturalist itself is passed through as is, not translated or
+reworded: its response body is part of the exception in `Error` and of `Message`, cut to the first 1000 characters
+(`INaturalistApiException.ResponseBody` keeps all of it, see [logging.md](logging.md)).
 
 A `Failed` or `Cancelled` result needs no cleanup: run again and the duplicate check and resume complete it. If the stop came
 while the observation was being created, its existence is unknown; the next run finds out.
 
 ### Rules checked before anything is written
 
-The adapter's own validation runs before the login, also in a dry run, and lists every problem in one message. It refuses
-what iNaturalist would reject; otherwise a rejected upload would only fail after the observation was created and leave a
-public observation without its photo or sound.
-
-| Rule | Limit |
-|---|---|
-| File size, spectrogram and audio each | 20 MB (`INaturalistOptions.MaxEvidenceBytes`, default 20,000,000 bytes) |
-| Observation date | not after tomorrow (UTC), not older than 130 years |
-| Latitude | greater than -90 and less than 90 |
-| Longitude | -180 to 180 |
-| Position | not exactly 0, 0 |
-| `species_guess` | at most 255 characters |
-| `INaturalistOptions.TagList` | at most 750 characters in total, at most 255 per tag |
-
-Details, sources and the open questions (the rules come from iNaturalist's open source and forum and are not verified live) are
-in [inaturalist-setup.md](inaturalist-setup.md#limits-and-rules-checked-before-publishing). iNaturalist's own error texts are
-passed through unchanged in `Message`.
+The adapter's own validation of iNaturalist's limits (file size, date, position, `species_guess`, tags) runs before the
+login, also in a dry run, so nothing is written for an entry iNaturalist would refuse. A violation is `SkippedInvalidEntry`
+(for the evidence files `SkippedInvalidEvidence`), with the problems listed in `Message`. What iNaturalist still rejects
+later ends as `Failed`, with its own error text passed through unchanged. The rules, their sources and the open questions are in [inaturalist-setup.md](inaturalist-setup.md#limits-and-rules-checked-before-publishing).
 
 ## What is public and irreversible
 

@@ -33,7 +33,7 @@ public sealed partial class INaturalistAuthenticator
 
     /// <summary>Creates an authenticator.</summary>
     /// <param name="options">Adapter configuration; <see cref="INaturalistOptions.ClientId"/> is required.</param>
-    /// <param name="httpClient">HTTP client to use. Its timeout also applies to evidence uploads.</param>
+    /// <param name="httpClient">HTTP client for the login and the token exchange.</param>
     /// <param name="tokenStore">Where to keep the login. Defaults to a <see cref="ProtectedFileTokenStore"/> (Windows only).</param>
     /// <param name="prompt">How to show the login URL to the user. Defaults to opening the system browser.</param>
     /// <param name="logger">Optional logger.</param>

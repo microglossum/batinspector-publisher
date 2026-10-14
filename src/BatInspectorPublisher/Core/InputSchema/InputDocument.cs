@@ -9,7 +9,8 @@ public sealed record InputDocument(int SchemaVersion, IReadOnlyList<ObservationC
 {
     /// <summary>
     /// Entries that failed validation, in file order. They are not in <see cref="Candidates"/> and are never
-    /// published. Hosts should show them: the run itself does not report them.
+    /// published. Hosts should show them before a commit run. Running the whole document through the orchestrator
+    /// carries them on into <see cref="Results.RunReport.Rejected"/>; the overload that takes candidates does not see them.
     /// </summary>
     public IReadOnlyList<RejectedEntry> Rejected { get; init; } = [];
 

@@ -41,6 +41,10 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
     public string PlatformId => "inaturalist";
 
     /// <summary>Creates a publisher that obtains its API token from <paramref name="authenticator"/>.</summary>
+    /// <remarks>
+    /// The timeout of <paramref name="httpClient"/> (default 100 s) also limits the evidence uploads, which are never
+    /// repeated after a timeout; on slow lines pass a client with a larger timeout.
+    /// </remarks>
     public INaturalistPublisher(
         INaturalistOptions options,
         HttpClient httpClient,

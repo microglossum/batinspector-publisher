@@ -14,7 +14,7 @@ or one that may be deleted afterwards) before anything is released. What stubs c
 
 - A response with only a uuid and no numeric id leaves `Url` null. Check in a browser whether `https://www.inaturalist.org/observations/{uuid}` resolves (curl gets 403 from www) and use it if so.
 - `GET /v1/users/me` must carry `id` (the duplicate check sends it as `user_id`).
-- Resume: `description` must come back from the v1 search as sent (the match ignores whitespace differences only), and an upload that is not processed yet must already be listed. Otherwise the observation is deliberately left alone (`SkippedDuplicate`) and resume never triggers. Check with a real half-created observation (stop after the photo, or delete the sound in the web UI).
+- Resume: the v1 search must return what resume matches on (today the `description` as sent, ignoring whitespace differences only; after the tag marker below, the `batinspector:` tag), and an upload that is not processed yet must already be listed. Otherwise the observation is deliberately left alone (`SkippedDuplicate`) and resume never triggers. Check with a real half-created observation (stop after the photo, or delete the sound in the web UI).
 - Dry run against an entry that is already published and against a half-created one: it must say `SkippedDuplicate` and `WouldResume`, and a commit run must then agree.
 - Group values (`Nyctaloid`, `Mbart`) are filed under a broader taxon, and the duplicate check treats any own species-level observation of that day and place as a duplicate. Decide whether they need a stricter match (for example by `species_guess`).
 - `species_guess` must keep the original value (`Nyctaloid`) when `taxon_id` is Chiroptera; see how iNaturalist shows it.
@@ -23,6 +23,8 @@ or one that may be deleted afterwards) before anything is released. What stubs c
 - Retry and pacing (defaults `MaxAttempts = 1`, `MinRequestInterval` 1 s): the limits come from the forum and secondary sources (100 requests per minute, 60 asked for, about 10,000 per day); iNaturalist's "API recommended practices" page answers 403 to our tools, so read it in a browser and compare with `docs/inaturalist-setup.md`.
   Check whether a 429 carries `Retry-After` (otherwise the code backs off from `RetryBaseDelay`; a throttle window of a minute may need a larger `RetryBaseDelay` or `MaxAttempts`), whether writes have a stricter limit than reads, and what v2 answers when overloaded. Then decide whether `MaxAttempts = 3` should become the default.
 - Stored OAuth token: per the source it never expires and no refresh token is issued. Confirm that the token stays valid across days (`renew` after a day or more).
+- Login as a non-admin Windows user (BatInspector's normal case; CI's Windows runners run as admin, so CI cannot show it). `OAuthFlow` registers `http://127.0.0.1:<port>/` with `HttpListener`, which on Windows goes through http.sys; an IP prefix usually needs a URL reservation (`netsh http add urlacl`) for non-admins and then fails with "access denied" (`HttpListenerException`, error 5). The code reads that as "port in use", tries the fallback ports and reports `ListenerUnavailable`. If confirmed, see "Login listener on Windows" below.
+- How long the API JWT really lives (assumed 24 h) and what a revoked app authorization answers; this sets the priority of "React to a 401" below.
 
 ### Taxon names for the BatInspector owner
 
@@ -42,11 +44,50 @@ or one that may be deleted afterwards) before anything is released. What stubs c
 ### Times and time zones
 
 Needs the live test: send the time as well, with the zone (the candidate carries `TimeZoneId`), so the platform does not read it in the account's zone. Find out whether v2 accepts a time in `observed_on_string`, which zone parameter it expects (and in which name format),
-and whether `time_observed_at` is really rejected. Then update the README sentence "iNaturalist receives only the calendar date" (both languages) and the input reference page.
+and whether `time_observed_at` is really rejected. Then update every page that says "iNaturalist receives only the calendar date" (`docs/inaturalist.md` field table and steps, `docs/input-format.md`, and the README if it still says it; both languages).
 
 ### Input validation
 
 - The signature checks are not a full format validation (a file can start like a PNG and still be something else); decide whether that is enough.
+- Candidates built in code skip checks the file path gets. Core lets non-finite coordinates through (`Math.Abs(NaN) > limit` is false in `EntryValidator.CheckCoordinate`; today only the iNaturalist validator catches it), accepts an empty or un-normalized `ScientificName` (a double space is later rejected as "neither a species nor a genus", because the adapter splits on one space while Core splits on any whitespace), and does not check that `TimeZoneId` resolves and matches the offset of `ObservedAt`.
+  Add these to `EntryValues`, normalize the name for code-built candidates, and use one word-count helper. Comment in `INaturalistValidator` that its overlapping checks (0,0, future date) are there for direct publisher calls without the orchestrator.
+
+### Hardening before the first release
+
+- **A run-level failure must not repeat for every candidate.** The publisher asks for a token per candidate; a denied or timed-out login becomes `Failed`, and the next candidate opens the browser again with up to 5 minutes of waiting (also in a dry run, which logs in). A token store that cannot save and a network error in the token exchange repeat the same way. A bad `INaturalistOptions.TagList` is reported as an invalid entry on every candidate.
+  Now: check `TagList` once in `INaturalistOptions.ValidateForRequests`, and let the publisher remember a login failure (`INaturalistLoginException`, `PlatformNotSupportedException` from the store) and return it for the remaining candidates without a new attempt, until the host calls `LoginAsync`. Then update "When the login fails during a run" in the setup guide (both languages), which describes today's behavior.
+  Before 1.0, with the naturgucker revisit: a platform-neutral way for a publisher to stop the run (the orchestrator stops as for `Cancelled`, `IsComplete` stays false).
+- **`INaturalistToken.ToString()` prints both tokens.** It is a public `record`, so the generated `ToString()` contains the JWT and the never-expiring OAuth token; a host that logs or displays the object leaks the login. Override `PrintMembers` to show only `Username` and the expiry, and add a test that neither token appears.
+- **Login listener on Windows** (only if the live check above confirms the problem): replace `HttpListener` with a small `TcpListener` on `IPAddress.Loopback` that reads one request line and writes a fixed response (avoids http.sys and its URL ACLs, and the verbatim Host-header match). The existing `OAuthFlowTests` talk HTTP to the port and keep working. Independently of the check: map `HttpListenerException` error 5 to its own message instead of trying fallback ports.
+- **React to a 401 from the API.** The stored JWT is reused until its assumed 24 h are over; if iNaturalist invalidates it earlier, every candidate and every run fails until then. On a 401 the publisher should get a fresh JWT once (clear it in the store, exchange the OAuth token again silently) and repeat the request once. That is safe for writes too: the server refused before processing. Stays inside the adapter.
+- **Upload timeout option.** `HttpClient.Timeout` (default 100 s) also limits the evidence uploads, and a timed-out upload is not repeated (it is a write), so on a slow line resume times out again in the same way. The setup guide tells hosts to pass a client with a larger timeout. Decide whether an `UploadTimeout` option (a linked `CancellationTokenSource` in the upload, kept apart from caller cancellation) is worth it on top.
+- **Resume must not depend on the German description.** `IsIncompleteOwnObservation` recognizes "our half-created observation for this entry" only by an identical description, so any wording change, a changed `DescriptionPrefix` in the host, or the coming time zone work silently turns resume off for observations created before (it fails safe as `SkippedDuplicate`, but they stay incomplete).
+  Decided: mark each observation with a tag `batinspector:<short hash>` (for example the first 12 hex digits of SHA-256 over species as in the input, the instant in UTC and the coordinates, in an invariant format), added to `tag_list`, and match on it among the results the existing duplicate search returns (no tag filter needed). The description is then free to change.
+  To settle while doing it: the v1 search must return the tags (add them to the search model; check live); the marker counts against the tag list limits in `INaturalistValidator`; the tag is visible on the public observation and a user may delete it (then resume does not trigger, which fails safe); document the tag in `docs/inaturalist.md` (both languages). Must land **before the first real observations**: observations created without the marker can only ever be matched by their text. Rejected alternatives: a client-chosen observation uuid (unverified whether v2 accepts it), matching on coordinates, date and taxon alone (only the date is sent, a manual observation nearby would match, coordinates of sensitive taxa may come back obscured).
+- **`ConfigureAwait(false)` on every `await` in `src/`.** The host is a Windows desktop app: without it every continuation returns to the UI thread (JSON parsing and upload preparation run there), and a host that blocks on `.Result`/`.Wait()` from the UI thread deadlocks. Enforce it with `CA2007` as a warning for the library project only (not the tests), so CI keeps it. `IProgress<T>` still reaches the UI through `Progress<T>`.
+- **Guard "a dry run writes nothing" structurally.** Today the rule rests on two early returns in `INaturalistPublisher.PublishAsync` (140 lines, seven mutable locals); a future write step placed above them would run in a dry run.
+  First a test that a dry run sends only `GET` requests in every branch (create, resume, duplicate). Then split `PublishAsync` into a read-only plan step (validation, token, taxon, payload, duplicate check, resulting in reject / duplicate / create / resume) and an execute step that is the only place with writes, so the commit check exists once; the progress state (step, ids, attached flags) becomes a small object passed to the executor.
+
+### Public API before 1.0
+
+Each of these is trivial now and a breaking change after 1.0:
+
+- `InputSchemaReader.CurrentSchemaVersion` is a public `const`, which is inlined into the host at compile time (a host that is not recompiled keeps the old value): make it a static property.
+- `InputSchemaReader.Read(Stream)` disposes the caller's stream (`StreamReader` without `leaveOpen`): leave it open, or document it.
+- Give the public enums (`PublishStatus`, `PublishStep`, `INaturalistLoginFailure`) explicit values and a sensible order (`Resumed` and `Cancelled` come after `Failed` today); needed before results are ever serialized.
+- One public type per file: `PublishOptions` (in `IObservationPublisher.cs`), `AuthorizationPrompt` (in the internal `OAuthFlow.cs`), `ProtectedFileTokenStore` (in `INaturalistTokenStore.cs`).
+- Decide whether an async `InputSchemaReader.ReadFileAsync` belongs in the API (the rest is async; the file is small).
+
+Before 1.0 as well, documentation only:
+
+- **State the re-run duty in the `IObservationPublisher` XML docs.** "Re-runs rely on the duplicate check" is a decided project rule, but only the iNaturalist adapter implements it and the interface contract does not mention it, so a second adapter could drop it silently. Say that a repeated commit run of the same candidate must be safe (skip or complete what an earlier run created, reported as `SkippedDuplicate` / `Resumed`), and that a publisher which cannot do this must say so in its own docs.
+- **Mark the iNaturalist-shaped result types as provisional** in their XML docs: `PublishStep`, `SpectrogramAttached` / `AudioAttached`, `WouldResume` / `Resumed` may not occur, or not mean the same, on every platform (see the naturgucker item under Blocked).
+
+### Tests
+
+- **Create response with only a uuid** (seen in practice, no test): a publisher test with `{ "results": [ { "uuid": "uuid-1" } ] }` and no `id` must give `Created`, `ObservationId == "uuid-1"`, `Url == null`, both uploads sent with `uuid-1`, and one `NoNumericObservationId` warning. A client test for `{ "results": [] }`: `Failed` with `InterruptedStep == CreateObservation`, since the observation may exist.
+- **The login tests must not be able to hang.** `TestData.Options` keeps the default `AuthorizationTimeout` of 5 minutes, and the fake browsers in `INaturalistAuthenticatorTests` (three copies) and `LoggingTests` call the configured redirect URI fire-and-forget. If the port is taken again before the listener binds (parallel tests), `OAuthFlow` correctly falls back to another port, the fake browser still calls the old one, and the test waits out the 5 minutes. Use one shared fake browser that reads `redirect_uri` from the authorize URL (`OAuthFlowTests.Browser` already does), set a 10 s timeout in the test options, and await the browser task at the end of each test.
+- **Make `ArchitectureTests` complete.** NetArchTest passes when no type matches, so a renamed namespace turns a rule green forever: assert that each selection is non-empty. Derive the adapter pairs from the namespaces under `BatInspectorPublisher.Adapters.` instead of hard-coding them. Add rules for: an allowlist of the public types (26 today), so an accidental `public` on an API client or wire model fails; no dependency on `System.Console` in the library; `Adapters.Naturgucker` not public.
 
 ### Test the Windows-only code (DPAPI) without a Windows machine
 
@@ -125,6 +166,11 @@ Blocked: there is no public API documentation, so the auth and submission model 
 - Write `docs/naturgucker.md` (bilingual, like `docs/inaturalist.md`) together with the adapter.
 - Then implement `Adapters/Naturgucker` (currently an internal stub) with its own auth, and only then revisit
   `IObservationPublisher` before 1.0. Do not guess its shape in the meantime.
+  The public types to revisit then are the iNaturalist-shaped parts of the result model: `PublishStep` (iNaturalist's
+  order: create, then attach the photo, then the sound), `PublishResult.SpectrogramAttached` / `AudioAttached` (on a
+  platform without sound upload every `Created` would look incomplete) and `WouldResume` / `Resumed` (exist only because
+  iNaturalist's submission takes several requests). Do not redesign them before then: with one platform any redesign is
+  a guess.
 
 ## Later / carried over
 

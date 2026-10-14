@@ -22,7 +22,7 @@ BatInspector-Export (JSON) ──► InputSchemaReader ──► ObservationCand
 ```
 
 * Eine Beobachtung pro Eintrag in `DocumentFiles`: Art, Zeitpunkt, Ort, Spektrogramm (Foto) und Audio (Ton).
-* Ohne beide Belegdateien wird nichts veröffentlicht. Jede Datei wird einmal gelesen und geprüft (nicht leer, PNG- / WAV-Signatur); hochgeladen werden genau die geprüften Bytes.
+  Ohne beide Belegdateien wird nichts veröffentlicht.
 * Jeder Adapter verantwortet Anmeldung, Artauflösung, Duplikatprüfung und Upload selbst.
   Die Anmeldung ist **nicht** überall OAuth; OAuth ist nur das Verfahren von iNaturalist.
 
@@ -42,6 +42,11 @@ using var http = new HttpClient();
 var auth = new INaturalistAuthenticator(options, http);           // Windows: Token per DPAPI verschlüsselt
 var publisher = new INaturalistPublisher(options, http, auth);
 
+// Auch der Probelauf meldet sich an: Ohne gespeichertes Token öffnet der erste Lauf (Probelauf oder nicht) den Browser.
+// Deshalb vorher ausdrücklich anmelden, etwa über eine Schaltfläche „Mit iNaturalist verbinden“.
+if (!auth.HasStoredToken)
+    await auth.LoginAsync();
+
 var input = InputSchemaReader.ReadFile(@"C:\pfad\zu\export.json");
 var orchestrator = new ExportOrchestrator(publisher);
 
@@ -51,7 +56,7 @@ var vorschau = await orchestrator.RunAsync(input, new PublishOptions());
 foreach (var r in vorschau.Results)
     Console.WriteLine($"{r.Candidate.ScientificName}: {r.Status} {r.Message}");
 
-// Wirklich veröffentlichen (der erste Aufruf öffnet den Browser zur iNaturalist-Anmeldung).
+// Wirklich veröffentlichen, nachdem der Nutzer die Vorschau gesehen und bestätigt hat.
 var bericht = await orchestrator.RunAsync(input, new PublishOptions { Commit = true });
 foreach (var r in bericht.Results)
     Console.WriteLine($"{r.Candidate.ScientificName}: {r.Status} {r.Url}");
@@ -59,51 +64,39 @@ foreach (var r in bericht.Results)
 
 ## Vor dem Veröffentlichen
 
-Veröffentlichen ist öffentlich und nicht umkehrbar. Deshalb ist ein Lauf ein Probelauf, solange nicht `Commit = true` übergeben wird. Wenn möglich, zuerst einen Probelauf machen. Er geht alle Schritte eines echten Laufs durch (Anmeldung, Artzuordnung, Belegprüfung, Regeln von iNaturalist, Duplikatprüfung) und hält an, wo der erste Schreibzugriff käme. Er meldet also, was ein echter Lauf täte:
+Veröffentlichen ist öffentlich und nicht umkehrbar. Deshalb ist ein Lauf ein Probelauf, solange nicht `Commit = true`
+übergeben wird. Ein Probelauf geht alle Schritte eines echten Laufs durch (Anmeldung, Artzuordnung, Belegprüfung, Regeln
+von iNaturalist, Duplikatprüfung) und hält an, wo der erste Schreibzugriff käme. `WouldCreate` und `WouldResume` sagen,
+was ein echter Lauf täte; jeder Überspringen-Status ist derselbe wie im echten Lauf, der Grund steht in `Message`.
+`PublishResult.Description` enthält den (deutschen) Text, der zur öffentlichen Beschreibung wird.
 
-* `WouldCreate`: Ein echter Lauf legt die Beobachtung an und hängt Spektrogramm und Audio an.
-* `WouldResume`: Ein früherer Lauf hat eine unvollständige Beobachtung dieses Eintrags hinterlassen (`ObservationId`); ein echter Lauf hängt nach, was fehlt.
-* `SkippedDuplicate`, `SkippedUnresolvedTaxon`, `SkippedInvalidEntry`, `SkippedInvalidEvidence`, `SkippedMissingEvidence`: dasselbe Ergebnis wie im echten Lauf, der Grund steht in `Message`.
-* `PublishResult.Description` enthält den (deutschen) Text, der zur öffentlichen Beschreibung wird.
-
-`ExportOrchestrator.RunAsync(InputDocument, ...)` liefert einen `RunReport`: die abgelehnten Einträge (`Rejected`) und die Warnungen (`Warnings`) des Dokuments neben den Ergebnissen (`WarningsFor(result)`, `CountByStatus`). Ein Objekt reicht also, um dem Nutzer vor dem echten Lauf alles zu zeigen. `IsComplete` ist bei einem abgebrochenen Lauf false. `ObservationCandidate.EntryIndex` ist die Position in der Datei.
-
-Was ein Probelauf nicht sagen kann:
-
-* **Mehrere Einträge für dieselbe Art, Nacht und denselben Ort melden alle `WouldCreate`.** Es wird nichts angelegt, deshalb sieht die Duplikatprüfung einen früheren Eintrag derselben Datei nicht. Ein echter Lauf legt den ersten an und überspringt die späteren als `SkippedDuplicate`. Die Datei soll ohnehin eine Referenzaufnahme je Art, Nacht und Ort enthalten (siehe „Eingabeformat“); `Warnings` meldet Einträge, die sich genau wiederholen, mehr lässt sich vorab nicht prüfen.
-* Der Upload selbst wird nicht ausprobiert. Die Belege werden gegen die dokumentierten Regeln von iNaturalist geprüft (Typ, Größe), ob iNaturalist sie annimmt, zeigt aber erst ein echter Lauf.
-* Das Ergebnis ist eine Momentaufnahme: Beobachtungen, die danach auf iNaturalist entstehen oder verschwinden, sind nicht vorhergesehen.
-
-Bietet die Anwendung keinen Probelauf an, hängen die wichtigsten Prüfungen nicht davon ab:
-
-* `InputDocument.Rejected` und `InputDocument.Warnings` liegen vor, sobald die Datei gelesen ist. Ein Lauf, der nur die Kandidaten bekommt, meldet sie nie (die Überladung mit `RunReport` tut es): **beides dem Nutzer anzeigen und bestätigen lassen, bevor mit `Commit = true` veröffentlicht wird**. Eine Warnung hält einen Eintrag nicht vom Veröffentlichen ab.
-* Die Regeln von iNaturalist und die Prüfung der Belege laufen vor jeder Veröffentlichung, ob Probelauf oder nicht; ein Eintrag, der sie verletzt, wird mit dem Grund in `PublishResult.Message` übersprungen.
-* In kleinen Stapeln veröffentlichen statt die ganze Datei auf einmal. Der erste Stapel dient dann als Vorschau, und die Duplikatprüfung macht eine Wiederholung sicher.
+* **`Rejected` und `Warnings` dem Nutzer anzeigen und bestätigen lassen, bevor mit `Commit = true` veröffentlicht wird.**
+  Beides liegt vor, sobald die Datei gelesen ist. Der `RunReport` von `RunAsync(InputDocument, ...)` enthält beides, ein
+  Lauf nur über die Kandidaten nicht. Eine Warnung hält einen Eintrag nicht vom Veröffentlichen ab.
+* Ein Probelauf kann Duplikate innerhalb einer Datei nicht vorhersehen: Mehrere Einträge für dieselbe Art, Nacht und
+  denselben Ort melden alle `WouldCreate`, ein echter Lauf überspringt alle außer dem ersten.
+* Der Upload selbst wird im Probelauf nicht ausprobiert. Die Belege werden gegen die dokumentierten Regeln von iNaturalist
+  geprüft, ob iNaturalist sie annimmt, zeigt aber erst ein echter Lauf.
+* Bietet die Anwendung keinen Probelauf an, in kleinen Stapeln veröffentlichen: Der erste Stapel dient dann als Vorschau,
+  und die Duplikatprüfung macht eine Wiederholung sicher.
 
 ## Zugangsdaten
 
-Das Paket enthält **keine** OAuth-Client-ID und kein Secret. Die Anwendung einmal registrieren
-(siehe [docs/inaturalist-setup.de.md](docs/inaturalist-setup.de.md)) und die Werte über
-`INaturalistOptions` aus den eigenen Einstellungen übergeben. Das Paket liest keine
-Konfigurationsdateien und keine Umgebungsvariablen.
+Das Paket enthält **keine** OAuth-Client-ID und kein Secret und liest keine Konfigurationsdateien und keine
+Umgebungsvariablen. Die Anwendung einmal registrieren und die Werte über `INaturalistOptions` übergeben; iNaturalist
+verlangt, dass die Entwicklerin oder der Entwickler der Host-Anwendung (nicht deren Nutzer) zuerst als "App Owner"
+zugelassen ist. Schritte: [docs/inaturalist-setup.de.md](docs/inaturalist-setup.de.md).
 
-> **Hinweis:** iNaturalist lässt nicht jeden eine Anwendung anlegen. Man muss zuerst als "App Owner" zugelassen werden (Konto mindestens
-> 2 Monate alt und 10 "improving identifications" im letzten Monat). Das braucht nur die Entwicklerin oder der Entwickler der Host-Anwendung, nicht deren Nutzer.
-> Details: [docs/inaturalist-setup.de.md](docs/inaturalist-setup.de.md).
-
-* Eine vertrauliche Anwendung nutzt `ClientSecret`; bei einer öffentlichen (nicht vertraulichen) Anwendung bleibt es leer.
-* Tokens speichert ein `INaturalistTokenStore`. Der Standard `ProtectedFileTokenStore` verschlüsselt mit
-  Windows-DPAPI und schreibt auf anderen Plattformen keinen Klartext, außer man stimmt ausdrücklich zu
-  (`allowPlaintextOnNonWindows: true`). Die Klartextdatei wird mit Modus `0600` angelegt und atomar geschrieben;
-  das schützt nur vor anderen lokalen Benutzern, nicht vor anderen Prozessen desselben Benutzers. Für echte sichere
-  Speicherung unter Linux oder macOS einen `INaturalistTokenStore` auf Basis des Schlüsselbunds des Betriebssystems
-  implementieren. Kann ein Store nicht speichern (`CanSave` ist false), schlägt die Anmeldung fehl, bevor sich der
-  Browser öffnet. Eine unlesbare Token-Datei gilt als „kein Token“.
-* Die Anmelde-URL wird über den Callback `AuthorizationPrompt` angezeigt; standardmäßig wird der Systembrowser geöffnet.
+Die Anmeldung hält ein `INaturalistTokenStore`; der Standard verschlüsselt sie mit Windows-DPAPI und schreibt auf anderen
+Plattformen keinen Klartext, außer man stimmt zu. Einzelheiten und eigene Stores: [Token-Speicherung](docs/inaturalist-setup.de.md#token-speicherung).
 
 ## Eingabeformat
 
-Die vollständige Referenz (jedes Feld, Zeitzonen, Artnamen, was abgelehnt wird und was nur warnt) steht in [docs/input-format.de.md](docs/input-format.de.md). Eine Zusammenfassung:
+Die Eingabe ist die Exportdatei von BatInspector. Ihr Schema ist versioniert: `SchemaVersion` ist Pflicht, neuere
+Versionen als die der Bibliothek werden abgelehnt. Nur eine strukturell unbrauchbare Datei wirft eine Ausnahme
+(`InputSchemaException`); ein fehlerhafter Eintrag fehlt in `InputDocument.Candidates` und steht in
+`InputDocument.Rejected`, ein zweifelhafter wird veröffentlicht und in `InputDocument.Warnings` gemeldet. Die Datei enthält
+eine Referenzaufnahme pro Art, Nacht und Ort, nicht jede Detektion.
 
 ```json
 {
@@ -111,9 +104,12 @@ Die vollständige Referenz (jedes Feld, Zeitzonen, Artnamen, was abgelehnt wird 
   "DocumentFiles": [
     {
       "Date": "13.06.2026 04:26:34",
-      "Latitude": 50.11, "Longitude": 8.682,
-      "SpeciesLatin": "Pipistrellus nathusii", "SpeciesLocal": "Rauhautfledermaus",
-      "Temperature": 20.05, "Humidity": 92.44,
+      "Latitude": 50.11,
+      "Longitude": 8.682,
+      "SpeciesLatin": "Pipistrellus nathusii",
+      "SpeciesLocal": "Rauhautfledermaus",
+      "Temperature": 20.5,
+      "Humidity": 92.44,
       "Comment": null,
       "PathToPng": "C:\\data\\wav\\pnat_20260613_042634.png",
       "PathToWav": "C:\\data\\wav\\PNAT_20260613_042634.wav"
@@ -122,39 +118,31 @@ Die vollständige Referenz (jedes Feld, Zeitzonen, Artnamen, was abgelehnt wird 
 }
 ```
 
-* Das JSON muss nicht aus einer Datei kommen: `InputSchemaReader.Parse(string json)` und `InputSchemaReader.Read(Stream)` funktionieren wie `ReadFile`. Die Belegpfade darin müssen weiterhin auf Dateien auf dem Datenträger zeigen.
-* Die Prüfung erfolgt pro Eintrag. Eine Datei, die kein wohlgeformtes JSON ist, deren `SchemaVersion` fehlt oder nicht unterstützt wird oder die kein `DocumentFiles`-Array hat, wird als Ganzes abgelehnt (`InputSchemaException`). Ein fehlerhafter Eintrag fehlt in `InputDocument.Candidates` und steht mit allen Problemen in `InputDocument.Rejected`; die gültigen Einträge werden trotzdem zurückgegeben und können veröffentlicht werden. Abgelehnte Einträge werden nie veröffentlicht. `Rejected` sollte dem Nutzer angezeigt werden: Ein Lauf, der nur die Kandidaten bekommt, meldet sie nicht, der `RunReport` schon. Nach dem Korrigieren der Datei kann der Lauf wiederholt werden: Bereits veröffentlichte Einträge werden als Duplikate übersprungen.
-* Fehler pro Eintrag: Belegpfade müssen absolut sein (Windows- oder Unix-Schreibweise) und auf `.png` / `.wav` enden; `Latitude` und `Longitude` beide `0` (fehlende GPS-Position) wird abgelehnt; ein `Date` in der Zukunft (verglichen mit der aktuellen deutschen Zeit) wird abgelehnt.
-* Warnungen pro Eintrag (`InputDocument.Warnings`): Der Eintrag wird akzeptiert und veröffentlicht, aber etwas ist zweifelhaft; auch diese sollten angezeigt werden. Eine `Temperature` außerhalb von -40 bis 60 °C oder eine `Humidity` außerhalb von 0 bis 100 % wird nicht in die Beobachtung übernommen (Sensor-Fehlercodes wie -127 oder 85 landen hier); ein `Date` zwischen 09:00 und 15:59 Ortszeit (Fledermäuse fliegen nachts: Geräteuhr und `TimeZone` prüfen); ein `SpeciesLatin` aus drei oder mehr Wörtern (es wird keinem Taxon zugeordnet); ein Eintrag mit derselben Art, Zeit und Position wie ein früherer.
-* Die Datei soll eine **Referenzaufnahme** pro Art, Nacht und Standort enthalten, nicht jede Detektion: Es geht darum, eine Art an einem Ort zu einer Zeit nachzuweisen, und dafür reicht meist eine gute Aufnahme. Die Duplikatprüfung bei iNaturalist (gleiches Taxon, gleicher Kalendertag, standardmäßig im Umkreis von 100 m) überspringt einen zweiten Eintrag für dieselbe Kombination.
-* `SchemaVersion` ist Pflicht. Neuere Versionen als die der Bibliothek werden abgelehnt.
-* Pflicht: `Date`, `Latitude`, `Longitude`, `SpeciesLatin`, `PathToPng`, `PathToWav`.
-  Optional: `SpeciesLocal`, `Temperature`, `Humidity`, `Comment`, `TimeZone`. Unbekannte Eigenschaften werden ignoriert.
-* `Date` (`dd.MM.yyyy HH:mm:ss`) enthält keinen Offset. Sie wird in der Zone des optionalen `TimeZone` gelesen (IANA-Id wie `Europe/Lisbon`; eine unbekannte Id lässt den Eintrag ablehnen) oder, ohne `TimeZone`, als **deutsche Ortszeit (Europe/Berlin)**, einschließlich Sommerzeit. Gespeichert wird sie mit dem Offset dieser Zone an diesem Datum (`ObservationCandidate.ObservedAt` ist ein `DateTimeOffset`). Es wird nie aus der Zeitzone des Hosts oder des Rechners umgerechnet. Eine Uhrzeit, die es nicht gibt (die beim Vorstellen der Uhr übersprungene Stunde), lässt den Eintrag ablehnen; eine Uhrzeit in der beim Zurückstellen doppelten Stunde wird als Normalzeit gelesen und in `InputDocument.Warnings` gemeldet (der Eintrag wird trotzdem veröffentlicht). Ein Offset im Wert (`Z`, `+02:00`) ist ein Formatfehler: die Zone stattdessen mit `TimeZone` angeben. Duplikatprüfung und das an iNaturalist gesendete Datum verwenden den lokalen Kalendertag dieser Zone. Die Prüfung auf Zukunftsdaten vergleicht Zeitpunkte. Der Host braucht die Zeitzonendaten für Europe/Berlin (ohne sie wirft der Reader eine `TimeZoneNotFoundException`). An iNaturalist wird nur das Kalenderdatum übertragen, nicht die Uhrzeit.
-* Artnamen werden normalisiert (`Eptesicus Serotinus` wird zu `Eptesicus serotinus`). Ein Name aus zwei Wörtern muss exakt zu einer aktiven iNaturalist-Art passen, ein Name aus einem Wort zu einer aktiven Gattung (`Myotis`).
-  Ein Name, der nichts findet, nur als Synonym vorkommt, den falschen Rang hat oder mehrdeutig ist, wird mit dem Grund in `PublishResult.Message` übersprungen und nie geraten. Auch ein Name mit drei oder mehr Wörtern (`Myotis cf. daubentonii`) wird übersprungen.
-* Die Gruppen- und Unsicherheitswerte von BatInspector sind die einzige Ausnahme: `Nyctaloid`, `Social` und `?` werden unter der Ordnung Chiroptera abgelegt, `Mbart` unter der Gattung Myotis. Der ursprüngliche Wert bleibt als Artvorschlag der Beobachtung erhalten und wird in der Beschreibung genannt; `PublishResult.TaxonName` nennt das verwendete Taxon. Auf iNaturalist lässt es sich verfeinern.
-  Andere Werte, die kein Taxonname sind (`todo`, ein unbekanntes BatInspector-Kürzel, ein Tippfehler), werden übersprungen, damit ein korrigierter erneuter Lauf keine zweite Beobachtung anlegt.
-
-BatInspector ist Open Source ([chrmue44/BatInspector](https://github.com/chrmue44/BatInspector)); sein Code ist die Referenz dafür, was ein Feld oder Wert bedeutet (zum Beispiel die Artenliste in `BatInfo.cs`). Der Export und seine neuesten Werte können auf einem anderen Branch als `main` liegen oder noch nicht veröffentlicht sein, der öffentliche Code kann also hinter dem zurückliegen, was BatInspector tatsächlich schreibt.
+Jedes Feld, Zeitzonen, Artnamen und was abgelehnt wird oder nur warnt: [docs/input-format.de.md](docs/input-format.de.md).
+Wie die Gruppenwerte von BatInspector (`Nyctaloid`, `Mbart`, ...) abgelegt werden: [Art und Taxon](docs/inaturalist.de.md#art-und-taxon).
 
 ## Ergebnisse
 
-Was welches iNaturalist-Feld erhält, die Schritte eines Laufs und was öffentlich wird: [docs/inaturalist.de.md](docs/inaturalist.de.md). Jede Anfrage, die das Paket an iNaturalist sendet, mit ihren Parametern: [docs/inaturalist-api.de.md](docs/inaturalist-api.de.md).
+`ExportOrchestrator.RunAsync(InputDocument, ...)` liefert einen `RunReport`: die abgelehnten Einträge (`Rejected`) und die
+Warnungen (`Warnings`) des Dokuments, ein `PublishResult` je begonnenem Kandidaten (`WarningsFor(result)`, `CountByStatus`)
+und `IsComplete`. `ObservationCandidate.EntryIndex` ordnet ein Ergebnis seinem Eintrag zu. Die Status und ihre Bedeutung:
+[docs/inaturalist.de.md#ergebnisse](docs/inaturalist.de.md#ergebnisse).
+Was welches iNaturalist-Feld erhält und was öffentlich wird: [docs/inaturalist.de.md](docs/inaturalist.de.md);
+jede Anfrage an iNaturalist: [docs/inaturalist-api.de.md](docs/inaturalist-api.de.md).
 
-`ExportOrchestrator.RunAsync` liefert pro Kandidat ein `PublishResult` mit einem `PublishStatus`:
-`Created`, `WouldCreate` und `WouldResume` (Probelauf), `SkippedDuplicate`, `SkippedUnresolvedTaxon`,
-`SkippedMissingEvidence`, `SkippedInvalidEvidence` (nicht lesbar, leer, keine PNG- / WAV-Datei oder größer, als die Plattform akzeptiert), `SkippedInvalidEntry` (der Eintrag verletzt eine Regel dieser Plattform, etwa ein Datum oder eine Position, die sie ablehnt), `Resumed`, `Failed`, `Cancelled`.
+**Abbrechen** wirft keine Ausnahme. Der Lauf hält an und liefert die bisherigen Ergebnisse; der unterbrochene Kandidat ist
+das letzte Ergebnis mit Status `Cancelled`, noch nicht begonnene Kandidaten bekommen kein Ergebnis. `RunReport.IsComplete`
+ist bei einem abgebrochenen Lauf false. Die Überladung, die die Kandidaten nimmt, liefert nur die Ergebnisse: Dort zeigt das
+eigene Token, ob abgebrochen wurde.
 
-Ein fehlgeschlagenes oder abgebrochenes Ergebnis kann teilweise erfolgt sein (Beobachtung angelegt, Belege unvollständig): dann ist `ObservationId` gesetzt, `SpectrogramAttached` / `AudioAttached` sagen, was vorhanden ist,
-und `InterruptedStep` nennt den Schritt, an dem es stoppte. Kam der Abbruch, während die Beobachtung angelegt wurde, ist unbekannt, ob sie existiert; der nächste Lauf klärt das.
+**Erneuter Lauf nach einem Teilergebnis:** Ein `Failed`- oder `Cancelled`-Ergebnis kann teilweise erfolgt sein und braucht
+kein Aufräumen. Einfach erneut laufen lassen: Die Duplikatprüfung überspringt, was vorhanden ist, und eine unvollständige
+Beobachtung, die dieses Paket für denselben Eintrag angelegt hat, bekommt die fehlenden Belege (`Resumed`). Es wird nie
+etwas gelöscht. Einzelheiten: [Erneuter Lauf: Duplikate und Fortsetzen](docs/inaturalist.de.md#erneuter-lauf-duplikate-und-fortsetzen).
 
-**Abbrechen** wirft keine Ausnahme. `RunAsync` hält an und liefert die bisherigen Ergebnisse; der unterbrochene Kandidat ist das letzte Ergebnis mit Status `Cancelled`. Noch nicht begonnene Kandidaten bekommen kein Ergebnis. Ob der Lauf abgebrochen wurde oder fertig ist, zeigt das eigene Token.
-
-**Erneuter Lauf nach einem Teilergebnis:** Die Duplikatprüfung überspringt normalerweise eine vorhandene Beobachtung (`SkippedDuplicate`). Ist die vorhandene Beobachtung eine, die dieses Paket für denselben Eintrag angelegt hat
-(identische Beschreibung) und fehlt ihr noch das Spektrogramm oder die Audioaufnahme, hängt der Lauf die fehlenden Belege an und meldet `Resumed`. Jede andere Beobachtung des Nutzers bleibt unberührt. Es wird nie etwas gelöscht.
-
-**Rate und Wiederholungen:** Anfragen werden im Abstand von einer Sekunde gesendet, damit ein Lauf unter dem Limit von iNaturalist (60 Anfragen pro Minute) bleibt (`INaturalistOptions.MinRequestInterval`). Fehlgeschlagene Anfragen werden standardmäßig nicht wiederholt: Ein vorübergehender Fehler beendet den Kandidaten als `Failed`, ein erneuter Lauf vervollständigt ihn. Mit `INaturalistOptions.MaxAttempts = 3` wird wiederholt, und zwar nur, was nichts doppelt anlegen kann. Einzelheiten: [docs/inaturalist-setup.de.md](docs/inaturalist-setup.de.md#anfragerate-und-wiederholungen).
+**Rate und Wiederholungen:** Anfragen werden im Abstand von einer Sekunde gesendet (`INaturalistOptions.MinRequestInterval`).
+Fehlgeschlagene Anfragen werden standardmäßig nicht wiederholt; mit `INaturalistOptions.MaxAttempts = 3` wird wiederholt,
+und zwar nur, was nichts doppelt anlegen kann. Einzelheiten: [Anfragerate und Wiederholungen](docs/inaturalist-setup.de.md#anfragerate-und-wiederholungen).
 
 ## Logging
 
@@ -170,7 +158,8 @@ dotnet test
 dotnet format
 ```
 
-VS-Code-Tasks dafür stehen in `.vscode/tasks.json`. Konventionen: [CLAUDE.md](CLAUDE.md).
+VS-Code-Tasks dafür stehen in `.vscode/tasks.json`. Siehe [CONTRIBUTING.md](CONTRIBUTING.md).
+Ein vollständiger Beispiel-Host (Anmeldung, Probelauf, Veröffentlichen mit Bestätigung): [tools/SmokeTest/Program.cs](tools/SmokeTest/Program.cs).
 Die Dokumentation wird auf Englisch und Deutsch gepflegt (`*.md` / `*.de.md`).
 
 ## Lizenz

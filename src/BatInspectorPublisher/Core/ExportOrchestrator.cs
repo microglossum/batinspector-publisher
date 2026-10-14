@@ -31,7 +31,7 @@ public sealed partial class ExportOrchestrator
     }
 
     /// <summary>
-    /// Publishes all candidates in order and returns one result per candidate. One failing candidate
+    /// Publishes all candidates in order and returns one result per candidate that was started. One failing candidate
     /// never stops the run.
     /// Cancellation does not throw: the run stops and returns the results so far, so nothing that was
     /// already published is lost. A candidate interrupted mid-way is the last result, with status

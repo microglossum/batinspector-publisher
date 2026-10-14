@@ -27,8 +27,8 @@ public interface INaturalistTokenStore
 
 /// <summary>
 /// Stores the token in a file. On Windows it is DPAPI-encrypted for the current user. DPAPI does
-/// not exist elsewhere, and silently writing a refresh token as plain text is not acceptable for a
-/// public package, so on other platforms saving throws <see cref="PlatformNotSupportedException"/>
+/// not exist elsewhere, and silently writing the OAuth access token, which never expires, as plain text
+/// is not acceptable for a public package, so on other platforms saving throws <see cref="PlatformNotSupportedException"/>
 /// unless <c>allowPlaintextOnNonWindows</c> is set explicitly.
 /// <para>
 /// The file is written to a temporary file first and then moved over the old one, so an interrupted

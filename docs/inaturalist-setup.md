@@ -81,8 +81,13 @@ By default the system browser opens. To show the URL in your own UI, pass an `Au
 The login completes when iNaturalist redirects to the redirect URI; a temporary local listener
 catches that request; other requests to it are ignored. `AuthorizationTimeout` (default 5 minutes) bounds the wait.
 
-`EnsureAuthenticatedAsync` (called by the publisher) returns the stored API token and renews it silently when it has expired:
-iNaturalist OAuth tokens never expire, so the browser login is needed **once** (until the user revokes access). A new login only happens if iNaturalist rejects the stored token. A network error never starts a login.
+The login keeps two tokens (see [Token storage](#token-storage)): iNaturalist's OAuth access token, which does not expire,
+and the API token, a JWT that every API call sends and that is valid for about 24 hours. `EnsureAuthenticatedAsync` (called
+by the publisher for every candidate) returns the stored API token while it is valid. When the API token has expired (or is
+within 5 minutes of it), it exchanges the stored OAuth token for a new one, silently and without a browser. So the browser
+login is needed **once**, until the user revokes the application's access on iNaturalist or the stored login is removed.
+A new browser login only happens when no login is stored or iNaturalist rejects the stored OAuth token (401 or 403).
+A network error during the renewal never starts a login; that candidate ends as `Failed`.
 
 ### Port 45679
 
@@ -123,6 +128,88 @@ first exchanged for a JWT with `GET https://www.inaturalist.org/users/api_token`
 host), and that JWT, valid about 24 h, is used for all API calls and stored locally. This is
 undocumented in the official API reference.
 
+### When the login fails during a run
+
+The publisher asks the authenticator for a token for every candidate, after the adapter's own checks and before the first
+request, in a dry run too. If no usable login is stored, that call starts the browser login inside `RunAsync`. When the login
+does not finish (the user clicks Deny: `Denied`; nobody completes it within `AuthorizationTimeout`: `TimedOut`; no port can be
+opened: `ListenerUnavailable`), that candidate ends as `Failed`, with the `INaturalistLoginException` in `PublishResult.Error`
+and its text in `Message`. The run goes on: the next candidate starts a new browser login and waits again, up to
+`AuthorizationTimeout` (default 5 minutes) each. A file of 50 entries and a user who denies access can open the browser 50 times.
+A token store that cannot save (see [Token storage](#token-storage)) fails every candidate the same way with a
+`PlatformNotSupportedException`, without opening the browser.
+
+What a host should do:
+
+1. Log in before the run. Call `LoginAsync()` from a "connect to iNaturalist" button, or check `HasStoredToken` before
+   `RunAsync` and call `LoginAsync()` when it is false. A failed `LoginAsync()` throws to the host, which can show the reason.
+2. Stop the run when a result's `Error` is an `INaturalistLoginException`: cancel the `CancellationToken` passed to `RunAsync`
+   from the `progress` callback. The run then stops before the next candidate, the candidates not started get no result, and
+   `RunReport.IsComplete` is false. `Progress<T>` calls its handler asynchronously (on the captured synchronization context or the thread pool), so one more
+   candidate may start; an `IProgress<PublishResult>` of your own that cancels inside `Report` stops at once.
+
+Step 2 still matters with a stored login: if the user has revoked the access on iNaturalist, the renewal is rejected and the
+run falls back to the browser login.
+
+## Token storage
+
+After the login the authenticator keeps one `INaturalistToken` in its token store:
+
+* `AccessToken`: the API token, the JWT every API call sends, valid for about 24 hours.
+* `OAuthAccessToken`: iNaturalist's OAuth access token. It does not expire and renews the API token without a browser.
+* `Username` (the iNaturalist login) and when the API token was obtained.
+
+iNaturalist issues no refresh token, so `RefreshToken` stays empty. Treat the stored token like a password: whoever has the
+OAuth token can publish in the user's name until the user revokes the application's access on iNaturalist.
+
+### The default store
+
+Without a `tokenStore` argument the authenticator uses `ProtectedFileTokenStore`. It keeps one file, `oauthtoken.dat`, in the
+directory `BatInspectorPublisher/inaturalist` under .NET's `Environment.SpecialFolder.LocalApplicationData`:
+
+| Platform | Default directory |
+|---|---|
+| Windows | `%LOCALAPPDATA%\BatInspectorPublisher\inaturalist` |
+| Linux | `$XDG_DATA_HOME/BatInspectorPublisher/inaturalist`, usually `~/.local/share/BatInspectorPublisher/inaturalist` |
+| macOS | `~/Library/Application Support/BatInspectorPublisher/inaturalist` |
+
+`new ProtectedFileTokenStore(directory)` uses another directory, for example one per profile of the host.
+
+* **Windows:** the file is encrypted with DPAPI for the current Windows user. Another user cannot read it.
+* **Linux and macOS:** there is no DPAPI, so saving throws `PlatformNotSupportedException` unless the host opts in with
+  `new ProtectedFileTokenStore(allowPlaintextOnNonWindows: true)`. The file is then plain JSON, created with mode `0600`
+  (owner read and write only). That protects against other local users, not against other programs of the same user.
+* **`CanSave`** is false on Linux and macOS without the opt-in. The authenticator checks it before the browser opens and throws
+  `PlatformNotSupportedException`, so the user does not authorize a login that cannot be kept.
+* The file is written to a temporary file first and then moved over the old one, so an interrupted write never leaves half a token.
+* **An unreadable file** (corrupt, or encrypted by another Windows user) counts as "no token": a warning is logged
+  (event 2201, see [logging.md](logging.md)), a new login is needed, and that login replaces the file.
+
+### A store of your own
+
+To keep the token somewhere else (an OS keychain, a vault of the host), implement `INaturalistTokenStore` and pass it as
+`tokenStore` to the `INaturalistAuthenticator` constructor:
+
+* `Load()` returns the stored token or null. Return null, not an exception, for a token that cannot be read. The authenticator
+  reads the store each time it needs a token, that is once per candidate, so keep it cheap.
+* `Save(token)` replaces the previous token. Keep the whole `INaturalistToken`, all its properties.
+* `Clear()` removes the token.
+* `CanSave` (default true): return false when `Save` is known to fail, so the login fails before the browser opens.
+
+### Connect and disconnect in the host
+
+A "connect / disconnect iNaturalist" UI needs these members of `INaturalistAuthenticator`:
+
+| Member | What it does |
+|---|---|
+| `HasStoredToken` | True when the store holds a readable login. It does not ask iNaturalist: an expired API token still counts (the next request renews it), and so does a login whose access the user has revoked, until the renewal is rejected. |
+| `StoredUsername` | The iNaturalist login of the stored user, for a "connected as ..." label, or null. |
+| `LoginAsync()` | "Connect": runs the browser login and stores the result, replacing a stored login. Throws when it fails (`INaturalistLoginException`, `PlatformNotSupportedException`, `INaturalistApiException`; `OperationCanceledException` when cancelled). |
+| `Logout()` | "Disconnect": deletes the stored token. It does not revoke the application's access on iNaturalist; the user does that in the iNaturalist account settings. The next run needs a new browser login. |
+
+`HasStoredToken` and `StoredUsername` read the store on every access (with the default store: read the file and, on Windows,
+decrypt it), so read them when the UI needs them, not in a loop.
+
 ## Limits and rules checked before publishing
 
 Before the login and before anything is written, the publisher checks what iNaturalist would reject, and reports it
@@ -134,12 +221,16 @@ iNaturalist's open source and forum, not from an official reference, and are not
 | Rule | Limit |
 |---|---|
 | File size (spectrogram and audio, each) | 20 MB (`INaturalistOptions.MaxEvidenceBytes`, default 20,000,000 bytes) |
-| Observation date | not in the future (checked with the tolerance of every time zone), not older than 130 years |
-| Latitude | greater than -90 and less than 90 |
-| Longitude | -180 to 180 |
+| Observation date | not after tomorrow (UTC), not older than 130 years. The calendar day of the recording in its own local time is compared with the current UTC date: it must not be later than that date plus one day. |
+| Latitude | a number greater than -90 and less than 90 |
+| Longitude | a number from -180 to 180 |
 | Position | not exactly 0, 0 |
 | Species name (`species_guess`) | at most 255 characters |
 | `INaturalistOptions.TagList` | at most 750 characters in total, at most 255 per tag |
+
+The entry rules come first: if one fails, the result is `SkippedInvalidEntry` and the file sizes are not checked yet.
+The date rule only catches what no time zone allows. iNaturalist also refuses a date after today in the time zone of the user's
+account, which the package does not know; such a request fails with iNaturalist's own message.
 
 Accepted as they are: PNG photos (iNaturalist scales them to 2048 pixels on the longest side) and WAV sounds
 (stored unchanged; MP3 and M4A are accepted by iNaturalist too, but the input format only knows `.wav`).
@@ -163,8 +254,8 @@ account. `TimeSpan.Zero` turns pacing off. The package does not count requests; 
 daily volume, so split a very large file over several days.
 
 **Retries (off by default).** `INaturalistOptions.MaxAttempts` is the number of tries per request, the first one included.
-The default 1 does not retry: a transient failure ends the candidate as `Failed` and the next run completes it (see "Re-running
-after a partial result" in the README). Set 3 to retry. A failure is repeated only when that cannot create anything twice:
+The default 1 does not retry: a transient failure ends the candidate as `Failed` and the next run completes it (see
+[Re-running: duplicates and resume](inaturalist.md#re-running-duplicates-and-resume)). Set 3 to retry. A failure is repeated only when that cannot create anything twice:
 
 | Request | Retried after | Not retried after |
 |---|---|---|
@@ -183,6 +274,10 @@ Every retry is logged as a Warning (event 3003, see [logging.md](logging.md)), w
 Not retried: the token request of the browser login (its code works once) and anything that is not one of the requests above.
 Cancelling during a wait ends the candidate as `Cancelled`.
 
+**Upload timeout.** `HttpClient.Timeout` of the client passed to `INaturalistPublisher` (default 100 seconds) also bounds the
+evidence uploads: a 20 MB WAV needs about 1.6 Mbit/s upstream to finish in time. A timed-out upload is a write, so it is not
+repeated; the candidate ends as `Failed` and a re-run completes it. On slow lines, pass an `HttpClient` with a larger `Timeout`.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
@@ -191,8 +286,9 @@ Cancelling during a wait ends the candidate as `Cancelled`.
 | `INaturalistLoginException`, `Reason` = `ListenerUnavailable`, on login | Port in use and no fallback port could be opened, see [Port 45679](#port-45679). |
 | iNaturalist error page after clicking Authorize | The registered redirect URI differs from `INaturalistOptions.RedirectUri`. |
 | `INaturalistLoginException`, `Reason` = `TimedOut`, on login | Nobody completed the browser login within `AuthorizationTimeout`. |
+| One candidate after another ends as `Failed` with an `INaturalistLoginException` in `Error`, and the browser opens again each time | No login was stored and the browser login inside the run was denied or timed out. Log in before the run and cancel it on the first such result, see [When the login fails during a run](#when-the-login-fails-during-a-run). |
 | `PlatformNotSupportedException` when logging in or saving the token | Not Windows. The check runs before the browser opens. Pass `allowPlaintextOnNonWindows: true` (file mode `0600`, protects against other local users only) or supply your own `INaturalistTokenStore`. |
-| Login asked again although you logged in before | The token file could not be read (corrupt, or encrypted by another Windows user); a warning is logged and the file is replaced by the next login. |
+| Login asked again although you logged in before | The token file could not be read (corrupt, or encrypted by another Windows user); a warning is logged and the file is replaced by the next login. See [Token storage](#token-storage). |
 | `Failed` with `429` or `Retry-After` in `INaturalistApiException` | iNaturalist throttled the run. Raise `MinRequestInterval`, set `MaxAttempts` to 3, see [Request rate and retries](#request-rate-and-retries); run again later, the next run completes what was left. |
 | `Failed` with a 5xx or a network error | Transient on iNaturalist's or your side. Run again: the duplicate check and resume complete it. |
 | 401/403 during the JWT exchange | See [Why there is an extra JWT exchange](#why-there-is-an-extra-jwt-exchange); check the application registration at <https://www.inaturalist.org/oauth/applications>. |
