@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using BatInspectorPublisher.Core.Models;
 using BatInspectorPublisher.Core.Validation;
@@ -19,8 +20,11 @@ namespace BatInspectorPublisher.Core.InputSchema;
 /// </summary>
 public static class InputSchemaReader
 {
-    /// <summary>Highest schema version this reader understands.</summary>
-    public const int CurrentSchemaVersion = 1;
+    /// <summary>
+    /// Highest schema version this reader understands. A property, not a constant, so that a host compiled against an
+    /// older package still sees the value of the package it runs with.
+    /// </summary>
+    public static int CurrentSchemaVersion => 1;
 
     /// <summary>Date format used by BatInspector, German local time without zone.</summary>
     internal const string DateFormat = "dd.MM.yyyy HH:mm:ss";
@@ -30,12 +34,12 @@ public static class InputSchemaReader
     /// <exception cref="TimeZoneNotFoundException">The host has no Europe/Berlin time zone data.</exception>
     public static InputDocument ReadFile(string path) => Parse(File.ReadAllText(path));
 
-    /// <summary>Reads and validates a stream (UTF-8 JSON).</summary>
+    /// <summary>Reads and validates a stream (UTF-8 JSON). The stream is read to its end and left open.</summary>
     /// <exception cref="InputSchemaException">The content is not well-formed JSON, or its structure or version is invalid.</exception>
     /// <exception cref="TimeZoneNotFoundException">The host has no Europe/Berlin time zone data.</exception>
     public static InputDocument Read(Stream stream)
     {
-        using var reader = new StreamReader(stream);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 1024, leaveOpen: true);
         return Parse(reader.ReadToEnd());
     }
 

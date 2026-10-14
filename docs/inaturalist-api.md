@@ -94,7 +94,7 @@ species entry does not match an observation identified only as a family or order
 All three writes happen only in a commit run, only after the duplicate check found nothing to complete, and are not repeated after a
 server error, a network error or a timeout (a repeat could create a second observation or upload).
 
-**7. `POST /v2/observations`**, JSON body `{"observation": {...}}` with `taxon_id`, `observed_on_string` (`yyyy-MM-dd`),
+**7. `POST /v2/observations`**, JSON body `{"observation": {...}}` with `taxon_id`, `observed_on_string` (`yyyy-MM-dd HH:mm:ss`, local time),
 `latitude`, `longitude`, `place_guess` (the coordinates as text), `species_guess` (the name from the file), `description`
 (German text, see [inaturalist.md](inaturalist.md#the-description)) and `tag_list` (`INaturalistOptions.TagList` plus the
 entry's `batinspector:` tag). The answer's `results[0].uuid` is needed to

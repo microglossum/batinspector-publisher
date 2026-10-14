@@ -370,7 +370,9 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
     internal ObservationPayload BuildPayload(ObservationCandidate candidate, int taxonId, string? taxonName = null) => new()
     {
         TaxonId = taxonId,
-        ObservedOnString = candidate.ObservedAt.DateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        // The local wall-clock time without a zone: for an observation with coordinates iNaturalist takes the zone from
+        // them (a zone or offset in the string is ignored then, and its Chronic parser has no offset support).
+        ObservedOnString = candidate.ObservedAt.DateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
         Latitude = candidate.Latitude,
         Longitude = candidate.Longitude,
         // Always a string: v2 rejects null. The input format has no place name, so use the coordinates.

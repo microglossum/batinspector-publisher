@@ -17,14 +17,17 @@ or one that may be deleted afterwards) before anything is released. What stubs c
 - `GET /v2/taxa/autocomplete` must return `ancestor_ids` with `fields=...,ancestor_ids` (the v2 field parser accepts it and v2 hands autocomplete to v1, per the source). Without it every name is skipped as "not a bat", which fails safe but blocks all publishing.
 - Resume: the v1 search must return `tags` as a list of strings holding the `batinspector:` tag sent in `tag_list` (another shape is ignored, so resume would never trigger), and an upload that is not processed yet must already be listed. Also check that iNaturalist keeps the tag as sent (colon, lower case) and that a 25-character tag is accepted. Otherwise the observation is deliberately left alone (`SkippedDuplicate`) and resume never triggers. Check with a real half-created observation (stop after the photo, or delete the sound in the web UI).
 - Dry run against an entry that is already published and against a half-created one: it must say `SkippedDuplicate` and `WouldResume`, and a commit run must then agree.
-- Group values (`Nyctaloid`, `Mbart`) are filed under a broader taxon, and the duplicate check treats any own species-level observation of that day and place as a duplicate. Decide whether they need a stricter match (for example by `species_guess`).
+- Group values (`Nyctaloid`, `Mbart`) are filed under a broader taxon (Chiroptera, *Myotis*), and the duplicate check searches that taxon including everything below it. So any own observation of a bat species on the same day within the radius counts as a duplicate of the group entry, and the group entry is skipped (a species entry is not blocked by an earlier group observation, so the result depends on the order of publishing). Check on a real case, then decide whether group entries need a stricter match, for example on `species_guess` (needs the next item first).
 - `species_guess` must keep the original value (`Nyctaloid`) when `taxon_id` is Chiroptera; see how iNaturalist shows it.
 - Login port fallback: occupy port 45679 and run the SmokeTest `login`. The login then listens on an OS-assigned port and iNaturalist must accept that redirect URI (the source, Doorkeeper 5.6.6, says the port of a loopback IP redirect URI is ignored; not seen live). The options also accept `localhost` and `[::1]` as redirect host; the docs recommend `127.0.0.1`, and the port fallback may not work for `localhost` at iNaturalist.
 - Login refusal: click "Deny" on iNaturalist's authorize page and see what the redirect carries. The listener ends the login at once on an `error` parameter without a `state` or with the right one (`Denied`); if iNaturalist sends the error with a different state, the login only ends at the timeout.
 - Retry and pacing (defaults `MaxAttempts = 1`, `MinRequestInterval` 1 s): the limits come from the forum and secondary sources (100 requests per minute, 60 asked for, about 10,000 per day); iNaturalist's "API recommended practices" page answers 403 to our tools, so read it in a browser and compare with `docs/inaturalist-setup.md`.
-  Check whether a 429 carries `Retry-After` (otherwise the code backs off from `RetryBaseDelay`; a throttle window of a minute may need a larger `RetryBaseDelay` or `MaxAttempts`), whether writes have a stricter limit than reads, and what v2 answers when overloaded. Then decide whether `MaxAttempts = 3` should become the default. Also confirm that the enforced 1 s minimum for `MinRequestInterval` (pacing can no longer be switched off) matches the limit.
+  Check whether a 429 carries `Retry-After` (otherwise the code backs off from `RetryBaseDelay`; a throttle window of a minute may need a larger `RetryBaseDelay` or `MaxAttempts`), whether writes have a stricter limit than reads, and what v2 answers when overloaded. The default stays `MaxAttempts = 1`; use the findings to document a sensible value for hosts that opt in. Also confirm that the enforced 1 s minimum for `MinRequestInterval` (pacing can no longer be switched off) matches the limit.
 - Stored OAuth token: per the source it never expires and no refresh token is issued. Confirm that the token stays valid across days (`renew` after a day or more).
-- Login as a non-admin Windows user (BatInspector's normal case; CI's Windows runners run as admin, so CI cannot show it). `OAuthFlow` registers `http://127.0.0.1:<port>/` with `HttpListener`, which on Windows goes through http.sys; an IP prefix usually needs a URL reservation (`netsh http add urlacl`) for non-admins and then fails with "access denied" (`HttpListenerException`, error 5). The code reads that as "port in use", tries the fallback ports and reports `ListenerUnavailable`. If confirmed, see "Login listener on Windows" below.
+- Login as a non-admin Windows user (BatInspector's normal case; CI's Windows runners run as admin, so CI cannot show it). `OAuthFlow` registers `http://127.0.0.1:<port>/` with `HttpListener`, which on Windows goes through http.sys; an IP prefix usually needs a URL reservation (`netsh http add urlacl`) for non-admins and then fails with "access denied" (`HttpListenerException`, error 5). The code reads that as "port in use", tries the fallback ports and reports `ListenerUnavailable`. If confirmed:
+  - replace `HttpListener` with a small `TcpListener` on `IPAddress.Loopback` that reads one request line and writes a fixed response (avoids http.sys and its URL ACLs, and the verbatim Host-header match); the existing `OAuthFlowTests` talk HTTP to the port and keep working;
+  - independently of the check, map `HttpListenerException` error 5 to its own message instead of trying fallback ports.
+- Time and zone: the package sends `observed_on_string` as `yyyy-MM-dd HH:mm:ss` and no zone, because the source says iNaturalist takes the zone from the coordinates (`set_time_zone` runs before the string is parsed, and a zone in the string is ignored for a georeferenced observation). Check on a real observation that the page shows the sent local time and the zone of the place, also for a night after midnight, and that the server's "not in the future" check (it uses the observation's zone) passes for a recording from the last hours. Optional: send a non-default `TimeZone` entry (for example `Europe/Lisbon` with Portuguese coordinates) and confirm the same.
 - How long the API JWT really lives (assumed 24 h), and that an invalidated JWT is answered with 401 (the publisher renews on 401 only; a 403 is not renewed). What a revoked app authorization answers.
 
 ### Taxon names for the BatInspector owner
@@ -38,32 +41,12 @@ or one that may be deleted afterwards) before anything is released. What stubs c
 
 - Upload a real recording and a spectrogram of realistic size, then one deliberately over 20 MB (a test account or an observation that may be deleted): which status and body does v2 return, and is the real limit 20 MB or 20 MiB (`MaxEvidenceBytes` defaults to the safe 20,000,000)? Is a high sample rate (192-500 kHz) accepted, and does the observation page play it and show its spectrogram? (`local/` is off limits for Claude.)
 - Test the other rules: latitude exactly 90, a tag list over the limit. Adjust or drop a rule that iNaturalist does not enforce.
-- The server also refuses a date after today in the account's own time zone, which the validator cannot know (only reachable for a recording whose zone is ahead of the account's, since a future instant is rejected); sending the zone (see "Times and time zones") would let the server decide.
 - A WAV over the limit has no automatic way out; see whether BatInspector can export a shorter or resampled copy.
 - The evidence files are read completely into memory before the size is checked. Fine for one candidate at a time; revisit only if memory becomes a problem.
 
-### Times and time zones
-
-Needs the live test: send the time as well, with the zone (the candidate carries `TimeZoneId`), so the platform does not read it in the account's zone. Find out whether v2 accepts a time in `observed_on_string`, which zone parameter it expects (and in which name format),
-and whether `time_observed_at` is really rejected. Then update every page that says "iNaturalist receives only the calendar date" (`docs/inaturalist.md` field table and steps, `docs/input-format.md`, and the README if it still says it; both languages).
-
-### Input validation
-
-- The signature checks are not a full format validation (a file can start like a PNG and still be something else); decide whether that is enough.
-
 ### Hardening before the first release
 
-- **Login listener on Windows** (only if the live check above confirms the problem): replace `HttpListener` with a small `TcpListener` on `IPAddress.Loopback` that reads one request line and writes a fixed response (avoids http.sys and its URL ACLs, and the verbatim Host-header match). The existing `OAuthFlowTests` talk HTTP to the port and keep working. Independently of the check: map `HttpListenerException` error 5 to its own message instead of trying fallback ports.
-- **Upload timeout option.** `HttpClient.Timeout` (default 100 s) also limits the evidence uploads, and a timed-out upload is not repeated (it is a write), so on a slow line resume times out again in the same way. The setup guide tells hosts to pass a client with a larger timeout. Decide whether an `UploadTimeout` option (a linked `CancellationTokenSource` in the upload, kept apart from caller cancellation) is worth it on top.
 - **`ConfigureAwait(false)` on every `await` in `src/`.** The host is a Windows desktop app: without it every continuation returns to the UI thread (JSON parsing and upload preparation run there), and a host that blocks on `.Result`/`.Wait()` from the UI thread deadlocks. Enforce it with `CA2007` as a warning for the library project only (not the tests), so CI keeps it. `IProgress<T>` still reaches the UI through `Progress<T>`.
-
-### Public API before 1.0
-
-Each of these is trivial now and a breaking change after 1.0:
-
-- `InputSchemaReader.CurrentSchemaVersion` is a public `const`, which is inlined into the host at compile time (a host that is not recompiled keeps the old value): make it a static property.
-- `InputSchemaReader.Read(Stream)` disposes the caller's stream (`StreamReader` without `leaveOpen`): leave it open, or document it.
-- Decide whether an async `InputSchemaReader.ReadFileAsync` belongs in the API (the rest is async; the file is small).
 
 ### Tests
 
@@ -156,7 +139,6 @@ Blocked: there is no public API documentation, so the auth and submission model 
 
 - Revisit `net8.0` only if keeping it becomes a burden.
 - Versioned serialized result schema: only when BatInspector wants to persist results.
-- Decide whether to register the iNaturalist OAuth application as public (no secret) if BatInspector is distributed to others.
 - Re-check iNaturalist API terms (not the rate limits, see the live test) for automated submission.
 - Logging: `ActivitySource` and metrics (OpenTelemetry), if a host wants them.
 - Confirm BatInspector's license is compatible with MIT; add NOTICE if a dependency requires it.

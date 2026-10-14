@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using BatInspectorPublisher.Core.InputSchema;
 
 namespace BatInspectorPublisher.Tests.Core;
@@ -217,6 +218,31 @@ public class InputSchemaReaderTests
         using var stream = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "Fixtures", "sample_v1.json"));
 
         Assert.Equal(3, InputSchemaReader.Read(stream).Candidates.Count);
+    }
+
+    [Fact]
+    public void Read_Stream_LeavesTheCallersStreamOpen()
+    {
+        using var stream = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "Fixtures", "sample_v1.json"));
+
+        InputSchemaReader.Read(stream);
+
+        Assert.True(stream.CanRead);
+    }
+
+    [Fact]
+    public void Read_Stream_AcceptsAUtf8ByteOrderMark()
+    {
+        var json = Encoding.UTF8.GetPreamble().Concat(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "sample_v1.json"))).ToArray();
+        using var stream = new MemoryStream(json);
+
+        Assert.Equal(3, InputSchemaReader.Read(stream).Candidates.Count);
+    }
+
+    [Fact]
+    public void CurrentSchemaVersion_IsOne()
+    {
+        Assert.Equal(1, InputSchemaReader.CurrentSchemaVersion);
     }
 
     [Fact]

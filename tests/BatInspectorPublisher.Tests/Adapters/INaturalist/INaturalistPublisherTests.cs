@@ -911,12 +911,12 @@ public class INaturalistPublisherTests
     }
 
     [Fact]
-    public void BuildPayload_UsesDateOnlyAndCandidateData()
+    public void BuildPayload_UsesTheLocalTimeAndCandidateData()
     {
         var payload = CreatePublisher().BuildPayload(TestData.Candidate(), 99);
 
         Assert.Equal(99, payload.TaxonId);
-        Assert.Equal("2026-06-11", payload.ObservedOnString);
+        Assert.Equal("2026-06-11 21:37:49", payload.ObservedOnString);
         Assert.Equal("Pipistrellus pipistrellus", payload.SpeciesGuess);
         Assert.Equal($"bat,acoustic-monitoring,batinspector,{ResumeMarker.For(TestData.Candidate())}", payload.TagList);
     }
@@ -958,12 +958,31 @@ public class INaturalistPublisherTests
     }
 
     [Fact]
-    public void BuildPayload_NightAfterMidnightInBerlin_UsesTheLocalDate()
+    public void BuildPayload_NightAfterMidnightInBerlin_UsesTheLocalDateAndTime()
     {
         // 22:30 UTC on 13.06. is 00:30 on 14.06. in Berlin; the platform must see the 14th.
         var candidate = TestData.Candidate() with { ObservedAt = new DateTimeOffset(2026, 6, 14, 0, 30, 0, TimeSpan.FromHours(2)) };
 
-        Assert.Equal("2026-06-14", CreatePublisher().BuildPayload(candidate, 1).ObservedOnString);
+        Assert.Equal("2026-06-14 00:30:00", CreatePublisher().BuildPayload(candidate, 1).ObservedOnString);
+    }
+
+    [Fact]
+    public void BuildPayload_ForeignZone_SendsThatZonesWallClockWithoutZoneOrOffset()
+    {
+        // iNaturalist reads the string in the zone of the coordinates, so the wall clock of the entry's zone goes out
+        // unchanged and nothing that looks like a zone (the platform ignores it, its parser has no offset support).
+        var candidate = TestData.Candidate() with
+        {
+            TimeZoneId = "Europe/Lisbon",
+            ObservedAt = new DateTimeOffset(2026, 6, 11, 21, 37, 49, TimeSpan.FromHours(1)),
+        };
+
+        var payload = CreatePublisher().BuildPayload(candidate, 1);
+
+        Assert.Equal("2026-06-11 21:37:49", payload.ObservedOnString);
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        Assert.False(doc.RootElement.TryGetProperty("time_zone", out _));
+        Assert.False(doc.RootElement.TryGetProperty("time_observed_at", out _));
     }
 
     [Theory]

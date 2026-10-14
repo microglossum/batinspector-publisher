@@ -53,7 +53,7 @@ The steps use these iNaturalist endpoints (every request with its parameters is 
 |---|---|---|
 | `SpeciesLatin` | `taxon_id` | Resolved live, see [Species and taxon](#species-and-taxon). |
 | `SpeciesLatin` | `species_guess` | The name from the file, normalized. For an uncertain call such as `Nyctaloid` this keeps the original value while `taxon_id` is the broader taxon. |
-| `Date` | `observed_on_string` | The local calendar day only, as `yyyy-MM-dd`. The time is **not** sent yet (it would be read in the account's own time zone). The full time is in the description. |
+| `Date` | `observed_on_string` | The local date and time as `yyyy-MM-dd HH:mm:ss`, without a zone or offset (see [Time zone](#time-zone)). The time with its zone is also in the description. |
 | `Latitude`, `Longitude` | `latitude`, `longitude` | As they are. No positional accuracy is sent. |
 | `Latitude`, `Longitude` | `place_guess` | The coordinates as text with five decimals (`50.11000, 8.68200`): the input has no place name and v2 rejects an empty value. |
 | `Temperature`, `Humidity`, `Comment`, `Date`, `TimeZone` | `description` | German text, see below. |
@@ -63,8 +63,17 @@ The steps use these iNaturalist endpoints (every request with its parameters is 
 | (options) | `tag_list` | `INaturalistOptions.TagList`, default `bat,acoustic-monitoring,batinspector`, plus the resume tag of the entry (see below). |
 | `SpeciesLatin`, `Date`, `Latitude`, `Longitude` | `tag_list` | One more tag, `batinspector:` and 12 hex digits: a short hash of the species as in the file, the instant in UTC and the coordinates. It marks the observation as the one this package created for the entry, see [Re-running](#re-running-duplicates-and-resume). |
 
-Not sent: the time of day, a positional accuracy, geoprivacy, captive/cultivated flags. The package does not handle
+Not sent: a time zone, a positional accuracy, geoprivacy, captive/cultivated flags. The package does not handle
 sensitive species; iNaturalist obscures the coordinates of taxa it considers sensitive by itself.
+
+### Time zone
+
+Every observation is sent with coordinates, and iNaturalist then takes the time zone **from the coordinates**: it reads
+`observed_on_string` as local time at that place, and ignores a zone or offset in the string and a `time_zone` parameter
+(per its source, not yet seen live). So the package sends the wall-clock time of the entry as it is and no zone. This is
+right as long as `TimeZone` (default Europe/Berlin) is the zone of the place where the recording was made, which is the
+meaning of the input field. If it is not (for example a recorder that stayed on German time in Portugal), iNaturalist
+shows the time shifted by the difference; the description still names the zone the entry was read in.
 
 ### The description
 

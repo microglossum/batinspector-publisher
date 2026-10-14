@@ -99,7 +99,7 @@ Duplikate getroffen, deshalb beschränkt das Paket mit `user_id`.
 Alle drei Schreibanfragen gibt es nur im Commit-Lauf, nur wenn die Duplikatprüfung nichts zum Fortsetzen fand, und sie werden nach einem
 Serverfehler, einem Netzwerkfehler oder einem Timeout nicht wiederholt (eine Wiederholung könnte eine zweite Beobachtung oder einen zweiten Upload anlegen).
 
-**7. `POST /v2/observations`**, JSON-Body `{"observation": {...}}` mit `taxon_id`, `observed_on_string` (`yyyy-MM-dd`), `latitude`,
+**7. `POST /v2/observations`**, JSON-Body `{"observation": {...}}` mit `taxon_id`, `observed_on_string` (`yyyy-MM-dd HH:mm:ss`, Ortszeit), `latitude`,
 `longitude`, `place_guess` (die Koordinaten als Text), `species_guess` (der Name aus der Datei), `description` (deutscher Text, siehe
 [inaturalist.de.md](inaturalist.de.md#die-beschreibung)) und `tag_list` (`INaturalistOptions.TagList` und das
 `batinspector:`-Tag des Eintrags). Aus der Antwort wird `results[0].uuid` zum Anhängen der Belege gebraucht;

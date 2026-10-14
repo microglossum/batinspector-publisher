@@ -54,7 +54,7 @@ Die Schritte verwenden diese Endpunkte von iNaturalist (jede Anfrage mit ihren P
 |---|---|---|
 | `SpeciesLatin` | `taxon_id` | Live aufgelöst, siehe [Art und Taxon](#art-und-taxon). |
 | `SpeciesLatin` | `species_guess` | Der Name aus der Datei, normalisiert. Bei einem unsicheren Ruf wie `Nyctaloid` bleibt hier der ursprüngliche Wert, während `taxon_id` das übergeordnete Taxon ist. |
-| `Date` | `observed_on_string` | Nur der lokale Kalendertag als `yyyy-MM-dd`. Die Uhrzeit wird **noch nicht** gesendet (sie würde in der Zeitzone des Kontos gelesen). Die volle Zeit steht in der Beschreibung. |
+| `Date` | `observed_on_string` | Lokales Datum und Uhrzeit als `yyyy-MM-dd HH:mm:ss`, ohne Zone oder Offset (siehe [Zeitzone](#zeitzone)). Die Zeit mit ihrer Zone steht auch in der Beschreibung. |
 | `Latitude`, `Longitude` | `latitude`, `longitude` | Unverändert. Eine Positionsgenauigkeit wird nicht gesendet. |
 | `Latitude`, `Longitude` | `place_guess` | Die Koordinaten als Text mit fünf Nachkommastellen (`50.11000, 8.68200`): Die Eingabe hat keinen Ortsnamen, und v2 lehnt einen leeren Wert ab. |
 | `Temperature`, `Humidity`, `Comment`, `Date`, `TimeZone` | `description` | Deutscher Text, siehe unten. |
@@ -64,8 +64,17 @@ Die Schritte verwenden diese Endpunkte von iNaturalist (jede Anfrage mit ihren P
 | (Optionen) | `tag_list` | `INaturalistOptions.TagList`, Standard `bat,acoustic-monitoring,batinspector`, dazu das Fortsetzungs-Tag des Eintrags (siehe unten). |
 | `SpeciesLatin`, `Date`, `Latitude`, `Longitude` | `tag_list` | Ein weiteres Tag, `batinspector:` und 12 Hex-Ziffern: ein kurzer Hash aus der Art wie in der Datei, dem Zeitpunkt in UTC und den Koordinaten. Es kennzeichnet die Beobachtung als die, die dieses Paket für den Eintrag angelegt hat, siehe [Erneuter Lauf](#erneuter-lauf-duplikate-und-fortsetzen). |
 
-Nicht gesendet werden: die Uhrzeit, eine Positionsgenauigkeit, Geoprivacy, Captive/Cultivated-Kennzeichen. Das Paket behandelt
+Nicht gesendet werden: eine Zeitzone, eine Positionsgenauigkeit, Geoprivacy, Captive/Cultivated-Kennzeichen. Das Paket behandelt
 sensible Arten nicht; iNaturalist verschleiert die Koordinaten von Taxa, die es für sensibel hält, selbst.
+
+### Zeitzone
+
+Jede Beobachtung wird mit Koordinaten gesendet, und iNaturalist übernimmt die Zeitzone dann **aus den Koordinaten**: Es liest
+`observed_on_string` als Ortszeit an diesem Ort und ignoriert eine Zone oder einen Offset im Text sowie einen
+`time_zone`-Parameter (laut Quellcode, noch nicht live gesehen). Das Paket sendet deshalb die Uhrzeit des Eintrags, wie sie
+ist, und keine Zone. Das stimmt, solange `TimeZone` (Standard Europe/Berlin) die Zone des Ortes ist, an dem aufgenommen
+wurde; so ist das Eingabefeld gemeint. Ist sie es nicht (etwa ein Rekorder, der in Portugal auf deutscher Zeit blieb),
+zeigt iNaturalist die Zeit um die Differenz verschoben; die Beschreibung nennt weiterhin die Zone, in der der Eintrag gelesen wurde.
 
 ### Die Beschreibung
 

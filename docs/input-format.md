@@ -23,7 +23,7 @@ flowchart LR
     C --> O["ExportOrchestrator"]
 ```
 
-`InputSchemaReader.ReadFile(path)`, `Read(stream)` and `Parse(json)` do the same. The JSON does not have to come from a
+`InputSchemaReader.ReadFile(path)`, `Read(stream)` (reads to the end and leaves the stream open) and `Parse(json)` do the same. The JSON does not have to come from a
 file, but the evidence paths inside it must point to files on disk. Reading does not touch the evidence files; they are read
 and checked per candidate when it is published.
 
@@ -96,7 +96,7 @@ time zone of the host or the machine.
 
 The calendar day that the duplicate check and the platforms use is the local day of that zone. The host needs the time
 zone data for Europe/Berlin; without it the reader throws `TimeZoneNotFoundException` instead of guessing. How a platform
-treats the time is described on its page (iNaturalist currently receives only the calendar date).
+treats the time is described on its page (iNaturalist receives the local time and takes the zone from the coordinates, so `TimeZone` must be the zone of the recording place).
 
 ### Species names
 

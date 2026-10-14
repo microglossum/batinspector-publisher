@@ -228,9 +228,9 @@ iNaturalist's open source and forum, not from an official reference, and are not
 Some rows are the platform-neutral checks of the input file (see `docs/input-format.md`), which `ExportOrchestrator` runs on
 every candidate before the publisher sees it. The entry rules come first: if one fails, the result is
 `SkippedInvalidEntry` and the file sizes are not checked yet.
-iNaturalist also refuses a date after today in the time zone of the user's account, which the package does not know. A
-recording that is not in the future can only break that rule when its own zone is ahead of the account's; such a request
-fails with iNaturalist's own message.
+iNaturalist also refuses a date after today in the observation's own time zone (taken from the coordinates). A recording
+that is not in the future can only break that rule when its `TimeZone` does not match the place; such a request fails with
+iNaturalist's own message.
 
 Accepted as they are: PNG photos (iNaturalist scales them to 2048 pixels on the longest side) and WAV sounds
 (stored unchanged; MP3 and M4A are accepted by iNaturalist too, but the input format only knows `.wav`).

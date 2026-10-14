@@ -230,8 +230,8 @@ Open-Source-Code und dem Forum von iNaturalist, nicht aus einer offiziellen Refe
 Einige Zeilen sind die plattformneutralen Prüfungen der Eingabedatei (siehe `docs/input-format.de.md`), die `ExportOrchestrator`
 für jeden Kandidaten ausführt, bevor der Publisher ihn sieht. Die Regeln für den Eintrag kommen
 zuerst: Scheitert eine, ist das Ergebnis `SkippedInvalidEntry`, und die Dateigrößen werden noch nicht geprüft.
-iNaturalist lehnt außerdem ein Datum nach dem heutigen Tag in der Zeitzone des Kontos ab, die das Paket nicht kennt. Eine Aufnahme,
-die nicht in der Zukunft liegt, kann diese Regel nur verletzen, wenn ihre eigene Zeitzone der des Kontos voraus ist; eine solche
+iNaturalist lehnt außerdem ein Datum nach dem heutigen Tag in der eigenen Zeitzone der Beobachtung ab (aus den Koordinaten). Eine
+Aufnahme, die nicht in der Zukunft liegt, kann diese Regel nur verletzen, wenn ihre `TimeZone` nicht zum Ort passt; eine solche
 Anfrage scheitert mit der Meldung von iNaturalist.
 
 Unverändert akzeptiert: PNG-Fotos (iNaturalist skaliert sie auf 2048 Pixel an der längsten Seite) und WAV-Töne
