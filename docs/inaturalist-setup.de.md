@@ -131,27 +131,17 @@ etwa 24 Stunden gültig, dient für alle API-Aufrufe und wird lokal gespeichert.
 
 Der Publisher holt sich für jeden Kandidaten ein Token beim Authenticator, nach den eigenen Prüfungen des Adapters und vor der ersten
 Anfrage, auch im Probelauf. Ist keine brauchbare Anmeldung gespeichert, startet dieser Aufruf die Browser-Anmeldung innerhalb von
-`RunAsync`. Kommt die Anmeldung nicht zustande (die Person klickt auf "Deny": `Denied`; niemand schließt sie innerhalb von
-`AuthorizationTimeout` ab: `TimedOut`; kein Port lässt sich öffnen: `ListenerUnavailable`), endet dieser Kandidat als `Failed`, mit der
-`INaturalistLoginException` in `PublishResult.Error` und ihrem Text in `Message`. Der Lauf geht weiter: Der nächste Kandidat startet
-eine neue Browser-Anmeldung und wartet wieder, jeweils bis zu `AuthorizationTimeout` (Standard 5 Minuten). Bei einer Datei mit 50
-Einträgen und einer Person, die den Zugriff ablehnt, kann sich der Browser also 50-mal öffnen. Ein Token-Speicher, der nicht speichern
-kann (siehe [Token-Speicherung](#token-speicherung)), lässt jeden Kandidaten ebenso mit einer `PlatformNotSupportedException`
-scheitern, ohne den Browser zu öffnen.
+`RunAsync`. Lässt sich kein Token beschaffen (die Person klickt auf "Deny": `Denied`; niemand schließt die Anmeldung innerhalb von
+`AuthorizationTimeout` ab: `TimedOut`; kein Port lässt sich öffnen: `ListenerUnavailable`; der Token-Speicher kann nicht speichern,
+siehe [Token-Speicherung](#token-speicherung); ein Netzwerkfehler beim Token-Austausch), endet dieser Kandidat als `Failed`, mit der
+Ausnahme in `PublishResult.Error` und ihrem Text in `Message`, und **der Lauf hält dort an**: Jeder weitere Kandidat würde genauso
+scheitern. Nicht gestartete Kandidaten bekommen kein Ergebnis, und `RunReport.IsComplete` ist false. Der nächste Lauf versucht die
+Anmeldung erneut.
 
-Was eine Host-Anwendung tun sollte:
-
-1. Vor dem Lauf anmelden. `LoginAsync()` über einen Button "Mit iNaturalist verbinden" aufrufen, oder vor `RunAsync` `HasStoredToken`
-   prüfen und bei false `LoginAsync()` aufrufen. Ein gescheitertes `LoginAsync()` wirft die Ausnahme an die Host-Anwendung, die den
-   Grund anzeigen kann.
-2. Den Lauf abbrechen, wenn das `Error` eines Ergebnisses eine `INaturalistLoginException` ist: im `progress`-Callback den an `RunAsync`
-   übergebenen `CancellationToken` abbrechen. Der Lauf hält dann vor dem nächsten Kandidaten an, nicht gestartete Kandidaten bekommen
-   kein Ergebnis, und `RunReport.IsComplete` ist false. `Progress<T>` ruft seinen Handler asynchron auf (im erfassten
-   Synchronisationskontext oder im Threadpool), sodass noch ein Kandidat starten kann; ein eigenes `IProgress<PublishResult>`, das
-   direkt in `Report` abbricht, hält sofort an.
-
-Schritt 2 gilt auch mit gespeicherter Anmeldung: Hat die Person den Zugriff bei iNaturalist widerrufen, wird die Erneuerung
-abgelehnt, und der Lauf fällt auf die Browser-Anmeldung zurück.
+Was eine Host-Anwendung tun sollte: vor dem Lauf anmelden. `LoginAsync()` über einen Button "Mit iNaturalist verbinden" aufrufen, oder
+vor `RunAsync` `HasStoredToken` prüfen und bei false `LoginAsync()` aufrufen. Ein gescheitertes `LoginAsync()` wirft die Ausnahme an
+die Host-Anwendung, die den Grund anzeigen kann. Das gilt auch mit gespeicherter Anmeldung: Hat die Person den Zugriff bei
+iNaturalist widerrufen, wird die Erneuerung abgelehnt, und der Lauf fällt auf die Browser-Anmeldung zurück.
 
 ## Token-Speicherung
 
@@ -230,7 +220,7 @@ Open-Source-Code und dem Forum von iNaturalist, nicht aus einer offiziellen Refe
 | Längengrad | eine Zahl von -180 bis 180 |
 | Position | nicht genau 0, 0 |
 | Artname (`species_guess`) | höchstens 255 Zeichen |
-| `INaturalistOptions.TagList` | höchstens 750 Zeichen insgesamt, höchstens 255 pro Tag |
+| `INaturalistOptions.TagList` | höchstens 750 Zeichen insgesamt, höchstens 255 pro Tag; geprüft beim Erzeugen des Publishers (`ArgumentException`), da sie jeden Eintrag ablehnen würde |
 
 Einige Zeilen sind die plattformneutralen Prüfungen der Eingabedatei (siehe `docs/input-format.de.md`), die `ExportOrchestrator`
 für jeden Kandidaten ausführt, bevor der Publisher ihn sieht. Die Regeln für den Eintrag kommen
@@ -294,7 +284,7 @@ vervollständigt ihn. Bei langsamen Leitungen einen `HttpClient` mit größerem 
 | `INaturalistLoginException`, `Reason` = `ListenerUnavailable`, bei der Anmeldung | Port belegt und kein Ersatzport ließ sich öffnen, siehe [Port 45679](#port-45679). |
 | iNaturalist-Fehlerseite nach "Authorize" | Die registrierte Redirect URI weicht von `INaturalistOptions.RedirectUri` ab. |
 | `INaturalistLoginException`, `Reason` = `TimedOut`, bei der Anmeldung | Niemand hat die Browser-Anmeldung innerhalb von `AuthorizationTimeout` abgeschlossen. |
-| Ein Kandidat nach dem anderen endet als `Failed` mit einer `INaturalistLoginException` in `Error`, und der Browser öffnet sich jedes Mal neu | Es war keine Anmeldung gespeichert, und die Browser-Anmeldung im Lauf wurde abgelehnt oder lief ab. Vor dem Lauf anmelden und ihn beim ersten solchen Ergebnis abbrechen, siehe [Wenn die Anmeldung während eines Laufs scheitert](#wenn-die-anmeldung-während-eines-laufs-scheitert). |
+| Der Lauf hält nach einem `Failed`-Ergebnis mit einer `INaturalistLoginException` in `Error` an | Es war keine Anmeldung gespeichert, und die Browser-Anmeldung im Lauf wurde abgelehnt oder lief ab. Vor dem Lauf anmelden, siehe [Wenn die Anmeldung während eines Laufs scheitert](#wenn-die-anmeldung-während-eines-laufs-scheitert). |
 | `PlatformNotSupportedException` bei der Anmeldung oder beim Speichern des Tokens | Nicht Windows. Die Prüfung läuft, bevor sich der Browser öffnet. `allowPlaintextOnNonWindows: true` übergeben (Dateimodus `0600`, schützt nur vor anderen lokalen Benutzern) oder einen eigenen `INaturalistTokenStore` bereitstellen. |
 | Anmeldung wird erneut verlangt, obwohl man sich schon angemeldet hatte | Die Token-Datei war nicht lesbar (beschädigt oder von einem anderen Windows-Benutzer verschlüsselt); eine Warnung wird protokolliert, die nächste Anmeldung ersetzt die Datei. Siehe [Token-Speicherung](#token-speicherung). |
 | `Failed` mit `429` oder `Retry-After` in `INaturalistApiException` | iNaturalist hat den Lauf gedrosselt. `MinRequestInterval` erhöhen, `MaxAttempts` auf 3 setzen, siehe [Anfragerate und Wiederholungen](#anfragerate-und-wiederholungen); später erneut laufen lassen, der nächste Lauf vervollständigt den Rest. |

@@ -25,7 +25,10 @@ public sealed class INaturalistOptions
     /// <summary>How long to wait for the user to finish the browser login.</summary>
     public TimeSpan AuthorizationTimeout { get; init; } = TimeSpan.FromMinutes(5);
 
-    /// <summary>Comma-separated tags added to every observation.</summary>
+    /// <summary>
+    /// Comma-separated tags added to every observation. At most 750 characters in total and 255 per tag (iNaturalist's limits);
+    /// a longer list makes the <see cref="INaturalistPublisher"/> constructor throw.
+    /// </summary>
     public string TagList { get; init; } = "bat,acoustic-monitoring,batinspector";
 
     /// <summary>Text placed at the start of every observation description (German, as users are German speaking).</summary>
@@ -99,6 +102,24 @@ public sealed class INaturalistOptions
         if (RetryBaseDelay < TimeSpan.Zero || MaxRetryDelay < TimeSpan.Zero || MinRequestInterval < TimeSpan.Zero)
         {
             throw new ArgumentException("INaturalistOptions.RetryBaseDelay, MaxRetryDelay and MinRequestInterval must not be negative.");
+        }
+    }
+
+    /// <summary>iNaturalist's limits for <c>tag_list</c> (Rails model validations, not verified live).</summary>
+    internal const int MaxTagListLength = 750, MaxTagLength = 255;
+
+    /// <summary>Checks what would otherwise reject every candidate the same way.</summary>
+    internal void ValidateForPublishing()
+    {
+        var tags = TagList.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (string.Join(", ", tags).Length > MaxTagListLength)
+        {
+            throw new ArgumentException($"INaturalistOptions.TagList is longer than {MaxTagListLength} characters, which iNaturalist does not accept.", nameof(TagList));
+        }
+
+        if (tags.Any(tag => tag.Length > MaxTagLength))
+        {
+            throw new ArgumentException($"INaturalistOptions.TagList has a tag longer than {MaxTagLength} characters, which iNaturalist does not accept.", nameof(TagList));
         }
     }
 

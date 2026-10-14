@@ -153,6 +153,76 @@ public class INaturalistPublisherTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void Constructor_TagListOverTheLimits_Throws(bool oneLongTag)
+    {
+        // One tag over 255 characters, or 8 x 99 + 7 x 2 = 806 characters in total.
+        var tags = oneLongTag ? "bat," + new string('t', 256) : string.Join(",", Enumerable.Repeat(new string('t', 99), 8));
+        var options = new INaturalistOptions { ClientId = "c", TagList = tags };
+
+        var ex = Assert.Throws<ArgumentException>(() => new INaturalistPublisher(options, new HttpClient(_http), _ => Task.FromResult("jwt")));
+
+        Assert.Equal("TagList", ex.ParamName);
+    }
+
+    [Fact]
+    public void Constructor_EmptyTagList_IsAccepted()
+    {
+        _ = new INaturalistPublisher(new INaturalistOptions { ClientId = "c", TagList = "" }, new HttpClient(_http), _ => Task.FromResult("jwt"));
+    }
+
+    public static TheoryData<bool, Exception> LoginFailures => new()
+    {
+        { false, new INaturalistLoginException(INaturalistLoginFailure.Denied, "Authorization was denied.") },
+        { true, new INaturalistLoginException(INaturalistLoginFailure.TimedOut, "Nobody logged in.") },
+        { true, new PlatformNotSupportedException("The token store cannot save a login.") },
+        { false, new HttpRequestException("Network down.") },
+    };
+
+    [Theory]
+    [MemberData(nameof(LoginFailures))]
+    public async Task Publish_LoginFails_FailsAndStopsTheRun(bool commit, Exception failure)
+    {
+        var publisher = new INaturalistPublisher(TestData.Options(), new HttpClient(_http), _ => throw failure);
+
+        var result = await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = commit });
+
+        Assert.Equal(PublishStatus.Failed, result.Status);
+        Assert.True(result.StopsRun);
+        Assert.Same(failure, result.Error);
+        Assert.Contains("run stops", result.Message);
+        Assert.Empty(_http.Requests);
+    }
+
+    [Fact]
+    public async Task Publish_LoginCancelledByTheCaller_IsCancelledAndDoesNotMarkTheRunAsStopped()
+    {
+        using var cts = new CancellationTokenSource();
+        var publisher = new INaturalistPublisher(TestData.Options(), new HttpClient(_http), ct =>
+        {
+            cts.Cancel();
+            throw new OperationCanceledException(cts.Token);
+        });
+
+        var result = await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions(), cts.Token);
+
+        Assert.Equal(PublishStatus.Cancelled, result.Status);
+        Assert.False(result.StopsRun);
+    }
+
+    [Fact]
+    public async Task Publish_FailureAfterTheLogin_DoesNotStopTheRun()
+    {
+        _http.On("GET /v2/taxa/autocomplete", HttpStatusCode.ServiceUnavailable, "busy");
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions());
+
+        Assert.Equal(PublishStatus.Failed, result.Status);
+        Assert.False(result.StopsRun);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task Publish_EntryINaturalistRefuses_IsSkippedBeforeLoginAndAnyRequest(bool commit)
     {
         var loggedIn = false;

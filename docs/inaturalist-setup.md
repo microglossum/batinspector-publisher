@@ -131,25 +131,17 @@ undocumented in the official API reference.
 ### When the login fails during a run
 
 The publisher asks the authenticator for a token for every candidate, after the adapter's own checks and before the first
-request, in a dry run too. If no usable login is stored, that call starts the browser login inside `RunAsync`. When the login
-does not finish (the user clicks Deny: `Denied`; nobody completes it within `AuthorizationTimeout`: `TimedOut`; no port can be
-opened: `ListenerUnavailable`), that candidate ends as `Failed`, with the `INaturalistLoginException` in `PublishResult.Error`
-and its text in `Message`. The run goes on: the next candidate starts a new browser login and waits again, up to
-`AuthorizationTimeout` (default 5 minutes) each. A file of 50 entries and a user who denies access can open the browser 50 times.
-A token store that cannot save (see [Token storage](#token-storage)) fails every candidate the same way with a
-`PlatformNotSupportedException`, without opening the browser.
+request, in a dry run too. If no usable login is stored, that call starts the browser login inside `RunAsync`. When no token
+can be obtained (the user clicks Deny: `Denied`; nobody completes the login within `AuthorizationTimeout`: `TimedOut`; no port
+can be opened: `ListenerUnavailable`; the token store cannot save, see [Token storage](#token-storage); a network error during
+the token exchange), that candidate ends as `Failed`, with the exception in `PublishResult.Error` and its text in `Message`,
+and **the run stops there**: every following candidate would fail the same way. The candidates not yet started get no result,
+and `RunReport.IsComplete` is false. The next run tries the login again.
 
-What a host should do:
-
-1. Log in before the run. Call `LoginAsync()` from a "connect to iNaturalist" button, or check `HasStoredToken` before
-   `RunAsync` and call `LoginAsync()` when it is false. A failed `LoginAsync()` throws to the host, which can show the reason.
-2. Stop the run when a result's `Error` is an `INaturalistLoginException`: cancel the `CancellationToken` passed to `RunAsync`
-   from the `progress` callback. The run then stops before the next candidate, the candidates not started get no result, and
-   `RunReport.IsComplete` is false. `Progress<T>` calls its handler asynchronously (on the captured synchronization context or the thread pool), so one more
-   candidate may start; an `IProgress<PublishResult>` of your own that cancels inside `Report` stops at once.
-
-Step 2 still matters with a stored login: if the user has revoked the access on iNaturalist, the renewal is rejected and the
-run falls back to the browser login.
+What a host should do: log in before the run. Call `LoginAsync()` from a "connect to iNaturalist" button, or check
+`HasStoredToken` before `RunAsync` and call `LoginAsync()` when it is false. A failed `LoginAsync()` throws to the host, which
+can show the reason. This matters with a stored login too: if the user has revoked the access on iNaturalist, the renewal is
+rejected and the run falls back to the browser login.
 
 ## Token storage
 
@@ -226,7 +218,7 @@ iNaturalist's open source and forum, not from an official reference, and are not
 | Longitude | a number from -180 to 180 |
 | Position | not exactly 0, 0 |
 | Species name (`species_guess`) | at most 255 characters |
-| `INaturalistOptions.TagList` | at most 750 characters in total, at most 255 per tag |
+| `INaturalistOptions.TagList` | at most 750 characters in total, at most 255 per tag; checked when the publisher is created (`ArgumentException`), since it would reject every entry |
 
 Some rows are the platform-neutral checks of the input file (see `docs/input-format.md`), which `ExportOrchestrator` runs on
 every candidate before the publisher sees it. The entry rules come first: if one fails, the result is
@@ -289,7 +281,7 @@ repeated; the candidate ends as `Failed` and a re-run completes it. On slow line
 | `INaturalistLoginException`, `Reason` = `ListenerUnavailable`, on login | Port in use and no fallback port could be opened, see [Port 45679](#port-45679). |
 | iNaturalist error page after clicking Authorize | The registered redirect URI differs from `INaturalistOptions.RedirectUri`. |
 | `INaturalistLoginException`, `Reason` = `TimedOut`, on login | Nobody completed the browser login within `AuthorizationTimeout`. |
-| One candidate after another ends as `Failed` with an `INaturalistLoginException` in `Error`, and the browser opens again each time | No login was stored and the browser login inside the run was denied or timed out. Log in before the run and cancel it on the first such result, see [When the login fails during a run](#when-the-login-fails-during-a-run). |
+| The run stops after one `Failed` result with an `INaturalistLoginException` in `Error` | No login was stored and the browser login inside the run was denied or timed out. Log in before the run, see [When the login fails during a run](#when-the-login-fails-during-a-run). |
 | `PlatformNotSupportedException` when logging in or saving the token | Not Windows. The check runs before the browser opens. Pass `allowPlaintextOnNonWindows: true` (file mode `0600`, protects against other local users only) or supply your own `INaturalistTokenStore`. |
 | Login asked again although you logged in before | The token file could not be read (corrupt, or encrypted by another Windows user); a warning is logged and the file is replaced by the next login. See [Token storage](#token-storage). |
 | `Failed` with `429` or `Retry-After` in `INaturalistApiException` | iNaturalist throttled the run. Raise `MinRequestInterval`, set `MaxAttempts` to 3, see [Request rate and retries](#request-rate-and-retries); run again later, the next run completes what was left. |

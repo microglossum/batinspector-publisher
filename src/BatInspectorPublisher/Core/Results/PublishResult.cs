@@ -140,4 +140,10 @@ public sealed record PublishResult
 
     /// <summary>For <see cref="PublishStatus.Failed"/> and <see cref="PublishStatus.Cancelled"/>: the stage that was interrupted, if known.</summary>
     public PublishStep? InterruptedStep { get; init; }
+
+    /// <summary>
+    /// Set by a publisher on a <see cref="PublishStatus.Failed"/> result whose cause would fail every following candidate the
+    /// same way (for example the login); the orchestrator then stops the run.
+    /// </summary>
+    internal bool StopsRun { get; init; }
 }

@@ -182,6 +182,26 @@ public class ExportOrchestratorTests : IDisposable
         Assert.Empty(publisher.Calls);
     }
 
+    [Fact]
+    public async Task RunAsync_ResultThatStopsTheRun_EndsTheRunAfterIt()
+    {
+        var publisher = new FakePublisher((c, _, _) => new PublishResult
+        {
+            Candidate = c,
+            PlatformId = "fake",
+            Status = PublishStatus.Failed,
+            Message = "Login denied.",
+            StopsRun = true,
+        });
+        var document = new InputDocument(1, [Candidate("A a"), Candidate("B b")]);
+
+        var report = await new ExportOrchestrator(publisher).RunAsync(document, new PublishOptions());
+
+        Assert.Equal("A a", report.Results.Single().Candidate.ScientificName);
+        Assert.Single(publisher.Calls);
+        Assert.False(report.IsComplete);
+    }
+
     private sealed class FixedTime(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;

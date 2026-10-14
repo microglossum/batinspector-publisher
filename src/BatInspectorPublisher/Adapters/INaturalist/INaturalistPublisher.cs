@@ -51,6 +51,7 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
     /// The timeout of <paramref name="httpClient"/> (default 100 s) also limits the evidence uploads, which are never
     /// repeated after a timeout; on slow lines pass a client with a larger timeout.
     /// </remarks>
+    /// <exception cref="ArgumentException"><see cref="INaturalistOptions.TagList"/> exceeds iNaturalist's limits, or a retry or pacing option is out of range.</exception>
     public INaturalistPublisher(
         INaturalistOptions options,
         HttpClient httpClient,
@@ -68,6 +69,7 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         TimeProvider? time = null,
         Func<TimeSpan, CancellationToken, Task>? delay = null)
     {
+        options.ValidateForPublishing();
         _options = options;
         _time = time ?? TimeProvider.System;
         _logger = logger ?? NullLogger.Instance;
@@ -113,6 +115,13 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         catch (Exception ex)
         {
             // Includes an OperationCanceledException that is not the caller's, such as an HttpClient timeout.
+            if (state.SigningIn)
+            {
+                return Result(PublishStatus.Failed,
+                    ex.Message + " Without a login nothing can be published, so the run stops here.", ex, state.Step) with
+                { StopsRun = true };
+            }
+
             return Result(PublishStatus.Failed, ex.Message + state.Partial(), ex, state.Step);
         }
 
@@ -152,7 +161,10 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
             return new Done(rejection.Status, rejection.Message);
         }
 
+        // A login that fails here would fail (and may open the browser) for every following candidate: it stops the run.
+        state.SigningIn = true;
         var jwt = await _getAccessToken(ct);
+        state.SigningIn = false;
 
         var lookup = await ResolveTaxonAsync(candidate.ScientificName, jwt, ct);
         if (lookup.Taxon is not { } taxon)
@@ -253,6 +265,7 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
     private sealed class PublishState
     {
         public PublishStep Step { get; set; } = PublishStep.Preparation;
+        public bool SigningIn { get; set; }
         public string? TaxonName { get; set; }
         public string? Description { get; set; }
         public string? ObservationId { get; set; }

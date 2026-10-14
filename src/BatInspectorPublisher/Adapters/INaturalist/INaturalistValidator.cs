@@ -25,8 +25,6 @@ namespace BatInspectorPublisher.Adapters.INaturalist;
 internal static class INaturalistValidator
 {
     private const int MaxTextLength = 255;
-    private const int MaxTagListLength = 750;
-    private const int MaxTagLength = 255;
     private const int MaxAgeYears = 130;
 
     /// <summary>Why a candidate must not be published, as the status and the English message the result carries.</summary>
@@ -35,7 +33,7 @@ internal static class INaturalistValidator
     /// <summary>Returns null when the candidate and its evidence pass; otherwise every problem found, in one rejection.</summary>
     public static Rejection? Validate(ObservationCandidate candidate, EvidenceFiles evidence, INaturalistOptions options, DateTimeOffset now)
     {
-        var entry = EntryProblems(candidate, options, now);
+        var entry = EntryProblems(candidate, now);
         if (entry.Count > 0)
         {
             return new(PublishStatus.SkippedInvalidEntry, "iNaturalist would reject this entry: " + string.Join(" ", entry));
@@ -47,7 +45,7 @@ internal static class INaturalistValidator
             : null;
     }
 
-    private static List<string> EntryProblems(ObservationCandidate candidate, INaturalistOptions options, DateTimeOffset now)
+    private static List<string> EntryProblems(ObservationCandidate candidate, DateTimeOffset now)
     {
         var problems = new List<string>();
 
@@ -66,17 +64,6 @@ internal static class INaturalistValidator
         if (candidate.ScientificName.Length > MaxTextLength)
         {
             problems.Add($"The species name is longer than {MaxTextLength} characters.");
-        }
-
-        var tags = options.TagList.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        if (string.Join(", ", tags).Length > MaxTagListLength)
-        {
-            problems.Add($"INaturalistOptions.TagList is longer than {MaxTagListLength} characters.");
-        }
-
-        if (tags.Any(tag => tag.Length > MaxTagLength))
-        {
-            problems.Add($"INaturalistOptions.TagList has a tag longer than {MaxTagLength} characters.");
         }
 
         return problems;

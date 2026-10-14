@@ -31,8 +31,10 @@ public sealed partial class ExportOrchestrator
     }
 
     /// <summary>
-    /// Publishes all candidates in order and returns one result per candidate that was started. One failing candidate
-    /// never stops the run.
+    /// Publishes all candidates in order and returns one result per candidate that was started. A candidate that fails for
+    /// its own reasons does not stop the run. A failure that would repeat for every candidate (the platform login could not
+    /// be completed) stops it after that candidate's <see cref="PublishStatus.Failed"/> result, like a cancellation: the
+    /// candidates not yet started get no result, and the next run tries again.
     /// Cancellation does not throw: the run stops and returns the results so far, so nothing that was
     /// already published is lost. A candidate interrupted mid-way is the last result, with status
     /// <see cref="PublishStatus.Cancelled"/> and whatever was already created; candidates not yet started get no result.
@@ -74,7 +76,7 @@ public sealed partial class ExportOrchestrator
             results.Add(result);
             progress?.Report(result);
 
-            if (result.Status == PublishStatus.Cancelled)
+            if (result.Status == PublishStatus.Cancelled || result.StopsRun)
             {
                 break;
             }

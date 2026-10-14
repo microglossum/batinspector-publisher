@@ -70,31 +70,6 @@ public class INaturalistValidatorTests
     }
 
     [Fact]
-    public void Validate_TagListOver750Characters_IsRejected()
-    {
-        var tags = string.Join(",", Enumerable.Repeat(new string('t', 99), 8)); // 8 x 99 + 7 x 2 = 806 characters
-        var result = Validate(options: new INaturalistOptions { ClientId = "c", TagList = tags });
-
-        Assert.Equal(PublishStatus.SkippedInvalidEntry, result?.Status);
-        Assert.Contains("TagList", result?.Message);
-    }
-
-    [Fact]
-    public void Validate_TagLongerThan255Characters_IsRejected()
-    {
-        var result = Validate(options: new INaturalistOptions { ClientId = "c", TagList = "bat," + new string('t', 256) });
-
-        Assert.Equal(PublishStatus.SkippedInvalidEntry, result?.Status);
-        Assert.Contains("tag longer", result?.Message);
-    }
-
-    [Fact]
-    public void Validate_EmptyTagList_Passes()
-    {
-        Assert.Null(Validate(options: new INaturalistOptions { ClientId = "c", TagList = "" }));
-    }
-
-    [Fact]
     public void Validate_EvidenceAtTheLimit_Passes()
     {
         var evidence = new EvidenceFiles(new EvidenceFile("s.png", new byte[100]), new EvidenceFile("a.wav", new byte[100]));
