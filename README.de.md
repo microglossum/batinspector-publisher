@@ -140,7 +140,7 @@ BatInspector ist Open Source ([chrmue44/BatInspector](https://github.com/chrmue4
 
 ## Ergebnisse
 
-Was welches iNaturalist-Feld erhält, die Schritte eines Laufs und was öffentlich wird: [docs/inaturalist.de.md](docs/inaturalist.de.md).
+Was welches iNaturalist-Feld erhält, die Schritte eines Laufs und was öffentlich wird: [docs/inaturalist.de.md](docs/inaturalist.de.md). Jede Anfrage, die das Paket an iNaturalist sendet, mit ihren Parametern: [docs/inaturalist-api.de.md](docs/inaturalist-api.de.md).
 
 `ExportOrchestrator.RunAsync` liefert pro Kandidat ein `PublishResult` mit einem `PublishStatus`:
 `Created`, `WouldCreate` und `WouldResume` (Probelauf), `SkippedDuplicate`, `SkippedUnresolvedTaxon`,

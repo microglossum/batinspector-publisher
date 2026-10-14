@@ -38,12 +38,12 @@ Vor dem ersten Schritt hat der Orchestrator beide Belegdateien gelesen und gepr�
 (Standard, `PublishOptions.Commit = false`) durchläuft jeden Schritt einschließlich Anmeldung, Taxonsuche und
 Duplikatprüfung und hält an, wo der erste Schreibzugriff käme. Im Probelauf wird nichts angelegt.
 
-Die Schritte verwenden diese Endpunkte von iNaturalist:
+Die Schritte verwenden diese Endpunkte von iNaturalist (jede Anfrage mit ihren Parametern steht in [inaturalist-api.de.md](inaturalist-api.de.md)):
 
 | Schritt | Anfrage |
 |---|---|
 | Taxon | `GET /v2/taxa/autocomplete` |
-| Duplikatprüfung, Fortsetzen | `GET /v1/observations` (`mine_only=true`) |
+| Duplikatprüfung, Fortsetzen | `GET /v1/observations` (eingeschränkt mit `user_id`, die aus `GET /v1/users/me` stammt) |
 | Anlegen | `POST /v2/observations` |
 | Spektrogramm | `POST /v2/observation_photos` (eine Multipart-Anfrage, die hochlädt und verknüpft) |
 | Audio | `POST /v2/observation_sounds` (ebenso) |
@@ -116,7 +116,7 @@ die Bestimmung auf iNaturalist verfeinern. `todo` und jeder andere Wert, der kei
 
 ## Erneuter Lauf: Duplikate und Fortsetzen
 
-Bevor etwas angelegt wird, fragt der Publisher iNaturalist nach **deinen eigenen** Beobachtungen (`mine_only=true`) des
+Bevor etwas angelegt wird, fragt der Publisher iNaturalist nach **deinen eigenen** Beobachtungen (`user_id`, deine numerische Nutzer-ID) des
 aufgelösten Taxons am selben Kalendertag im Umkreis von `INaturalistOptions.DuplicateCheckRadiusKm` (Standard 0,1 km = 100 m).
 
 - **Nichts gefunden:** Die Beobachtung wird angelegt.

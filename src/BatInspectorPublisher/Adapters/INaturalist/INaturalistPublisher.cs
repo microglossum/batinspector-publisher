@@ -103,8 +103,9 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
             taxonName = taxon.Name;
             var payload = BuildPayload(candidate, taxon.Id, taxon.Name);
             description = payload.Description;
+            var userId = await _api.GetAuthenticatedUserIdAsync(jwt, ct);
             var existing = await _api.FindExistingObservationsAsync(
-                taxon.Id, DateOnly.FromDateTime(candidate.ObservedAt.DateTime), candidate.Latitude, candidate.Longitude, jwt, ct);
+                taxon.Id, userId, DateOnly.FromDateTime(candidate.ObservedAt.DateTime), candidate.Latitude, candidate.Longitude, jwt, ct);
 
             string uuid;
             var resumed = false;

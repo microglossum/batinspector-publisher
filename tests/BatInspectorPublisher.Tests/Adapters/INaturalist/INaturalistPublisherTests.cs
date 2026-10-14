@@ -9,6 +9,8 @@ namespace BatInspectorPublisher.Tests.Adapters.INaturalist;
 
 public class INaturalistPublisherTests
 {
+    private const string UserProfile = """{ "results": [ { "id": 4711, "login": "bat-fan" } ] }""";
+
     private readonly StubHttpHandler _http = new();
 
     private INaturalistPublisher CreatePublisher() =>
@@ -21,6 +23,7 @@ public class INaturalistPublisherTests
     private StubHttpHandler HappyPath() => _http
         .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK,
             """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
+        .On("GET /v1/users/me", HttpStatusCode.OK, UserProfile)
         .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0, "results": [] }""")
         .On("POST /v2/observations", HttpStatusCode.OK, """{ "total_results": 1, "results": [ { "id": 123, "uuid": "uuid-1" } ] }""")
         .On("POST /v2/observation_photos", HttpStatusCode.OK, "{}")
@@ -39,7 +42,7 @@ public class INaturalistPublisherTests
         Assert.True(result.SpectrogramAttached);
         Assert.True(result.AudioAttached);
         Assert.Equal(
-            ["GET /v2/taxa/autocomplete", "GET /v1/observations", "POST /v2/observations", "POST /v2/observation_photos", "POST /v2/observation_sounds"],
+            ["GET /v2/taxa/autocomplete", "GET /v1/users/me", "GET /v1/observations", "POST /v2/observations", "POST /v2/observation_photos", "POST /v2/observation_sounds"],
             _http.Requests.Select(r => $"{r.Method} {r.Uri.AbsolutePath}"));
         Assert.All(_http.Requests, r => Assert.Equal("jwt-token", r.BearerToken));
     }
@@ -62,7 +65,7 @@ public class INaturalistPublisherTests
 
         var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions());
 
-        Assert.Equal(["GET /v2/taxa/autocomplete", "GET /v1/observations"], _http.Requests.Select(r => $"{r.Method} {r.Uri.AbsolutePath}"));
+        Assert.Equal(["GET /v2/taxa/autocomplete", "GET /v1/users/me", "GET /v1/observations"], _http.Requests.Select(r => $"{r.Method} {r.Uri.AbsolutePath}"));
         Assert.Contains("attach the spectrogram and the audio", result.Message);
         Assert.Null(result.ObservationId);
         Assert.False(result.SpectrogramAttached);
@@ -193,6 +196,7 @@ public class INaturalistPublisherTests
 
     private void ResolvesTo(string name, string rank, int id) => _http
         .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, $$"""{ "results": [ { "id": {{id}}, "name": "{{name}}", "rank": "{{rank}}" } ] }""")
+        .On("GET /v1/users/me", HttpStatusCode.OK, UserProfile)
         .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0, "results": [] }""")
         .On("POST /v2/observations", HttpStatusCode.OK, """{ "total_results": 1, "results": [ { "id": 123, "uuid": "uuid-1" } ] }""")
         .On("POST /v2/observation_photos", HttpStatusCode.OK, "{}")
@@ -282,6 +286,7 @@ public class INaturalistPublisherTests
     {
         _http
             .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
+            .On("GET /v1/users/me", HttpStatusCode.OK, UserProfile)
             .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 1, "results": [ { "id": 1 } ] }""");
 
         var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
@@ -302,7 +307,35 @@ public class INaturalistPublisherTests
         Assert.Contains("d1=2026-06-11&d2=2026-06-11", query);
         Assert.Contains("lat=50.11&lng=8.682", query);
         Assert.Contains("radius=0.1", query);
-        Assert.Contains("mine_only=true", query);
+        Assert.Contains("user_id=4711", query);
+        Assert.DoesNotContain("mine_only", query);
+    }
+
+    [Fact]
+    public async Task Publish_SeveralCandidates_AskForTheUserOnlyOncePerToken()
+    {
+        HappyPath();
+        var publisher = CreatePublisher();
+
+        await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions());
+        await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions());
+
+        Assert.Single(_http.Requests, r => r.PathAndQuery.StartsWith("/v1/users/me"));
+        Assert.Equal(2, _http.Requests.Count(r => r.PathAndQuery.StartsWith("/v1/observations")));
+    }
+
+    [Fact]
+    public async Task Publish_ProfileWithoutUserId_FailsBeforeAnythingIsSearchedOrWritten()
+    {
+        _http
+            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
+            .On("GET /v1/users/me", HttpStatusCode.OK, """{ "results": [] }""");
+
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.Failed, result.Status);
+        Assert.Contains("no user id", result.Message);
+        Assert.DoesNotContain(_http.Requests, r => r.PathAndQuery.StartsWith("/v1/observations") || r.Method == "POST");
     }
 
     [Fact]
@@ -333,6 +366,7 @@ public class INaturalistPublisherTests
     {
         _http
             .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
+            .On("GET /v1/users/me", HttpStatusCode.OK, UserProfile)
             .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0 }""")
             .On("POST /v2/observations", HttpStatusCode.OK, """{ "results": [ { "id": 123, "uuid": "uuid-1" } ] }""")
             .On("POST /v2/observation_photos", HttpStatusCode.OK, "{}")
@@ -381,6 +415,7 @@ public class INaturalistPublisherTests
         using var cts = new CancellationTokenSource();
         _http
             .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
+            .On("GET /v1/users/me", HttpStatusCode.OK, UserProfile)
             .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0 }""")
             .On("POST /v2/observations", HttpStatusCode.OK, """{ "results": [ { "id": 123, "uuid": "uuid-1" } ] }""")
             .On("POST /v2/observation_photos", HttpStatusCode.OK, "{}")
@@ -407,6 +442,7 @@ public class INaturalistPublisherTests
         using var cts = new CancellationTokenSource();
         _http
             .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
+            .On("GET /v1/users/me", HttpStatusCode.OK, UserProfile)
             .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0 }""")
             .On("POST /v2/observations", () =>
             {
@@ -439,6 +475,7 @@ public class INaturalistPublisherTests
     {
         _http
             .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
+            .On("GET /v1/users/me", HttpStatusCode.OK, UserProfile)
             .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 0 }""")
             .On("POST /v2/observations", HttpStatusCode.InternalServerError, "kaputt");
 
@@ -471,6 +508,7 @@ public class INaturalistPublisherTests
 
     private StubHttpHandler WithExisting(string searchResponse) => _http
         .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
+        .On("GET /v1/users/me", HttpStatusCode.OK, UserProfile)
         .On("GET /v1/observations", HttpStatusCode.OK, searchResponse)
         .On("POST /v2/observation_photos", HttpStatusCode.OK, "{}")
         .On("POST /v2/observation_sounds", HttpStatusCode.OK, "{}");
@@ -487,7 +525,7 @@ public class INaturalistPublisherTests
         Assert.True(result.SpectrogramAttached);
         Assert.True(result.AudioAttached);
         Assert.Equal(
-            ["GET /v2/taxa/autocomplete", "GET /v1/observations", "POST /v2/observation_sounds"],
+            ["GET /v2/taxa/autocomplete", "GET /v1/users/me", "GET /v1/observations", "POST /v2/observation_sounds"],
             _http.Requests.Select(r => $"{r.Method} {r.Uri.AbsolutePath}"));
         Assert.Contains("uuid-1", _http.Requests.Last().Body);
     }
@@ -510,6 +548,7 @@ public class INaturalistPublisherTests
     {
         _http
             .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
+            .On("GET /v1/users/me", HttpStatusCode.OK, UserProfile)
             .On("GET /v1/observations", HttpStatusCode.OK, ExistingObservations(photos: "[]", sounds: "[]"))
             .On("POST /v2/observation_photos", HttpStatusCode.InternalServerError, "kaputt");
 

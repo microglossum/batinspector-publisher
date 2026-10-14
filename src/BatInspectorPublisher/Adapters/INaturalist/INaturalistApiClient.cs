@@ -28,6 +28,7 @@ internal sealed partial class INaturalistApiClient
     private readonly TimeProvider _time;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly RequestPacer _pacer;
+    private (string Jwt, long Id)? _knownUser;
 
     /// <param name="options">Adapter configuration, including the retry and pacing settings.</param>
     /// <param name="http">HTTP client to send with.</param>
@@ -189,6 +190,27 @@ internal sealed partial class INaturalistApiClient
         return results.GetArrayLength() > 0 ? results[0].GetProperty("login").GetString() ?? "?" : "?";
     }
 
+    /// <summary>The numeric id of the user the JWT belongs to. Asked once per token; a renewed token is asked again.</summary>
+    public async Task<long> GetAuthenticatedUserIdAsync(string jwt, CancellationToken ct)
+    {
+        if (_knownUser is { } known && known.Jwt == jwt)
+        {
+            return known.Id;
+        }
+
+        var body = await SendAsync(() => NewRequest(HttpMethod.Get, $"{_options.ApiBaseUrlV1}/users/me", jwt), "Fetching the user profile", ct);
+        using var doc = JsonDocument.Parse(body);
+        var results = doc.RootElement.GetProperty("results");
+        // The profile holds personal data, so the error names no body.
+        if (results.GetArrayLength() == 0 || !results[0].TryGetProperty("id", out var idElement) || !idElement.TryGetInt64(out var id) || id <= 0)
+        {
+            throw new InvalidOperationException("The user profile response has no user id.");
+        }
+
+        _knownUser = (jwt, id);
+        return id;
+    }
+
     /// <summary>
     /// Resolves a scientific name to a taxon of the expected rank. Only an exact (case-insensitive)
     /// name match of an active taxon is accepted: silently falling back to the first autocomplete hit
@@ -227,13 +249,17 @@ internal sealed partial class INaturalistApiClient
 
     private static bool SameName(string? a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>The authenticated user's observations of this taxon on this date near these coordinates (total count plus the first page of details).</summary>
-    public async Task<ObservationsSearchResponse> FindExistingObservationsAsync(int taxonId, DateOnly date, double lat, double lon, string jwt, CancellationToken ct)
+    /// <summary>
+    /// The authenticated user's observations of this taxon on this date near these coordinates (total count plus the first page of details).
+    /// The search is restricted with <c>user_id</c>: the v1 API silently ignores <c>mine</c> and <c>mine_only</c> (seen live), which would
+    /// match other users' observations.
+    /// </summary>
+    public async Task<ObservationsSearchResponse> FindExistingObservationsAsync(int taxonId, long userId, DateOnly date, double lat, double lon, string jwt, CancellationToken ct)
     {
         var inv = CultureInfo.InvariantCulture;
         var url = $"{_options.ApiBaseUrlV1}/observations?taxon_id={taxonId}" +
                   $"&d1={date.ToString("yyyy-MM-dd", inv)}&d2={date.ToString("yyyy-MM-dd", inv)}" +
-                  $"&lat={lat.ToString(inv)}&lng={lon.ToString(inv)}&radius={_options.DuplicateCheckRadiusKm.ToString(inv)}&mine_only=true";
+                  $"&lat={lat.ToString(inv)}&lng={lon.ToString(inv)}&radius={_options.DuplicateCheckRadiusKm.ToString(inv)}&user_id={userId.ToString(inv)}";
         var body = await SendAsync(() => NewRequest(HttpMethod.Get, url, jwt), "Duplicate check", ct);
         return JsonSerializer.Deserialize<ObservationsSearchResponse>(body) ?? new ObservationsSearchResponse();
     }

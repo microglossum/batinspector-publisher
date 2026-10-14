@@ -64,7 +64,7 @@ public class INaturalistRetryTests
     private const string Sound = "POST /v2/observation_sounds";
 
     private Task<ObservationsSearchResponse> Search(INaturalistApiClient client, CancellationToken ct = default) =>
-        client.FindExistingObservationsAsync(7, new DateOnly(2026, 6, 11), 50.11, 8.682, "jwt", ct);
+        client.FindExistingObservationsAsync(7, 4711, new DateOnly(2026, 6, 11), 50.11, 8.682, "jwt", ct);
 
     private static Task Upload(INaturalistApiClient client) =>
         client.AttachSoundAsync("uuid-1", new BatInspectorPublisher.Core.Models.EvidenceFile("audio.wav", "AUDIO-BYTES"u8.ToArray()), "jwt", default);
@@ -386,6 +386,7 @@ public class INaturalistRetryTests
         Script("GET /v2/taxa/autocomplete",
             Respond(HttpStatusCode.ServiceUnavailable),
             Respond(HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }"""));
+        _http.On("GET /v1/users/me", HttpStatusCode.OK, """{ "results": [ { "id": 4711, "login": "bat-fan" } ] }""");
         _http.On(Observations, HttpStatusCode.OK, """{ "total_results": 0, "results": [] }""");
 
         var result = await Publisher(Options()).PublishAsync(TestData.Candidate(), TestData.Evidence(), new PublishOptions());
@@ -398,6 +399,7 @@ public class INaturalistRetryTests
     {
         _http
             .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
+            .On("GET /v1/users/me", HttpStatusCode.OK, """{ "results": [ { "id": 4711, "login": "bat-fan" } ] }""")
             .On(Observations, HttpStatusCode.OK, """{ "total_results": 0, "results": [] }""")
             .On(Create, HttpStatusCode.OK, """{ "results": [ { "id": 123, "uuid": "uuid-1" } ] }""")
             .On("POST /v2/observation_photos", HttpStatusCode.ServiceUnavailable, "busy");

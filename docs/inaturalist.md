@@ -37,12 +37,12 @@ Before the first step the orchestrator has read both evidence files and checked 
 `PublishOptions.Commit = false`) goes through every step including the login, the taxon search and the duplicate check, and
 stops where the first write would happen. Nothing is created in a dry run.
 
-The steps use these iNaturalist endpoints:
+The steps use these iNaturalist endpoints (every request with its parameters is listed in [inaturalist-api.md](inaturalist-api.md)):
 
 | Step | Request |
 |---|---|
 | Taxon | `GET /v2/taxa/autocomplete` |
-| Duplicate check, resume | `GET /v1/observations` (`mine_only=true`) |
+| Duplicate check, resume | `GET /v1/observations` (restricted with `user_id`, which comes from `GET /v1/users/me`) |
 | Create | `POST /v2/observations` |
 | Spectrogram | `POST /v2/observation_photos` (one multipart request that uploads and links) |
 | Audio | `POST /v2/observation_sounds` (the same way) |
@@ -112,7 +112,7 @@ identification on iNaturalist. `todo` and every other value that is not a taxon 
 
 ## Re-running: duplicates and resume
 
-Before creating anything the publisher asks iNaturalist for **your own** observations (`mine_only=true`) of the resolved
+Before creating anything the publisher asks iNaturalist for **your own** observations (`user_id`, your numeric user id) of the resolved
 taxon, on the same calendar day, within `INaturalistOptions.DuplicateCheckRadiusKm` (default 0.1 km = 100 m).
 
 - **Nothing found:** the observation is created.
