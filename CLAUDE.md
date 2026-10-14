@@ -60,6 +60,7 @@ Flow: BatInspector's export file is read into candidates (one reference recordin
 
 - Code, comments, exceptions, logs, tests: English. User-visible content posted to a platform (the observation description) is German and built in the adapter.
 - Docs are Markdown. User-facing docs are bilingual: English is the source (`README.md`, `docs/*.md`), German is `*.de.md`; change both together. Small files (`CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`) hold both languages in one file.
+- Every `await` in `src/` uses `.ConfigureAwait(false)` (host is a UI app; `CA2007` is a warning there, so CI fails on a miss). Tests do not need it.
 - Library code never writes to the console. Use `ILogger` (optional, NullLogger default) and structured results.
 - Never log tokens or token-bearing response bodies.
 - Public API is minimal and fully XML-documented; wire models and API clients stay `internal`.

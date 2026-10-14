@@ -6,28 +6,11 @@ using BatInspectorPublisher.Adapters.INaturalist;
 
 namespace BatInspectorPublisher.Tests.Adapters.INaturalist;
 
-public class OAuthFlowTests
+public class OAuthFlowTests : LoginTestBase
 {
     private static string NewRedirectUri() => $"http://127.0.0.1:{TestData.FreeTcpPort()}/callback";
 
     private static string TokenJson => """{ "access_token": "oauth-access", "refresh_token": "oauth-refresh" }""";
-
-    /// <summary>A "browser" that follows the authorize URL by calling the redirect URI back.</summary>
-    private static AuthorizationPrompt Browser(Func<System.Collections.Specialized.NameValueCollection, string> callbackQuery, Action<Uri>? onUrl = null) =>
-        (url, ct) =>
-        {
-            onUrl?.Invoke(url);
-            var query = HttpUtility.ParseQueryString(url.Query);
-            var callback = $"{query["redirect_uri"]}?{callbackQuery(query)}";
-            // Fire the redirect after the prompt returns, like a real browser would.
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(50, CancellationToken.None);
-                using var client = new HttpClient();
-                await client.GetAsync(callback, CancellationToken.None);
-            }, CancellationToken.None);
-            return Task.CompletedTask;
-        };
 
     [Fact]
     public async Task Authorize_HappyPath_SendsPkceParametersAndExchangesCode()
@@ -161,9 +144,8 @@ public class OAuthFlowTests
         {
             var state = HttpUtility.ParseQueryString(url.Query)["state"];
             var root = new Uri(redirect).GetLeftPart(UriPartial.Authority);
-            _ = Task.Run(async () =>
+            Track(async () =>
             {
-                await Task.Delay(50, CancellationToken.None);
                 using var client = new HttpClient();
                 foreach (var stray in new[] { "/", "/favicon.ico", "/callback?code=x&state=forged", "/callback?state=" + state })
                 {
@@ -171,7 +153,7 @@ public class OAuthFlowTests
                 }
 
                 await client.GetAsync($"{root}/callback?code=the-code&state={state}", CancellationToken.None);
-            }, CancellationToken.None);
+            });
             return Task.CompletedTask;
         });
 

@@ -106,12 +106,12 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         var state = new PublishState();
         try
         {
-            var plan = await PlanAsync(candidate, evidence, state, ct);
+            var plan = await PlanAsync(candidate, evidence, state, ct).ConfigureAwait(false);
             var outcome = plan switch
             {
                 Done done => done,
                 WritePlan write when !options.Commit => new Done(write.DryRunStatus, write.DryRunMessage),
-                WritePlan write => await ExecuteAsync(candidate, evidence, write, state, ct),
+                WritePlan write => await ExecuteAsync(candidate, evidence, write, state, ct).ConfigureAwait(false),
                 _ => throw new InvalidOperationException($"Unknown plan {plan.GetType().Name}."),
             };
             return Result(outcome.Status, outcome.Message);
@@ -170,10 +170,10 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
 
         // A login that fails here would fail (and may open the browser) for every following candidate: it stops the run.
         state.SigningIn = true;
-        state.Jwt = await _getAccessToken(ct);
+        state.Jwt = await _getAccessToken(ct).ConfigureAwait(false);
         state.SigningIn = false;
 
-        var lookup = await CallAsync(state, jwt => ResolveTaxonAsync(candidate.ScientificName, jwt, ct), ct);
+        var lookup = await CallAsync(state, jwt => ResolveTaxonAsync(candidate.ScientificName, jwt, ct), ct).ConfigureAwait(false);
         if (lookup.Taxon is not { } taxon)
         {
             return new Done(PublishStatus.SkippedUnresolvedTaxon, lookup.Problem!);
@@ -182,9 +182,9 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         state.TaxonName = taxon.Name;
         var payload = BuildPayload(candidate, taxon.Id, taxon.Name);
         state.Description = payload.Description;
-        var userId = await CallAsync(state, jwt => _api.GetAuthenticatedUserIdAsync(jwt, ct), ct);
+        var userId = await CallAsync(state, jwt => _api.GetAuthenticatedUserIdAsync(jwt, ct), ct).ConfigureAwait(false);
         var existing = await CallAsync(state, jwt => _api.FindExistingObservationsAsync(
-            taxon.Id, userId, DateOnly.FromDateTime(candidate.ObservedAt.DateTime), candidate.Latitude, candidate.Longitude, jwt, ct), ct);
+            taxon.Id, userId, DateOnly.FromDateTime(candidate.ObservedAt.DateTime), candidate.Latitude, candidate.Longitude, jwt, ct), ct).ConfigureAwait(false);
 
         if (existing.TotalResults == 0)
         {
@@ -224,7 +224,7 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         else
         {
             state.Step = PublishStep.CreateObservation;
-            var created = await CallAsync(state, jwt => _api.CreateObservationAsync(((CreatePlan)plan).Payload, jwt, ct), ct);
+            var created = await CallAsync(state, jwt => _api.CreateObservationAsync(((CreatePlan)plan).Payload, jwt, ct), ct).ConfigureAwait(false);
             uuid = created.Uuid;
             (state.ObservationId, state.Url) = Identify(created.Id, created.Uuid);
             // Logged at once: if anything after this fails, this line is the trail to the observation.
@@ -234,14 +234,14 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         if (!state.PhotoAttached)
         {
             state.Step = PublishStep.AttachSpectrogram;
-            await CallAsync(state, jwt => _api.AttachPhotoAsync(uuid, evidence.Spectrogram, jwt, ct), ct);
+            await CallAsync(state, jwt => _api.AttachPhotoAsync(uuid, evidence.Spectrogram, jwt, ct), ct).ConfigureAwait(false);
             state.PhotoAttached = true;
         }
 
         if (!state.SoundAttached)
         {
             state.Step = PublishStep.AttachAudio;
-            await CallAsync(state, jwt => _api.AttachSoundAsync(uuid, evidence.Audio, jwt, ct), ct);
+            await CallAsync(state, jwt => _api.AttachSoundAsync(uuid, evidence.Audio, jwt, ct), ct).ConfigureAwait(false);
             state.SoundAttached = true;
         }
 
@@ -259,23 +259,23 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
     {
         try
         {
-            return await request(state.Jwt!);
+            return await request(state.Jwt!).ConfigureAwait(false);
         }
         catch (INaturalistApiException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized && !state.TokenRenewed)
         {
             LogTokenRejected(_logger);
             state.TokenRenewed = true;
             state.SigningIn = true;
-            state.Jwt = await _renewAccessToken(state.Jwt!, ct);
+            state.Jwt = await _renewAccessToken(state.Jwt!, ct).ConfigureAwait(false);
             state.SigningIn = false;
-            return await request(state.Jwt);
+            return await request(state.Jwt).ConfigureAwait(false);
         }
     }
 
     private Task CallAsync(PublishState state, Func<string, Task> request, CancellationToken ct) =>
         CallAsync(state, async jwt =>
         {
-            await request(jwt);
+            await request(jwt).ConfigureAwait(false);
             return true;
         }, ct);
 
@@ -342,13 +342,13 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
     {
         if (BroaderTaxa.TryGetValue(name, out var broader))
         {
-            return await _api.ResolveTaxonAsync(broader.Name, broader.Rank, jwt, ct, Bats);
+            return await _api.ResolveTaxonAsync(broader.Name, broader.Rank, jwt, ct, Bats).ConfigureAwait(false);
         }
 
         var rank = ScientificName.WordCount(name) switch { 1 => "genus", 2 => "species", _ => null };
         return rank is null
             ? new TaxonLookup(null, $"'{name}' is neither a species (two words) nor a genus (one word) name.")
-            : await _api.ResolveTaxonAsync(name, rank, jwt, ct, Bats);
+            : await _api.ResolveTaxonAsync(name, rank, jwt, ct, Bats).ConfigureAwait(false);
     }
 
     private static (string? Id, string? Url) Identify(long id, string uuid) => id != 0

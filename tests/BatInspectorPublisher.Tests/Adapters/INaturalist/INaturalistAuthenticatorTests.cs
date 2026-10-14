@@ -3,7 +3,7 @@ using BatInspectorPublisher.Adapters.INaturalist;
 
 namespace BatInspectorPublisher.Tests.Adapters.INaturalist;
 
-public class INaturalistAuthenticatorTests
+public class INaturalistAuthenticatorTests : LoginTestBase
 {
     private readonly StubHttpHandler _http = new();
     private readonly InMemoryTokenStore _store = new();
@@ -55,18 +55,7 @@ public class INaturalistAuthenticatorTests
             .On("GET /users/api_token", HttpStatusCode.OK, """{ "api_token": "login-jwt" }""")
             .On("GET /v1/users/me", HttpStatusCode.OK, """{ "results": [ { "login": "bat-fan" } ] }""");
         var prompted = false;
-        var auth = Create((url, ct) =>
-        {
-            prompted = true;
-            var state = System.Web.HttpUtility.ParseQueryString(url.Query)["state"];
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(50);
-                using var client = new HttpClient();
-                await client.GetAsync($"{redirect}?code=c&state={state}");
-            });
-            return Task.CompletedTask;
-        }, TestData.Options(redirect));
+        var auth = Create(Browser(onUrl: _ => prompted = true), TestData.Options(redirect));
 
         var jwt = await auth.EnsureAuthenticatedAsync();
 
@@ -142,17 +131,7 @@ public class INaturalistAuthenticatorTests
             .On("GET /users/api_token", HttpStatusCode.OK, """{ "api_token": "fresh-jwt" }""")
             .On("GET /v1/users/me", HttpStatusCode.OK, """{ "results": [ { "login": "bat-fan" } ] }""");
         var http = new HttpClient(new RejectBearer(_http, "revoked-oauth"));
-        var auth = new INaturalistAuthenticator(TestData.Options(redirect), http, _store, (url, ct) =>
-        {
-            var state = System.Web.HttpUtility.ParseQueryString(url.Query)["state"];
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(50);
-                using var client = new HttpClient();
-                await client.GetAsync($"{redirect}?code=c&state={state}");
-            });
-            return Task.CompletedTask;
-        });
+        var auth = new INaturalistAuthenticator(TestData.Options(redirect), http, _store, Browser());
 
         Assert.Equal("fresh-jwt", await auth.EnsureAuthenticatedAsync());
         Assert.Equal("new-oauth", _store.Token!.OAuthAccessToken);
@@ -196,17 +175,7 @@ public class INaturalistAuthenticatorTests
             .On("GET /users/api_token", HttpStatusCode.OK, """{ "api_token": "fresh-jwt" }""")
             .On("GET /v1/users/me", HttpStatusCode.OK, """{ "results": [ { "login": "bat-fan" } ] }""");
         var failingHttp = new HttpClient(new FailFirstTokenCall(_http, () => tokenCalls++));
-        var auth = new INaturalistAuthenticator(TestData.Options(redirect), failingHttp, _store, (url, ct) =>
-        {
-            var state = System.Web.HttpUtility.ParseQueryString(url.Query)["state"];
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(50);
-                using var client = new HttpClient();
-                await client.GetAsync($"{redirect}?code=c&state={state}");
-            });
-            return Task.CompletedTask;
-        });
+        var auth = new INaturalistAuthenticator(TestData.Options(redirect), failingHttp, _store, Browser());
 
         Assert.Equal("fresh-jwt", await auth.EnsureAuthenticatedAsync());
         Assert.Equal(2, tokenCalls);
@@ -285,17 +254,7 @@ public class INaturalistAuthenticatorTests
             .On("POST /oauth/token", HttpStatusCode.OK, """{ "access_token": "oauth" }""")
             .On("GET /users/api_token", HttpStatusCode.OK, """{ "api_token": "login-jwt" }""")
             .On("GET /v1/users/me", HttpStatusCode.OK, """{ "results": [ { "login": "bat-fan" } ] }""");
-        var auth = Create((url, ct) =>
-        {
-            var state = System.Web.HttpUtility.ParseQueryString(url.Query)["state"];
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(50);
-                using var client = new HttpClient();
-                await client.GetAsync($"{redirect}?code=c&state={state}");
-            });
-            return Task.CompletedTask;
-        }, TestData.Options(redirect));
+        var auth = Create(Browser(), TestData.Options(redirect));
 
         var username = await auth.LoginAsync();
 

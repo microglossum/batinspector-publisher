@@ -63,7 +63,7 @@ public sealed partial class ExportOrchestrator
                 break;
             }
 
-            var result = await PublishOneAsync(candidate, options, ct);
+            var result = await PublishOneAsync(candidate, options, ct).ConfigureAwait(false);
             if (result.Status == PublishStatus.Failed)
             {
                 LogCandidateFailed(_logger, result.Error, result.PlatformId, candidate.ScientificName, candidate.ObservedAt, result.Message);
@@ -100,7 +100,7 @@ public sealed partial class ExportOrchestrator
         IProgress<PublishResult>? progress = null,
         CancellationToken ct = default)
     {
-        var results = await RunAsync(document.Candidates, options, progress, ct);
+        var results = await RunAsync(document.Candidates, options, progress, ct).ConfigureAwait(false);
         return new RunReport
         {
             Rejected = document.Rejected,
@@ -143,7 +143,7 @@ public sealed partial class ExportOrchestrator
                 candidate = candidate with { ScientificName = name };
             }
 
-            var evidence = await EvidenceLoader.LoadAsync(candidate, ct);
+            var evidence = await EvidenceLoader.LoadAsync(candidate, ct).ConfigureAwait(false);
             if (evidence.Files is null)
             {
                 return new PublishResult
@@ -156,7 +156,7 @@ public sealed partial class ExportOrchestrator
             }
 
             evidenceLoaded = true;
-            return await _publisher.PublishAsync(candidate, evidence.Files, options, ct);
+            return await _publisher.PublishAsync(candidate, evidence.Files, options, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

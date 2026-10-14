@@ -44,14 +44,6 @@ or one that may be deleted afterwards) before anything is released. What stubs c
 - A WAV over the limit has no automatic way out; see whether BatInspector can export a shorter or resampled copy.
 - The evidence files are read completely into memory before the size is checked. Fine for one candidate at a time; revisit only if memory becomes a problem.
 
-### Hardening before the first release
-
-- **`ConfigureAwait(false)` on every `await` in `src/`.** The host is a Windows desktop app: without it every continuation returns to the UI thread (JSON parsing and upload preparation run there), and a host that blocks on `.Result`/`.Wait()` from the UI thread deadlocks. Enforce it with `CA2007` as a warning for the library project only (not the tests), so CI keeps it. `IProgress<T>` still reaches the UI through `Progress<T>`.
-
-### Tests
-
-- **The login tests must not be able to hang.** `TestData.Options` keeps the default `AuthorizationTimeout` of 5 minutes, and the fake browsers in `INaturalistAuthenticatorTests` (three copies) and `LoggingTests` call the configured redirect URI fire-and-forget. If the port is taken again before the listener binds (parallel tests), `OAuthFlow` correctly falls back to another port, the fake browser still calls the old one, and the test waits out the 5 minutes. Use one shared fake browser that reads `redirect_uri` from the authorize URL (`OAuthFlowTests.Browser` already does), set a 10 s timeout in the test options, and await the browser task at the end of each test.
-
 ### Test the Windows-only code (DPAPI) without a Windows machine
 
 `ProtectedFileTokenStore` uses DPAPI on Windows; the `[WindowsOnlyFact]` test (`Save_OnWindows_EncryptsTheFile`) is skipped on Linux. The CI matrix has a Windows leg, so every push is covered; what is missing is a local check before pushing. Options:
@@ -144,4 +136,3 @@ Blocked: there is no public API documentation, so the auth and submission model 
 - Confirm BatInspector's license is compatible with MIT; add NOTICE if a dependency requires it.
 - JSON Schema file for the input format and a contract test, if BatInspector produces the file.
 - Deprecation policy for schema changes.
-- Merge the two `GET /v1/users/me` calls in `INaturalistApiClient` (username and user id) into one parse.

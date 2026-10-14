@@ -52,6 +52,42 @@ internal sealed record RecordedRequest(string Method, Uri Uri, string? BearerTok
     public string PathAndQuery => Uri.PathAndQuery;
 }
 
+/// <summary>
+/// Base for tests that run the interactive login. <see cref="Browser"/> is the one fake browser: it reads <c>redirect_uri</c>
+/// from the authorize URL (the login may fall back to another port) and calls it back. Every redirect is awaited when the test
+/// ends, so a redirect that went nowhere fails the test instead of leaving it waiting for the login timeout.
+/// </summary>
+public abstract class LoginTestBase : IAsyncLifetime
+{
+    private readonly List<Task> _redirects = [];
+
+    /// <summary>A "browser" that follows the authorize URL by calling the redirect URI back with <paramref name="callbackQuery"/>.</summary>
+    protected AuthorizationPrompt Browser(Func<System.Collections.Specialized.NameValueCollection, string>? callbackQuery = null, Action<Uri>? onUrl = null) =>
+        (url, ct) =>
+        {
+            onUrl?.Invoke(url);
+            var query = System.Web.HttpUtility.ParseQueryString(url.Query);
+            var callback = $"{query["redirect_uri"]}?{(callbackQuery ?? (q => $"code=c&state={q["state"]}"))(query)}";
+            Track(async () =>
+            {
+                using var client = new HttpClient();
+                await client.GetAsync(callback, CancellationToken.None);
+            });
+            return Task.CompletedTask;
+        };
+
+    /// <summary>Runs <paramref name="action"/> after the prompt returned, like a real browser would, and awaits it at the end of the test.</summary>
+    protected void Track(Func<Task> action) => _redirects.Add(Task.Run(async () =>
+    {
+        await Task.Delay(50, CancellationToken.None);
+        await action();
+    }, CancellationToken.None));
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync() => await Task.WhenAll(_redirects);
+}
+
 internal sealed class InMemoryTokenStore : INaturalistTokenStore
 {
     public INaturalistToken? Token { get; set; }
@@ -103,6 +139,8 @@ internal static class TestData
         // No pacing, so no test waits; retrying is off by default. The retry tests opt in.
         MinRequestInterval = TimeSpan.Zero,
         AllowAnyRequestInterval = true,
+        // A login that is never completed must end the test soon, not after the default 5 minutes.
+        AuthorizationTimeout = TimeSpan.FromSeconds(10),
     };
 
     public static ObservationCandidate Candidate(string? comment = null, string? spectrogram = null, string? audio = null) => new()

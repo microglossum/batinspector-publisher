@@ -28,7 +28,7 @@ internal sealed partial class INaturalistApiClient
     private readonly TimeProvider _time;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly RequestPacer _pacer;
-    private (string Jwt, long Id)? _knownUser;
+    private (string Jwt, UserProfile Profile)? _knownUser;
 
     /// <param name="options">Adapter configuration, including the retry and pacing settings.</param>
     /// <param name="http">HTTP client to send with.</param>
@@ -83,7 +83,7 @@ internal sealed partial class INaturalistApiClient
     {
         for (var attempt = 1; ; attempt++)
         {
-            await _pacer.WaitAsync(ct);
+            await _pacer.WaitAsync(ct).ConfigureAwait(false);
 
             using var request = createRequest();
             var isRead = request.Method == HttpMethod.Get;
@@ -91,8 +91,8 @@ internal sealed partial class INaturalistApiClient
             TimeSpan? retryAfter = null;
             try
             {
-                using var response = await _http.SendAsync(request, ct);
-                var body = await response.Content.ReadAsStringAsync(ct);
+                using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+                var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
                 if (_logger.IsEnabled(LogLevel.Debug))
                 {
                     var shown = !logBody ? "(not logged)" : body.Length > MaxLoggedBodyLength ? body[..MaxLoggedBodyLength] + "... (truncated)" : body;
@@ -124,7 +124,7 @@ internal sealed partial class INaturalistApiClient
             }
 
             LogRetrying(_logger, operation, Describe(failure), attempt, _options.MaxAttempts, wait.Value);
-            await _delay(wait.Value, ct);
+            await _delay(wait.Value, ct).ConfigureAwait(false);
         }
     }
 
@@ -175,41 +175,44 @@ internal sealed partial class INaturalistApiClient
     /// <summary>Exchanges a raw OAuth access token for the JWT the REST API accepts.</summary>
     public async Task<string> ExchangeOAuthTokenForJwtAsync(string oauthAccessToken, CancellationToken ct)
     {
-        var body = await SendAsync(() => NewRequest(HttpMethod.Get, _options.ApiTokenExchangeUrl, oauthAccessToken), "OAuth token to JWT exchange", ct, logBody: false);
+        var body = await SendAsync(() => NewRequest(HttpMethod.Get, _options.ApiTokenExchangeUrl, oauthAccessToken), "OAuth token to JWT exchange", ct, logBody: false).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(body);
         return doc.RootElement.TryGetProperty("api_token", out var token) && token.GetString() is { Length: > 0 } jwt
             ? jwt
             : throw new InvalidOperationException("The token exchange response contains no api_token.");
     }
 
-    public async Task<string> GetAuthenticatedUsernameAsync(string jwt, CancellationToken ct)
-    {
-        var body = await SendAsync(() => NewRequest(HttpMethod.Get, $"{_options.ApiBaseUrlV1}/users/me", jwt), "Fetching the user profile", ct);
-        using var doc = JsonDocument.Parse(body);
-        var results = doc.RootElement.GetProperty("results");
-        return results.GetArrayLength() > 0 ? results[0].GetProperty("login").GetString() ?? "?" : "?";
-    }
+    public async Task<string> GetAuthenticatedUsernameAsync(string jwt, CancellationToken ct) =>
+        (await GetProfileAsync(jwt, ct).ConfigureAwait(false)).Username;
 
-    /// <summary>The numeric id of the user the JWT belongs to. Asked once per token; a renewed token is asked again.</summary>
-    public async Task<long> GetAuthenticatedUserIdAsync(string jwt, CancellationToken ct)
+    /// <summary>The numeric id of the user the JWT belongs to.</summary>
+    public async Task<long> GetAuthenticatedUserIdAsync(string jwt, CancellationToken ct) =>
+        (await GetProfileAsync(jwt, ct).ConfigureAwait(false)).Id
+        // The profile holds personal data, so the error names no body.
+        ?? throw new InvalidOperationException("The user profile response has no user id.");
+
+    /// <summary>Asked once per token (login and duplicate check share it); a renewed token is asked again.</summary>
+    private async Task<UserProfile> GetProfileAsync(string jwt, CancellationToken ct)
     {
         if (_knownUser is { } known && known.Jwt == jwt)
         {
-            return known.Id;
+            return known.Profile;
         }
 
-        var body = await SendAsync(() => NewRequest(HttpMethod.Get, $"{_options.ApiBaseUrlV1}/users/me", jwt), "Fetching the user profile", ct);
+        var body = await SendAsync(() => NewRequest(HttpMethod.Get, $"{_options.ApiBaseUrlV1}/users/me", jwt), "Fetching the user profile", ct).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(body);
         var results = doc.RootElement.GetProperty("results");
-        // The profile holds personal data, so the error names no body.
-        if (results.GetArrayLength() == 0 || !results[0].TryGetProperty("id", out var idElement) || !idElement.TryGetInt64(out var id) || id <= 0)
-        {
-            throw new InvalidOperationException("The user profile response has no user id.");
-        }
+        var profile = results.GetArrayLength() == 0
+            ? new UserProfile("?", null)
+            : new UserProfile(
+                results[0].TryGetProperty("login", out var login) ? login.GetString() ?? "?" : "?",
+                results[0].TryGetProperty("id", out var idElement) && idElement.TryGetInt64(out var id) && id > 0 ? id : null);
 
-        _knownUser = (jwt, id);
-        return id;
+        _knownUser = (jwt, profile);
+        return profile;
     }
+
+    private sealed record UserProfile(string Username, long? Id);
 
     /// <summary>
     /// Resolves a scientific name to a taxon of the expected rank. Only an exact (case-insensitive)
@@ -226,7 +229,7 @@ internal sealed partial class INaturalistApiClient
         string scientificName, string expectedRank, string jwt, CancellationToken ct, (string Name, string Rank)? within = null)
     {
         var url = $"{_options.ApiBaseUrlV2}/taxa/autocomplete?q={Uri.EscapeDataString(scientificName)}&fields=id,name,rank,is_active,matched_term,ancestor_ids";
-        var body = await SendAsync(() => NewRequest(HttpMethod.Get, url, jwt), "Taxon search", ct);
+        var body = await SendAsync(() => NewRequest(HttpMethod.Get, url, jwt), "Taxon search", ct).ConfigureAwait(false);
         var results = JsonSerializer.Deserialize<TaxaAutocompleteResponse>(body)?.Results ?? [];
 
         var exact = results.Where(t => SameName(t.Name, scientificName) && t.IsActive != false).ToList();
@@ -234,7 +237,7 @@ internal sealed partial class INaturalistApiClient
 
         if (ofRank.Count > 0 && within is { } group && !SameName(group.Name, scientificName))
         {
-            var anchor = await ResolveTaxonAsync(group.Name, group.Rank, jwt, ct);
+            var anchor = await ResolveTaxonAsync(group.Name, group.Rank, jwt, ct).ConfigureAwait(false);
             if (anchor.Taxon is not { } groupTaxon)
             {
                 return new TaxonLookup(null, $"'{scientificName}' cannot be confirmed as a member of {group.Name}: {anchor.Problem}");
@@ -285,7 +288,7 @@ internal sealed partial class INaturalistApiClient
         var url = $"{_options.ApiBaseUrlV1}/observations?taxon_id={taxonId}" +
                   $"&d1={date.ToString("yyyy-MM-dd", inv)}&d2={date.ToString("yyyy-MM-dd", inv)}" +
                   $"&lat={lat.ToString(inv)}&lng={lon.ToString(inv)}&radius={_options.DuplicateCheckRadiusKm.ToString(inv)}&user_id={userId.ToString(inv)}";
-        var body = await SendAsync(() => NewRequest(HttpMethod.Get, url, jwt), "Duplicate check", ct);
+        var body = await SendAsync(() => NewRequest(HttpMethod.Get, url, jwt), "Duplicate check", ct).ConfigureAwait(false);
         return JsonSerializer.Deserialize<ObservationsSearchResponse>(body) ?? new ObservationsSearchResponse();
     }
 
@@ -294,7 +297,7 @@ internal sealed partial class INaturalistApiClient
         var json = JsonSerializer.Serialize(new CreateObservationRequest { Observation = payload }, SerializerOptions);
         var body = await SendAsync(
             () => NewRequest(HttpMethod.Post, $"{_options.ApiBaseUrlV2}/observations", jwt, new StringContent(json, Encoding.UTF8, "application/json")),
-            "Creating the observation", ct);
+            "Creating the observation", ct).ConfigureAwait(false);
 
         var observation = JsonSerializer.Deserialize<CreateObservationResponse>(body)?.Results.FirstOrDefault()
             ?? throw new InvalidOperationException($"Empty response when creating the observation: {body}");
@@ -330,6 +333,6 @@ internal sealed partial class INaturalistApiClient
             content.Add(new StringContent(observationUuid), idField);
             content.Add(new ByteArrayContent(file.Content), "file", file.FileName);
             return NewRequest(HttpMethod.Post, url, jwt, content);
-        }, operation, ct);
+        }, operation, ct).ConfigureAwait(false);
     }
 }

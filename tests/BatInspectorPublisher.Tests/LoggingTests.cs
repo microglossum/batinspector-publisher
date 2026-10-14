@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace BatInspectorPublisher.Tests;
 
 /// <summary>What the library logs is a contract for hosts: stable event IDs, a level policy and no secrets.</summary>
-public class LoggingTests
+public class LoggingTests : LoginTestBase
 {
     private static List<LoggerMessageAttribute> EventDefinitions() => typeof(ExportOrchestrator).Assembly.GetTypes()
         .SelectMany(t => t.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
@@ -113,17 +113,7 @@ public class LoggingTests
             .On("GET /v1/users/me", HttpStatusCode.OK, """{ "results": [ { "login": "bat-fan" } ] }""");
         var logger = new CapturingLogger();
         var redirect = $"http://127.0.0.1:{TestData.FreeTcpPort()}/callback";
-        var auth = new INaturalistAuthenticator(TestData.Options(redirect), new HttpClient(http), new InMemoryTokenStore(), (url, ct) =>
-        {
-            var state = System.Web.HttpUtility.ParseQueryString(url.Query)["state"];
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(50);
-                using var client = new HttpClient();
-                await client.GetAsync($"{redirect}?code=c&state={state}");
-            });
-            return Task.CompletedTask;
-        }, new CapturingLogger<INaturalistAuthenticator>(logger));
+        var auth = new INaturalistAuthenticator(TestData.Options(redirect), new HttpClient(http), new InMemoryTokenStore(), Browser(), new CapturingLogger<INaturalistAuthenticator>(logger));
 
         await auth.EnsureAuthenticatedAsync();
 

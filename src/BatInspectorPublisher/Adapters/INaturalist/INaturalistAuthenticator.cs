@@ -62,10 +62,10 @@ public sealed partial class INaturalistAuthenticator
     /// <returns>The iNaturalist login of the authorized user. The tokens are kept in the token store only.</returns>
     public async Task<string> LoginAsync(CancellationToken ct = default)
     {
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            return (await LoginCoreAsync(ct)).Username!;
+            return (await LoginCoreAsync(ct).ConfigureAwait(false)).Username!;
         }
         finally
         {
@@ -79,7 +79,7 @@ public sealed partial class INaturalistAuthenticator
     /// </summary>
     internal async Task<string> EnsureAuthenticatedAsync(CancellationToken ct = default)
     {
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             var stored = _store.Load();
@@ -88,7 +88,7 @@ public sealed partial class INaturalistAuthenticator
                 return stored.AccessToken;
             }
 
-            return await RenewCoreAsync(stored, ct);
+            return await RenewCoreAsync(stored, ct).ConfigureAwait(false);
         }
         finally
         {
@@ -103,7 +103,7 @@ public sealed partial class INaturalistAuthenticator
     /// </summary>
     internal async Task<string> RenewAsync(string rejectedToken, CancellationToken ct)
     {
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             var stored = _store.Load();
@@ -112,7 +112,7 @@ public sealed partial class INaturalistAuthenticator
                 return stored.AccessToken;
             }
 
-            return await RenewCoreAsync(stored, ct);
+            return await RenewCoreAsync(stored, ct).ConfigureAwait(false);
         }
         finally
         {
@@ -132,7 +132,7 @@ public sealed partial class INaturalistAuthenticator
         {
             try
             {
-                var jwt = await _api.ExchangeOAuthTokenForJwtAsync(oauthToken, ct);
+                var jwt = await _api.ExchangeOAuthTokenForJwtAsync(oauthToken, ct).ConfigureAwait(false);
                 return SaveRenewed(stored, jwt, oauthToken, stored.RefreshToken).AccessToken;
             }
             catch (INaturalistApiException ex) when (ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
@@ -145,8 +145,8 @@ public sealed partial class INaturalistAuthenticator
         {
             try
             {
-                var refreshed = await _flow.RefreshAsync(refreshToken, ct);
-                var jwt = await _api.ExchangeOAuthTokenForJwtAsync(refreshed.AccessToken, ct);
+                var refreshed = await _flow.RefreshAsync(refreshToken, ct).ConfigureAwait(false);
+                var jwt = await _api.ExchangeOAuthTokenForJwtAsync(refreshed.AccessToken, ct).ConfigureAwait(false);
                 // Some servers omit refresh_token when it did not rotate: keep the old one.
                 return SaveRenewed(stored, jwt, refreshed.AccessToken, refreshed.RefreshToken ?? stored.RefreshToken).AccessToken;
             }
@@ -156,7 +156,7 @@ public sealed partial class INaturalistAuthenticator
             }
         }
 
-        return (await LoginCoreAsync(ct)).AccessToken;
+        return (await LoginCoreAsync(ct).ConfigureAwait(false)).AccessToken;
     }
 
     /// <summary>Forgets the stored login.</summary>
@@ -185,9 +185,9 @@ public sealed partial class INaturalistAuthenticator
                 "The token store cannot save a login, so signing in would be pointless. For ProtectedFileTokenStore on a non-Windows platform pass allowPlaintextOnNonWindows: true, or supply your own INaturalistTokenStore.");
         }
 
-        var oauth = await _flow.AuthorizeAsync(ct);
-        var jwt = await _api.ExchangeOAuthTokenForJwtAsync(oauth.AccessToken, ct);
-        var username = await _api.GetAuthenticatedUsernameAsync(jwt, ct);
+        var oauth = await _flow.AuthorizeAsync(ct).ConfigureAwait(false);
+        var jwt = await _api.ExchangeOAuthTokenForJwtAsync(oauth.AccessToken, ct).ConfigureAwait(false);
+        var username = await _api.GetAuthenticatedUsernameAsync(jwt, ct).ConfigureAwait(false);
         var token = new INaturalistToken
         {
             AccessToken = jwt,

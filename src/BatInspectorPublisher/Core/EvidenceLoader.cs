@@ -15,13 +15,13 @@ internal static class EvidenceLoader
 
     public static async Task<Outcome> LoadAsync(ObservationCandidate candidate, CancellationToken ct)
     {
-        var png = await ReadAsync(candidate.SpectrogramPath, "spectrogram", EvidenceKind.Spectrogram, ct);
+        var png = await ReadAsync(candidate.SpectrogramPath, "spectrogram", EvidenceKind.Spectrogram, ct).ConfigureAwait(false);
         if (png.Problem is not null)
         {
             return Rejected(png);
         }
 
-        var wav = await ReadAsync(candidate.AudioPath, "audio", EvidenceKind.Audio, ct);
+        var wav = await ReadAsync(candidate.AudioPath, "audio", EvidenceKind.Audio, ct).ConfigureAwait(false);
         if (wav.Problem is not null)
         {
             return Rejected(wav);
@@ -42,7 +42,7 @@ internal static class EvidenceLoader
         byte[] content;
         try
         {
-            content = await File.ReadAllBytesAsync(path, ct);
+            content = await File.ReadAllBytesAsync(path, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

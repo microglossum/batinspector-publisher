@@ -69,8 +69,8 @@ internal sealed partial class OAuthFlow
         string code;
         try
         {
-            await _prompt(authorizeUrl, timeout.Token);
-            code = await WaitForAuthorizationCodeAsync(listener, state, timeout.Token);
+            await _prompt(authorizeUrl, timeout.Token).ConfigureAwait(false);
+            code = await WaitForAuthorizationCodeAsync(listener, state, timeout.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -82,7 +82,7 @@ internal sealed partial class OAuthFlow
             listener.Stop();
         }
 
-        return await ExchangeCodeForTokenAsync(code, codeVerifier, redirectUri, ct);
+        return await ExchangeCodeForTokenAsync(code, codeVerifier, redirectUri, ct).ConfigureAwait(false);
     }
 
     public Task<OAuthTokenResponse> RefreshAsync(string refreshToken, CancellationToken ct) =>
@@ -110,8 +110,8 @@ internal sealed partial class OAuthFlow
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, _options.OAuthTokenUrl) { Content = new FormUrlEncodedContent(form) };
-        using var response = await _http.SendAsync(request, ct);
-        var body = await response.Content.ReadAsStringAsync(ct);
+        using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         LogTokenRequest(_logger, _options.OAuthTokenUrl, form["grant_type"], (int)response.StatusCode);
         if (!response.IsSuccessStatusCode)
         {
@@ -138,7 +138,7 @@ internal sealed partial class OAuthFlow
             HttpListenerContext context;
             try
             {
-                context = await listener.GetContextAsync();
+                context = await listener.GetContextAsync().ConfigureAwait(false);
             }
             catch (Exception) when (ct.IsCancellationRequested)
             {
@@ -165,7 +165,7 @@ internal sealed partial class OAuthFlow
             var buffer = Encoding.UTF8.GetBytes(html);
             context.Response.ContentType = "text/html; charset=utf-8";
             context.Response.ContentLength64 = buffer.Length;
-            await context.Response.OutputStream.WriteAsync(buffer, ct);
+            await context.Response.OutputStream.WriteAsync(buffer, ct).ConfigureAwait(false);
             context.Response.Close();
 
             return granted

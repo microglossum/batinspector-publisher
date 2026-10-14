@@ -256,4 +256,28 @@ public class INaturalistApiClientTests
         Assert.Equal(HttpStatusCode.Unauthorized, ex.StatusCode);
         Assert.Equal("bad token", ex.ResponseBody);
     }
+
+    [Fact]
+    public async Task UserProfile_IsAskedOncePerToken_ForUsernameAndId()
+    {
+        _http.On("GET /v1/users/me", HttpStatusCode.OK, """{ "results": [ { "login": "bat-fan", "id": 42 } ] }""");
+        var client = Client();
+
+        Assert.Equal("bat-fan", await client.GetAuthenticatedUsernameAsync("jwt", default));
+        Assert.Equal(42, await client.GetAuthenticatedUserIdAsync("jwt", default));
+        Assert.Single(_http.Requests);
+
+        await client.GetAuthenticatedUserIdAsync("renewed-jwt", default);
+        Assert.Equal(2, _http.Requests.Count);
+    }
+
+    [Fact]
+    public async Task UserProfile_WithoutId_StillGivesTheUsernameButNoId()
+    {
+        _http.On("GET /v1/users/me", HttpStatusCode.OK, """{ "results": [ { "login": "bat-fan" } ] }""");
+        var client = Client();
+
+        Assert.Equal("bat-fan", await client.GetAuthenticatedUsernameAsync("jwt", default));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.GetAuthenticatedUserIdAsync("jwt", default));
+    }
 }

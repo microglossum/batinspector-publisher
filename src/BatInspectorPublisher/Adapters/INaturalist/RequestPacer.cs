@@ -27,7 +27,7 @@ internal sealed class RequestPacer
             return;
         }
 
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             if (_lastStart is { } last)
@@ -35,7 +35,7 @@ internal sealed class RequestPacer
                 var remaining = _minInterval - _time.GetElapsedTime(last);
                 if (remaining > TimeSpan.Zero)
                 {
-                    await _delay(remaining, ct);
+                    await _delay(remaining, ct).ConfigureAwait(false);
                 }
             }
 
