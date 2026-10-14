@@ -6,11 +6,13 @@ namespace BatInspectorPublisher.Core.Validation;
 
 /// <summary>The values of one entry that <see cref="EntryValidator"/> judges. Each is null when it could not be read.</summary>
 internal readonly record struct EntryValues(
-    DateTimeOffset? ObservedAt, double? Latitude, double? Longitude, string? SpectrogramPath, string? AudioPath)
+    string? ScientificName, DateTimeOffset? ObservedAt, string? TimeZoneId, double? Latitude, double? Longitude,
+    string? SpectrogramPath, string? AudioPath)
 {
     /// <summary>The values of a candidate that was built in code instead of read from a file.</summary>
     public static EntryValues From(ObservationCandidate candidate) =>
-        new(candidate.ObservedAt, candidate.Latitude, candidate.Longitude, candidate.SpectrogramPath, candidate.AudioPath);
+        new(candidate.ScientificName, candidate.ObservedAt, candidate.TimeZoneId, candidate.Latitude, candidate.Longitude,
+            candidate.SpectrogramPath, candidate.AudioPath);
 }
 
 /// <summary>
@@ -34,6 +36,12 @@ internal static class EntryValidator
     public static List<ValidationIssue> ValidateValues(EntryValues values, DateTimeOffset now)
     {
         var issues = new List<ValidationIssue>();
+        if (values.ScientificName is { } name && string.IsNullOrWhiteSpace(name))
+        {
+            issues.Add(new(nameof(EntryValues.ScientificName), "Required."));
+        }
+
+        CheckZone(values.ObservedAt, values.TimeZoneId, issues);
         CheckCoordinate(values.Latitude, nameof(EntryValues.Latitude), 90, issues);
         CheckCoordinate(values.Longitude, nameof(EntryValues.Longitude), 180, issues);
         CheckEvidencePath(values.SpectrogramPath, nameof(EntryValues.SpectrogramPath), ".png", issues);
@@ -52,6 +60,13 @@ internal static class EntryValidator
 
         return issues;
     }
+
+    /// <summary>
+    /// The platform-neutral checks on what a publisher puts on a platform, for a publisher called without the
+    /// orchestrator. The evidence paths are left out: a publisher gets the evidence already loaded.
+    /// </summary>
+    public static List<ValidationIssue> ValidateForPublishing(ObservationCandidate candidate, DateTimeOffset now) =>
+        ValidateValues(EntryValues.From(candidate) with { SpectrogramPath = null, AudioPath = null }, now);
 
     /// <summary>
     /// Air temperatures (°C) a recorder can plausibly measure. Sensors report error codes such as -127 or 85 that fall
@@ -106,8 +121,7 @@ internal static class EntryValidator
 
         if (scientificName is not null)
         {
-            var words = scientificName.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
-            if (words > 2)
+            if (ScientificName.WordCount(scientificName) > 2)
             {
                 warnings.Add(new(nameof(ObservationCandidate.ScientificName),
                     $"'{scientificName}' is neither a genus nor a binomial species name; it will not resolve to a taxon."));
@@ -140,11 +154,42 @@ internal static class EntryValidator
 
     private static void CheckCoordinate(double? value, string name, double limit, List<ValidationIssue> issues)
     {
-        if (value is { } v && Math.Abs(v) > limit)
+        if (value is { } n && !double.IsFinite(n))
+        {
+            issues.Add(new(name, $"{n.ToString(CultureInfo.InvariantCulture)} is not a number of degrees."));
+        }
+        else if (value is { } v && Math.Abs(v) > limit)
         {
             issues.Add(new(name, $"{v.ToString(CultureInfo.InvariantCulture)} is outside the range -{limit} to {limit}."));
         }
     }
+
+    /// <summary>
+    /// The zone must be known, and the offset of the time must be the zone's offset at that instant: platforms and the
+    /// description show the local time, which is only right when both agree. The reader builds the time from the zone,
+    /// so this can only fail for a candidate built in code.
+    /// </summary>
+    private static void CheckZone(DateTimeOffset? observedAt, string? zoneId, List<ValidationIssue> issues)
+    {
+        if (zoneId is null)
+        {
+            return;
+        }
+
+        if (BerlinTime.TryFindZone(zoneId) is not { } zone)
+        {
+            issues.Add(new(nameof(EntryValues.TimeZoneId), $"'{zoneId}' is not a known time zone. Use an IANA id such as Europe/Berlin."));
+            return;
+        }
+
+        if (observedAt is { } at && zone.GetUtcOffset(at.UtcDateTime) is var expected && expected != at.Offset)
+        {
+            issues.Add(new(nameof(EntryValues.ObservedAt),
+                $"The offset {Offset(at.Offset)} does not match {zoneId}, which is at {Offset(expected)} at that instant."));
+        }
+    }
+
+    private static string Offset(TimeSpan offset) => $"UTC{(offset < TimeSpan.Zero ? "-" : "+")}{offset:hh\\:mm}";
 
     /// <summary>
     /// Evidence paths are uploaded to a public service, so they must be explicit: absolute (never resolved against the

@@ -37,6 +37,10 @@ public sealed partial class ExportOrchestrator
     /// already published is lost. A candidate interrupted mid-way is the last result, with status
     /// <see cref="PublishStatus.Cancelled"/> and whatever was already created; candidates not yet started get no result.
     /// Check <paramref name="ct"/> to tell a cancelled run from a finished one.
+    /// <para>
+    /// A candidate built in code is checked like an entry of the input file and its name normalized as the reader does;
+    /// the result then carries the normalized candidate.
+    /// </para>
     /// </summary>
     /// <param name="candidates">Candidates to publish.</param>
     /// <param name="options">Publish options (dry run unless <see cref="PublishOptions.Commit"/> is set).</param>
@@ -128,6 +132,13 @@ public sealed partial class ExportOrchestrator
                     Status = PublishStatus.SkippedInvalidEntry,
                     Message = string.Join("; ", issues),
                 };
+            }
+
+            // The reader normalizes names from a file; one built in code may differ in case or spacing.
+            var name = ScientificName.Normalize(candidate.ScientificName);
+            if (name != candidate.ScientificName)
+            {
+                candidate = candidate with { ScientificName = name };
             }
 
             var evidence = await EvidenceLoader.LoadAsync(candidate, ct);

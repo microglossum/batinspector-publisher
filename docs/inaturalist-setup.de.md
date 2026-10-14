@@ -225,16 +225,19 @@ Open-Source-Code und dem Forum von iNaturalist, nicht aus einer offiziellen Refe
 | Regel | Grenze |
 |---|---|
 | Dateigröße (Spektrogramm und Audio, jeweils) | 20 MB (`INaturalistOptions.MaxEvidenceBytes`, Standard 20.000.000 Byte) |
-| Beobachtungsdatum | nicht nach morgen (UTC), nicht älter als 130 Jahre. Verglichen wird der Kalendertag der Aufnahme in ihrer eigenen Ortszeit mit dem aktuellen UTC-Datum: Er darf höchstens einen Tag danach liegen. |
+| Beobachtungsdatum | nicht in der Zukunft (ein Zeitpunkt nach jetzt, wie bei der Eingabedatei), nicht älter als 130 Jahre |
 | Breitengrad | eine Zahl größer als -90 und kleiner als 90 |
 | Längengrad | eine Zahl von -180 bis 180 |
 | Position | nicht genau 0, 0 |
 | Artname (`species_guess`) | höchstens 255 Zeichen |
 | `INaturalistOptions.TagList` | höchstens 750 Zeichen insgesamt, höchstens 255 pro Tag |
 
-Die Regeln für den Eintrag kommen zuerst: Scheitert eine, ist das Ergebnis `SkippedInvalidEntry`, und die Dateigrößen werden noch
-nicht geprüft. Die Datumsregel fängt nur ab, was keine Zeitzone erlaubt. iNaturalist lehnt außerdem ein Datum nach dem heutigen Tag in
-der Zeitzone des Kontos ab, die das Paket nicht kennt; eine solche Anfrage scheitert mit der Meldung von iNaturalist.
+Einige Zeilen sind die plattformneutralen Prüfungen der Eingabedatei (siehe `docs/input-format.de.md`); der Publisher führt sie
+ebenfalls aus, sodass auch ein Host, der ihn ohne `ExportOrchestrator` aufruft, sie bekommt. Die Regeln für den Eintrag kommen
+zuerst: Scheitert eine, ist das Ergebnis `SkippedInvalidEntry`, und die Dateigrößen werden noch nicht geprüft.
+iNaturalist lehnt außerdem ein Datum nach dem heutigen Tag in der Zeitzone des Kontos ab, die das Paket nicht kennt. Eine Aufnahme,
+die nicht in der Zukunft liegt, kann diese Regel nur verletzen, wenn ihre eigene Zeitzone der des Kontos voraus ist; eine solche
+Anfrage scheitert mit der Meldung von iNaturalist.
 
 Unverändert akzeptiert: PNG-Fotos (iNaturalist skaliert sie auf 2048 Pixel an der längsten Seite) und WAV-Töne
 (unverändert gespeichert; iNaturalist akzeptiert auch MP3 und M4A, das Eingabeformat kennt aber nur `.wav`).

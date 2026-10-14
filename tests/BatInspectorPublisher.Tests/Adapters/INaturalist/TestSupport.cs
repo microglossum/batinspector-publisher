@@ -85,6 +85,16 @@ internal sealed class UnixOnlyFactAttribute : FactAttribute
 
 internal static class TestData
 {
+    /// <summary>Id of Chiroptera in the stubbed taxa responses.</summary>
+    public const int BatsId = 7;
+
+    /// <summary>
+    /// One autocomplete answer for every taxon query of a candidate: the stub does not look at <c>q</c>, so the answer
+    /// holds both the species and Chiroptera, which every taxon must lie under.
+    /// </summary>
+    public const string PipistrellusTaxa =
+        """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species", "ancestor_ids": [1, 7, 98] }, { "id": 7, "name": "Chiroptera", "rank": "order", "ancestor_ids": [1] } ] }""";
+
     public static INaturalistOptions Options(string? redirectUri = null) => new()
     {
         ClientId = "test-client",

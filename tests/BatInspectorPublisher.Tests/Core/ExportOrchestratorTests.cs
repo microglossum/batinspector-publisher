@@ -157,6 +157,31 @@ public class ExportOrchestratorTests : IDisposable
         Assert.Empty(publisher.Calls);
     }
 
+    [Fact]
+    public async Task RunAsync_CandidateBuiltInCode_IsPublishedWithItsNameNormalized()
+    {
+        var publisher = new FakePublisher((c, _, _) => Created(c));
+        var candidate = Candidate("eptesicus  Serotinus");
+
+        var results = await new ExportOrchestrator(publisher).RunAsync([candidate], new PublishOptions());
+
+        Assert.Equal("Eptesicus serotinus", publisher.Calls.Single().Candidate.ScientificName);
+        Assert.Equal("Eptesicus serotinus", results.Single().Candidate.ScientificName);
+    }
+
+    [Fact]
+    public async Task RunAsync_CandidateWithAnOffsetThatDoesNotMatchItsZone_IsNotPublished()
+    {
+        var publisher = new FakePublisher((c, _, _) => Created(c));
+        var candidate = Candidate("A a") with { ObservedAt = new DateTimeOffset(2026, 6, 13, 4, 0, 0, TimeSpan.Zero) };
+
+        var results = await new ExportOrchestrator(publisher).RunAsync([candidate], new PublishOptions());
+
+        Assert.Equal(PublishStatus.SkippedInvalidEntry, results.Single().Status);
+        Assert.Contains("Europe/Berlin", results.Single().Message);
+        Assert.Empty(publisher.Calls);
+    }
+
     private sealed class FixedTime(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;

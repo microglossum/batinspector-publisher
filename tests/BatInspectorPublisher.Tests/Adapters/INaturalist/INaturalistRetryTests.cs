@@ -385,7 +385,8 @@ public class INaturalistRetryTests
     {
         Script("GET /v2/taxa/autocomplete",
             Respond(HttpStatusCode.ServiceUnavailable),
-            Respond(HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }"""));
+            Respond(HttpStatusCode.OK, TestData.PipistrellusTaxa),
+            Respond(HttpStatusCode.OK, TestData.PipistrellusTaxa));
         _http.On("GET /v1/users/me", HttpStatusCode.OK, """{ "results": [ { "id": 4711, "login": "bat-fan" } ] }""");
         _http.On(Observations, HttpStatusCode.OK, """{ "total_results": 0, "results": [] }""");
 
@@ -398,7 +399,7 @@ public class INaturalistRetryTests
     public async Task Publish_ServerErrorOnTheUpload_IsNotRepeatedAndLeavesTheObservationForResume()
     {
         _http
-            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 99, "name": "Pipistrellus pipistrellus", "rank": "species" } ] }""")
+            .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, TestData.PipistrellusTaxa)
             .On("GET /v1/users/me", HttpStatusCode.OK, """{ "results": [ { "id": 4711, "login": "bat-fan" } ] }""")
             .On(Observations, HttpStatusCode.OK, """{ "total_results": 0, "results": [] }""")
             .On(Create, HttpStatusCode.OK, """{ "results": [ { "id": 123, "uuid": "uuid-1" } ] }""")

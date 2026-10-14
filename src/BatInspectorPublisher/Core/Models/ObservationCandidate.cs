@@ -12,7 +12,10 @@ public sealed record ObservationCandidate
     /// </summary>
     public int? EntryIndex { get; init; }
 
-    /// <summary>Latin species (or genus) name, normalized to binomial capitalization ("Genus species").</summary>
+    /// <summary>
+    /// Latin species (or genus) name, normalized to binomial capitalization ("Genus species"). The orchestrator normalizes
+    /// the name of a candidate built in code before publishing it.
+    /// </summary>
     public required string ScientificName { get; init; }
 
     /// <summary>Local (German) species name, if BatInspector provided one.</summary>

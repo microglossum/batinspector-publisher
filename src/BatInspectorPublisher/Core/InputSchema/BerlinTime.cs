@@ -12,9 +12,24 @@ internal static class BerlinTime
 
     private static readonly string[] ZoneIds = [DefaultZoneId, "W. Europe Standard Time"];
 
-    /// <summary>Resolves an IANA zone id named in the input file; null if the host does not know it.</summary>
+    /// <summary>
+    /// Resolves an IANA zone id; null if the host does not know it. The default zone also resolves where only its
+    /// Windows id is known, as in <see cref="FindZone"/>.
+    /// </summary>
     public static TimeZoneInfo? TryFindZone(string id)
     {
+        if (string.Equals(id, DefaultZoneId, StringComparison.Ordinal))
+        {
+            try
+            {
+                return FindZone();
+            }
+            catch (TimeZoneNotFoundException)
+            {
+                return null;
+            }
+        }
+
         try
         {
             return TimeZoneInfo.FindSystemTimeZoneById(id);

@@ -36,6 +36,10 @@ internal sealed class Taxon
     /// <summary>The name the search matched, which differs from <see cref="Name"/> when it matched a synonym.</summary>
     [JsonPropertyName("matched_term")]
     public string? MatchedTerm { get; set; }
+
+    /// <summary>Ids of all higher taxa, from the root down; null when the response does not say.</summary>
+    [JsonPropertyName("ancestor_ids")]
+    public List<int>? AncestorIds { get; set; }
 }
 
 /// <summary>Outcome of a taxon lookup: exactly one of <see cref="Taxon"/> and <see cref="Problem"/> is set.</summary>

@@ -17,4 +17,8 @@ internal static class ScientificName
 
         return string.Join(' ', words);
     }
+
+    /// <summary>Number of words, separated by any whitespace (one for a genus, two for a binomial).</summary>
+    public static int WordCount(string name) =>
+        name.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
 }

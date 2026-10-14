@@ -16,7 +16,7 @@ flowchart TD
     A["Candidate + evidence<br/>(read and checked once)"] --> B{"iNaturalist rules<br/>(date, position, size, ...)"}
     B -->|broken| S1["SkippedInvalidEntry /<br/>SkippedInvalidEvidence"]
     B -->|ok| C["Login (stored token or browser)"]
-    C --> D{"Taxon: exactly one<br/>active match?"}
+    C --> D{"Taxon: exactly one<br/>active bat match?"}
     D -->|no| S2["SkippedUnresolvedTaxon"]
     D -->|yes| E{"Own observation of this<br/>taxon, day and place?"}
     E -->|"yes, complete"| S3["SkippedDuplicate"]
@@ -89,12 +89,14 @@ description also identifies an observation as one this package created for the e
 
 Taxa are resolved **live for every candidate** with `taxa/autocomplete` and are never cached or shipped as a list. A name
 is accepted only when exactly one active taxon has exactly that name and the expected rank (two words: species; one word:
-genus). Nothing is guessed: no "first autocomplete hit", no broader taxon for a typo.
+genus), and that taxon is a bat: Chiroptera itself or a taxon below it. Chiroptera is resolved live by name as well. Nothing
+is guessed: no "first autocomplete hit", no broader taxon for a typo.
 
 | Situation | Result |
 |---|---|
 | One active taxon, name and rank match | Used. |
-| Several matches | `SkippedUnresolvedTaxon`, ambiguous (the ids are in the message). |
+| Several matches | `SkippedUnresolvedTaxon`, ambiguous (the ids are in the message). A match outside the bats does not count, so a homonym in another group does not make a bat name ambiguous. |
+| The name exists, but not under Chiroptera (or iNaturalist does not report its ancestry) | `SkippedUnresolvedTaxon`, not a bat. |
 | The name exists, but only with another rank | `SkippedUnresolvedTaxon`, wrong rank. |
 | The name is a synonym | `SkippedUnresolvedTaxon`, with the current name. Correct the input file. |
 | Not found | `SkippedUnresolvedTaxon`, not found. |

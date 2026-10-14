@@ -14,6 +14,7 @@ or one that may be deleted afterwards) before anything is released. What stubs c
 
 - A response with only a uuid and no numeric id leaves `Url` null. Check in a browser whether `https://www.inaturalist.org/observations/{uuid}` resolves (curl gets 403 from www) and use it if so.
 - `GET /v1/users/me` must carry `id` (the duplicate check sends it as `user_id`).
+- `GET /v2/taxa/autocomplete` must return `ancestor_ids` with `fields=...,ancestor_ids` (the v2 field parser accepts it and v2 hands autocomplete to v1, per the source). Without it every name is skipped as "not a bat", which fails safe but blocks all publishing.
 - Resume: the v1 search must return what resume matches on (today the `description` as sent, ignoring whitespace differences only; after the tag marker below, the `batinspector:` tag), and an upload that is not processed yet must already be listed. Otherwise the observation is deliberately left alone (`SkippedDuplicate`) and resume never triggers. Check with a real half-created observation (stop after the photo, or delete the sound in the web UI).
 - Dry run against an entry that is already published and against a half-created one: it must say `SkippedDuplicate` and `WouldResume`, and a commit run must then agree.
 - Group values (`Nyctaloid`, `Mbart`) are filed under a broader taxon, and the duplicate check treats any own species-level observation of that day and place as a duplicate. Decide whether they need a stricter match (for example by `species_guess`).
@@ -36,8 +37,8 @@ or one that may be deleted afterwards) before anything is released. What stubs c
 `INaturalistValidator` refuses what iNaturalist would reject; its rules (listed in `docs/inaturalist-setup.md`) come from iNaturalist's open source and forum and are **not yet verified live**.
 
 - Upload a real recording and a spectrogram of realistic size, then one deliberately over 20 MB (a test account or an observation that may be deleted): which status and body does v2 return, and is the real limit 20 MB or 20 MiB (`MaxEvidenceBytes` defaults to the safe 20,000,000)? Is a high sample rate (192-500 kHz) accepted, and does the observation page play it and show its spectrogram? (`local/` is off limits for Claude.)
-- Test the other rules: a date one day ahead, latitude exactly 90, a tag list over the limit. Adjust or drop a rule that iNaturalist does not enforce.
-- The server also refuses a date after today in the account's own time zone, which the validator cannot know; sending the zone (see "Times and time zones") would let the server decide.
+- Test the other rules: latitude exactly 90, a tag list over the limit. Adjust or drop a rule that iNaturalist does not enforce.
+- The server also refuses a date after today in the account's own time zone, which the validator cannot know (only reachable for a recording whose zone is ahead of the account's, since a future instant is rejected); sending the zone (see "Times and time zones") would let the server decide.
 - A WAV over the limit has no automatic way out; see whether BatInspector can export a shorter or resampled copy.
 - The evidence files are read completely into memory before the size is checked. Fine for one candidate at a time; revisit only if memory becomes a problem.
 
@@ -49,8 +50,6 @@ and whether `time_observed_at` is really rejected. Then update every page that s
 ### Input validation
 
 - The signature checks are not a full format validation (a file can start like a PNG and still be something else); decide whether that is enough.
-- Candidates built in code skip checks the file path gets. Core lets non-finite coordinates through (`Math.Abs(NaN) > limit` is false in `EntryValidator.CheckCoordinate`; today only the iNaturalist validator catches it), accepts an empty or un-normalized `ScientificName` (a double space is later rejected as "neither a species nor a genus", because the adapter splits on one space while Core splits on any whitespace), and does not check that `TimeZoneId` resolves and matches the offset of `ObservedAt`.
-  Add these to `EntryValues`, normalize the name for code-built candidates, and use one word-count helper. Comment in `INaturalistValidator` that its overlapping checks (0,0, future date) are there for direct publisher calls without the orchestrator.
 
 ### Hardening before the first release
 
@@ -77,6 +76,7 @@ Each of these is trivial now and a breaking change after 1.0:
 - Give the public enums (`PublishStatus`, `PublishStep`, `INaturalistLoginFailure`) explicit values and a sensible order (`Resumed` and `Cancelled` come after `Failed` today); needed before results are ever serialized.
 - One public type per file: `PublishOptions` (in `IObservationPublisher.cs`), `AuthorizationPrompt` (in the internal `OAuthFlow.cs`), `ProtectedFileTokenStore` (in `INaturalistTokenStore.cs`).
 - Decide whether an async `InputSchemaReader.ReadFileAsync` belongs in the API (the rest is async; the file is small).
+- Decide whether `IObservationPublisher.PublishAsync` stays callable without `ExportOrchestrator`. Today a host can call it directly with any `EvidenceFiles`, which skips the evidence checks (empty, PNG / WAV signature); the iNaturalist validator repeats Core's value checks for that path. Making the members internal (the orchestrator stays the only entry point) would remove the second path and the double check.
 
 Before 1.0 as well, documentation only:
 

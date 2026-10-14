@@ -21,7 +21,7 @@ API-Dokumentation oder dem Forum von iNaturalist abgeleitet und noch nicht im er
 | 2 | `POST /oauth/token` | www | Code gegen OAuth-Token | Einmal je Anmeldung | Live bestätigt |
 | 3 | `GET /users/api_token` | www | OAuth-Token gegen API-JWT | Anmeldung und etwa einmal täglich | Live bestätigt |
 | 4 | `GET /v1/users/me` | api | Login-Name, numerische Nutzer-ID | Anmeldung; einmal je JWT in einem Lauf | `login` live, `id` noch nicht |
-| 5 | `GET /v2/taxa/autocomplete` | api | Wissenschaftlichen Namen auflösen | Jeder Kandidat | Live bestätigt |
+| 5 | `GET /v2/taxa/autocomplete` | api | Wissenschaftlichen Namen auflösen, dann Chiroptera | Jeder Kandidat, zweimal, wenn der Name einen Treffer hat | Live bestätigt, `ancestor_ids` noch nicht |
 | 6 | `GET /v1/observations` | api | Duplikatprüfung und Fortsetzen | Jeder Kandidat | Teilweise live |
 | 7 | `POST /v2/observations` | api | Beobachtung anlegen | Nur im Commit-Lauf | Noch nicht live |
 | 8 | `POST /v2/observation_photos` | api | Spektrogramm | Nur im Commit-Lauf | Noch nicht live |
@@ -59,9 +59,11 @@ dem gespeicherten OAuth-Token erneuert.
 
 ## Taxon
 
-**5. `GET /v2/taxa/autocomplete`**, Parameter `q=<wissenschaftlicher Name>` und `fields=id,name,rank,is_active,matched_term`.
+**5. `GET /v2/taxa/autocomplete`**, Parameter `q=<wissenschaftlicher Name>` und `fields=id,name,rank,is_active,matched_term,ancestor_ids`.
 Angenommen wird nur ein exakter Treffer von `name` (Groß-/Kleinschreibung egal), der aktiv ist und den erwarteten Rang hat (Art bei
-zwei Wörtern, Gattung bei einem, die feste Tabelle für die Gruppenwerte von BatInspector). Ein Synonym wird mit dem aktuellen
+zwei Wörtern, Gattung bei einem, die feste Tabelle für die Gruppenwerte von BatInspector), und nur, wenn er eine Fledermaus ist: Hat
+der Name einen Treffer, löst eine zweite Anfrage mit `q=Chiroptera` die Ordnung nach denselben Regeln auf, und ein Treffer zählt nur,
+wenn er Chiroptera ist oder die ID von Chiroptera in `ancestor_ids` trägt. Ein Synonym wird mit dem aktuellen
 Namen gemeldet (`matched_term`), nie verwendet. Es wird nichts zwischengespeichert: Jeder Kandidat fragt neu. Inaktive Taxa liefert
 dieser Endpunkt nicht (live geprüft, 2026-10-14).
 

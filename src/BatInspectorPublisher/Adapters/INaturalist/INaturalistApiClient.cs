@@ -216,15 +216,40 @@ internal sealed partial class INaturalistApiClient
     /// name match of an active taxon is accepted: silently falling back to the first autocomplete hit
     /// would file the observation under a wrong species. A rank that is missing from the response
     /// counts as a mismatch, and so does more than one match: nothing is guessed.
+    /// <para>
+    /// With <paramref name="within"/>, only a taxon that is that taxon or lies below it counts (resolved live by the same
+    /// rules, one more request, made only when the name has a match). A match whose ancestry the response leaves out does
+    /// not count: an observation is never filed under a taxon that is not confirmed to be in the group.
+    /// </para>
     /// </summary>
-    public async Task<TaxonLookup> ResolveTaxonAsync(string scientificName, string expectedRank, string jwt, CancellationToken ct)
+    public async Task<TaxonLookup> ResolveTaxonAsync(
+        string scientificName, string expectedRank, string jwt, CancellationToken ct, (string Name, string Rank)? within = null)
     {
-        var url = $"{_options.ApiBaseUrlV2}/taxa/autocomplete?q={Uri.EscapeDataString(scientificName)}&fields=id,name,rank,is_active,matched_term";
+        var url = $"{_options.ApiBaseUrlV2}/taxa/autocomplete?q={Uri.EscapeDataString(scientificName)}&fields=id,name,rank,is_active,matched_term,ancestor_ids";
         var body = await SendAsync(() => NewRequest(HttpMethod.Get, url, jwt), "Taxon search", ct);
         var results = JsonSerializer.Deserialize<TaxaAutocompleteResponse>(body)?.Results ?? [];
 
         var exact = results.Where(t => SameName(t.Name, scientificName) && t.IsActive != false).ToList();
         var ofRank = exact.Where(t => string.Equals(t.Rank, expectedRank, StringComparison.OrdinalIgnoreCase)).DistinctBy(t => t.Id).ToList();
+
+        if (ofRank.Count > 0 && within is { } group && !SameName(group.Name, scientificName))
+        {
+            var anchor = await ResolveTaxonAsync(group.Name, group.Rank, jwt, ct);
+            if (anchor.Taxon is not { } groupTaxon)
+            {
+                return new TaxonLookup(null, $"'{scientificName}' cannot be confirmed as a member of {group.Name}: {anchor.Problem}");
+            }
+
+            var inGroup = ofRank.Where(t => t.Id == groupTaxon.Id || t.AncestorIds?.Contains(groupTaxon.Id) == true).ToList();
+            if (inGroup.Count == 0)
+            {
+                return new TaxonLookup(null,
+                    $"'{scientificName}' exists on iNaturalist (taxon ids {string.Join(", ", ofRank.Select(t => t.Id))}), but not as a member of {group.Name}.");
+            }
+
+            ofRank = inGroup;
+        }
+
         if (ofRank.Count == 1)
         {
             return new TaxonLookup(ofRank[0], null);

@@ -20,7 +20,7 @@ the API documentation or the forum and waiting for the first live test.
 | 2 | `POST /oauth/token` | www | Code for OAuth token | Once per login | Verified live |
 | 3 | `GET /users/api_token` | www | OAuth token for API JWT | Login and about once a day | Verified live |
 | 4 | `GET /v1/users/me` | api | Login name, numeric user id | Login; once per JWT in a run | `login` live, `id` not yet |
-| 5 | `GET /v2/taxa/autocomplete` | api | Resolve a scientific name | Every candidate | Verified live |
+| 5 | `GET /v2/taxa/autocomplete` | api | Resolve a scientific name, then Chiroptera | Every candidate, twice when the name has a match | Verified live, `ancestor_ids` not yet |
 | 6 | `GET /v1/observations` | api | Duplicate check and resume | Every candidate | Partly live |
 | 7 | `POST /v2/observations` | api | Create the observation | Commit run only | Not yet live |
 | 8 | `POST /v2/observation_photos` | api | Spectrogram | Commit run only | Not yet live |
@@ -55,9 +55,11 @@ from the stored OAuth token.
 
 ## Taxon
 
-**5. `GET /v2/taxa/autocomplete`**, parameters `q=<scientific name>` and `fields=id,name,rank,is_active,matched_term`.
+**5. `GET /v2/taxa/autocomplete`**, parameters `q=<scientific name>` and `fields=id,name,rank,is_active,matched_term,ancestor_ids`.
 Only an exact, case-insensitive match of `name` that is active and has the expected rank (species for two words, genus for one,
-the fixed table for BatInspector's group values) is accepted. A synonym is reported with its current name (`matched_term`), never used.
+the fixed table for BatInspector's group values) is accepted, and only when it is a bat: when the name has a match, a second
+request with `q=Chiroptera` resolves the order by the same rules, and a match counts only if it is Chiroptera or carries
+Chiroptera's id in `ancestor_ids`. A synonym is reported with its current name (`matched_term`), never used.
 Nothing is cached: every candidate asks again. Inactive taxa are not returned by this endpoint (checked live, 2026-10-14).
 
 ## Duplicate check and resume

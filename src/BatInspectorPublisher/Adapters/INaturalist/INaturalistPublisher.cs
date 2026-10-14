@@ -24,6 +24,12 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
     private readonly TimeProvider _time;
 
     /// <summary>
+    /// Every taxon this package files an observation under must be a bat: a name that matches only outside the bats
+    /// (a homonym in another group) is skipped, never published. Resolved live by name like every other taxon.
+    /// </summary>
+    private static readonly (string Name, string Rank) Bats = ("Chiroptera", "order");
+
+    /// <summary>
     /// BatInspector group and uncertain-call values that are not taxon names, and the broader taxon each is filed under.
     /// The original value stays in <c>species_guess</c> and is named in the description. Anything else that does not resolve is skipped, never
     /// filed under a guess: a typo filed under Chiroptera would be public and a corrected re-run would create a second observation.
@@ -31,9 +37,9 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
     /// </summary>
     private static readonly Dictionary<string, (string Name, string Rank)> BroaderTaxa = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["Nyctaloid"] = ("Chiroptera", "order"),
-        ["Social"] = ("Chiroptera", "order"),
-        ["?"] = ("Chiroptera", "order"),
+        ["Nyctaloid"] = Bats,
+        ["Social"] = Bats,
+        ["?"] = Bats,
         ["Mbart"] = ("Myotis", "genus"),
     };
 
@@ -220,18 +226,21 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
 
     private static bool SameName(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Species need a binomial, a genus a single word; anything else is no name this package files an observation under.</summary>
+    /// <summary>
+    /// Species need a binomial, a genus a single word; anything else is no name this package files an observation under.
+    /// Only a bat is accepted (see <see cref="Bats"/>).
+    /// </summary>
     private async Task<TaxonLookup> ResolveTaxonAsync(string name, string jwt, CancellationToken ct)
     {
         if (BroaderTaxa.TryGetValue(name, out var broader))
         {
-            return await _api.ResolveTaxonAsync(broader.Name, broader.Rank, jwt, ct);
+            return await _api.ResolveTaxonAsync(broader.Name, broader.Rank, jwt, ct, Bats);
         }
 
-        var rank = name.Split(' ').Length switch { 1 => "genus", 2 => "species", _ => null };
+        var rank = ScientificName.WordCount(name) switch { 1 => "genus", 2 => "species", _ => null };
         return rank is null
             ? new TaxonLookup(null, $"'{name}' is neither a species (two words) nor a genus (one word) name.")
-            : await _api.ResolveTaxonAsync(name, rank, jwt, ct);
+            : await _api.ResolveTaxonAsync(name, rank, jwt, ct, Bats);
     }
 
     private static (string? Id, string? Url) Identify(long id, string uuid) => id != 0

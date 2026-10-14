@@ -9,7 +9,8 @@ public class EntryValidatorTests
     private static readonly DateTimeOffset Now = new(2026, 10, 4, 12, 0, 0, TimeSpan.Zero);
 
     private static EntryValues Valid() => new(
-        new DateTimeOffset(2026, 6, 11, 21, 37, 49, TimeSpan.FromHours(2)), 50.11, 8.682, "/data/a.png", "/data/a.wav");
+        "Pipistrellus nathusii", new DateTimeOffset(2026, 6, 11, 21, 37, 49, TimeSpan.FromHours(2)), "Europe/Berlin",
+        50.11, 8.682, "/data/a.png", "/data/a.wav");
 
     private static List<string> Paths(EntryValues values) => EntryValidator.ValidateValues(values, Now).Select(i => i.Path).ToList();
 
@@ -47,6 +48,50 @@ public class EntryValidatorTests
         Assert.Equal(rejected, Paths(Valid() with { Longitude = longitude }).Contains("Longitude"));
     }
 
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void ValidateValues_NonFiniteCoordinates_AreRejected(double value)
+    {
+        Assert.Equal(["Latitude", "Longitude"], Paths(Valid() with { Latitude = value, Longitude = value }));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void ValidateValues_EmptyName_IsRejected(string name)
+    {
+        Assert.Equal(["ScientificName"], Paths(Valid() with { ScientificName = name }));
+    }
+
+    [Fact]
+    public void ValidateValues_UnknownZone_IsRejected()
+    {
+        Assert.Equal(["TimeZoneId"], Paths(Valid() with { TimeZoneId = "Europe/Atlantis" }));
+    }
+
+    [Theory]
+    [InlineData(2, false)] // CEST on 11 June
+    [InlineData(1, true)]
+    [InlineData(0, true)]
+    public void ValidateValues_OffsetThatIsNotTheZonesOffsetAtThatInstant_IsRejected(int offsetHours, bool rejected)
+    {
+        var at = new DateTimeOffset(2026, 6, 11, 21, 37, 49, TimeSpan.FromHours(offsetHours));
+
+        Assert.Equal(rejected, Paths(Valid() with { ObservedAt = at }).Contains("ObservedAt"));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void ValidateValues_RepeatedAutumnHour_AcceptsBothOffsets(int offsetHours)
+    {
+        // 25 October 2026, 02:30 exists twice in Berlin: first at UTC+2, then at UTC+1.
+        var at = new DateTimeOffset(2026, 10, 25, 2, 30, 0, TimeSpan.FromHours(offsetHours));
+
+        Assert.Empty(EntryValidator.ValidateValues(Valid() with { ObservedAt = at }, at.AddDays(1)));
+    }
+
     [Fact]
     public void ValidateValues_OnlyOneCoordinateZero_Passes()
     {
@@ -56,8 +101,8 @@ public class EntryValidatorTests
     [Fact]
     public void ValidateValues_FutureInstant_IsRejectedButNowIsNot()
     {
-        Assert.Contains("ObservedAt", Paths(Valid() with { ObservedAt = Now.AddSeconds(1) }));
-        Assert.Empty(Paths(Valid() with { ObservedAt = Now }));
+        Assert.Contains("ObservedAt", Paths(Valid() with { ObservedAt = Now.AddSeconds(1).ToOffset(TimeSpan.FromHours(2)) }));
+        Assert.Empty(Paths(Valid() with { ObservedAt = Now.ToOffset(TimeSpan.FromHours(2)) }));
     }
 
     [Theory]
@@ -76,7 +121,7 @@ public class EntryValidatorTests
     [Fact]
     public void ValidateValues_UnreadValuesAreSkippedAndEveryOtherProblemIsReported()
     {
-        var paths = Paths(new EntryValues(null, 91, null, "a.png", null));
+        var paths = Paths(new EntryValues(null, null, null, 91, null, "a.png", null));
 
         Assert.Equal(["Latitude", "SpectrogramPath"], paths);
     }

@@ -221,16 +221,19 @@ iNaturalist's open source and forum, not from an official reference, and are not
 | Rule | Limit |
 |---|---|
 | File size (spectrogram and audio, each) | 20 MB (`INaturalistOptions.MaxEvidenceBytes`, default 20,000,000 bytes) |
-| Observation date | not after tomorrow (UTC), not older than 130 years. The calendar day of the recording in its own local time is compared with the current UTC date: it must not be later than that date plus one day. |
+| Observation date | not in the future (a moment after now, as for the input file), not older than 130 years |
 | Latitude | a number greater than -90 and less than 90 |
 | Longitude | a number from -180 to 180 |
 | Position | not exactly 0, 0 |
 | Species name (`species_guess`) | at most 255 characters |
 | `INaturalistOptions.TagList` | at most 750 characters in total, at most 255 per tag |
 
-The entry rules come first: if one fails, the result is `SkippedInvalidEntry` and the file sizes are not checked yet.
-The date rule only catches what no time zone allows. iNaturalist also refuses a date after today in the time zone of the user's
-account, which the package does not know; such a request fails with iNaturalist's own message.
+Some rows are the platform-neutral checks of the input file (see `docs/input-format.md`); the publisher runs them too, so a
+host that calls it without `ExportOrchestrator` gets them as well. The entry rules come first: if one fails, the result is
+`SkippedInvalidEntry` and the file sizes are not checked yet.
+iNaturalist also refuses a date after today in the time zone of the user's account, which the package does not know. A
+recording that is not in the future can only break that rule when its own zone is ahead of the account's; such a request
+fails with iNaturalist's own message.
 
 Accepted as they are: PNG photos (iNaturalist scales them to 2048 pixels on the longest side) and WAV sounds
 (stored unchanged; MP3 and M4A are accepted by iNaturalist too, but the input format only knows `.wav`).

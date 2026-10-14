@@ -49,6 +49,78 @@ public class INaturalistApiClientTests
         return await Client().ResolveTaxonAsync(name, rank, "jwt", default);
     }
 
+    private const string Bats = """{ "id": 7, "name": "Chiroptera", "rank": "order", "ancestor_ids": [1] }""";
+
+    private async Task<TaxonLookup> ResolveBat(string name, string rank, string results)
+    {
+        _http.On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, $$"""{ "results": [ {{results}} ] }""");
+        return await Client().ResolveTaxonAsync(name, rank, "jwt", default, ("Chiroptera", "order"));
+    }
+
+    [Fact]
+    public async Task ResolveTaxon_WithinBats_AsksForTheAncestryAndAcceptsATaxonBelowChiroptera()
+    {
+        var lookup = await ResolveBat("Myotis", "genus", $$"""{ "id": 3, "name": "Myotis", "rank": "genus", "ancestor_ids": [1, 7] }, {{Bats}}""");
+
+        Assert.Equal(3, lookup.Taxon!.Id);
+        Assert.Contains("ancestor_ids", _http.Requests[0].PathAndQuery);
+        Assert.Contains("q=Chiroptera", _http.Requests[1].PathAndQuery);
+    }
+
+    [Fact]
+    public async Task ResolveTaxon_WithinBats_HomonymOutsideTheBatsIsNotAccepted()
+    {
+        var lookup = await ResolveBat("Myotis", "genus", $$"""{ "id": 3, "name": "Myotis", "rank": "genus", "ancestor_ids": [1, 50] }, {{Bats}}""");
+
+        Assert.Null(lookup.Taxon);
+        Assert.Contains("not as a member of Chiroptera", lookup.Problem);
+    }
+
+    [Fact]
+    public async Task ResolveTaxon_WithinBats_HomonymOutsideTheBatsDoesNotMakeTheBatAmbiguous()
+    {
+        var lookup = await ResolveBat("Myotis", "genus",
+            $$"""{ "id": 3, "name": "Myotis", "rank": "genus", "ancestor_ids": [1, 50] }, { "id": 4, "name": "Myotis", "rank": "genus", "ancestor_ids": [1, 7] }, {{Bats}}""");
+
+        Assert.Equal(4, lookup.Taxon!.Id);
+    }
+
+    [Fact]
+    public async Task ResolveTaxon_WithinBats_MatchWithoutAncestryIsNotAccepted()
+    {
+        var lookup = await ResolveBat("Myotis", "genus", $$"""{ "id": 3, "name": "Myotis", "rank": "genus" }, {{Bats}}""");
+
+        Assert.Null(lookup.Taxon);
+        Assert.Contains("not as a member of Chiroptera", lookup.Problem);
+    }
+
+    [Fact]
+    public async Task ResolveTaxon_WithinBats_WhenChiropteraDoesNotResolve_NothingIsAccepted()
+    {
+        var lookup = await ResolveBat("Myotis", "genus", """{ "id": 3, "name": "Myotis", "rank": "genus", "ancestor_ids": [1, 7] }""");
+
+        Assert.Null(lookup.Taxon);
+        Assert.Contains("cannot be confirmed as a member of Chiroptera", lookup.Problem);
+    }
+
+    [Fact]
+    public async Task ResolveTaxon_WithinBats_ChiropteraItselfNeedsNoSecondRequest()
+    {
+        var lookup = await ResolveBat("Chiroptera", "order", Bats);
+
+        Assert.Equal(7, lookup.Taxon!.Id);
+        Assert.Single(_http.Requests);
+    }
+
+    [Fact]
+    public async Task ResolveTaxon_WithinBats_UnknownNameNeedsNoSecondRequest()
+    {
+        var lookup = await ResolveBat("Myotis", "genus", Bats);
+
+        Assert.Null(lookup.Taxon);
+        Assert.Single(_http.Requests);
+    }
+
     [Fact]
     public async Task ResolveTaxon_MatchesNameCaseInsensitively()
     {

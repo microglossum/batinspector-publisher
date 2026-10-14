@@ -11,7 +11,11 @@ public class INaturalistValidatorTests
     private static INaturalistValidator.Rejection? Validate(ObservationCandidate? candidate = null, EvidenceFiles? evidence = null, INaturalistOptions? options = null) =>
         INaturalistValidator.Validate(candidate ?? TestData.Candidate(), evidence ?? TestData.Evidence(), options ?? TestData.Options(), Now);
 
-    private static DateTimeOffset At(int year, int month, int day) => new(year, month, day, 22, 0, 0, TimeSpan.FromHours(2));
+    private static DateTimeOffset At(int year, int month, int day)
+    {
+        var local = new DateTime(year, month, day, 22, 0, 0);
+        return new(local, TimeZoneInfo.FindSystemTimeZoneById("Europe/Berlin").GetUtcOffset(local));
+    }
 
     [Fact]
     public void Validate_ValidCandidate_Passes()
@@ -19,20 +23,22 @@ public class INaturalistValidatorTests
         Assert.Null(Validate());
     }
 
-    [Theory]
-    [InlineData(2026, 10, 5, false)] // tomorrow (UTC+1 day) is still allowed: some zone is already there
-    [InlineData(2026, 10, 6, true)]
-    [InlineData(2027, 1, 1, true)]
-    public void Validate_FutureDate_IsRejectedOnlyBeyondWhatAnyZoneAllows(int year, int month, int day, bool rejected)
+    [Fact]
+    public void Validate_PlatformNeutralChecks_RunToo()
     {
-        var result = Validate(TestData.Candidate() with { ObservedAt = At(year, month, day) });
+        // A host may call the publisher without the orchestrator; Core's checks must still apply.
+        var result = Validate(TestData.Candidate() with { ObservedAt = Now.AddMinutes(1).ToOffset(TimeSpan.FromHours(2)), Latitude = 0, Longitude = 0 });
 
-        Assert.Equal(rejected, result is not null);
-        if (result is { } r)
-        {
-            Assert.Equal(PublishStatus.SkippedInvalidEntry, r.Status);
-            Assert.Contains("in the future", r.Message);
-        }
+        Assert.Equal(PublishStatus.SkippedInvalidEntry, result?.Status);
+        Assert.Contains("in the future", result?.Message);
+        Assert.Contains("GPS", result?.Message);
+    }
+
+    [Fact]
+    public void Validate_EvidencePaths_AreNotJudged()
+    {
+        // The publisher gets the evidence already loaded; the relative test paths do not matter.
+        Assert.Null(Validate(TestData.Candidate(spectrogram: "relative.png", audio: "relative.wav")));
     }
 
     [Theory]
@@ -52,40 +58,13 @@ public class INaturalistValidatorTests
     [Theory]
     [InlineData(90)]
     [InlineData(-90)]
-    [InlineData(91)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    public void Validate_LatitudeOutsideOpenRange_IsRejected(double latitude)
+    public void Validate_LatitudeAtAPole_IsRejected(double latitude)
     {
         var result = Validate(TestData.Candidate() with { Latitude = latitude });
 
         Assert.Equal(PublishStatus.SkippedInvalidEntry, result?.Status);
+        Assert.Contains("iNaturalist would reject", result?.Message);
         Assert.Contains("Latitude", result?.Message);
-    }
-
-    [Theory]
-    [InlineData(-180, false)]
-    [InlineData(180, false)]
-    [InlineData(180.5, true)]
-    [InlineData(double.NaN, true)]
-    public void Validate_LongitudeRange_IsClosed(double longitude, bool rejected)
-    {
-        var result = Validate(TestData.Candidate() with { Longitude = longitude });
-
-        Assert.Equal(rejected, result is not null);
-        if (result is { } r)
-        {
-            Assert.Contains("Longitude", r.Message);
-        }
-    }
-
-    [Fact]
-    public void Validate_NullIsland_IsRejected()
-    {
-        var result = Validate(TestData.Candidate() with { Latitude = 0, Longitude = 0 });
-
-        Assert.Equal(PublishStatus.SkippedInvalidEntry, result?.Status);
-        Assert.Contains("0, 0", result?.Message);
     }
 
     [Fact]
@@ -179,9 +158,9 @@ public class INaturalistValidatorTests
     [Fact]
     public void Validate_SeveralEntryProblems_AreAllListed()
     {
-        var result = Validate(TestData.Candidate() with { ObservedAt = At(2030, 1, 1), Latitude = 95 });
+        var result = Validate(TestData.Candidate() with { ObservedAt = At(1890, 1, 1), Latitude = 90 });
 
-        Assert.Contains("in the future", result?.Message);
+        Assert.Contains("130 years", result?.Message);
         Assert.Contains("Latitude", result?.Message);
     }
 }

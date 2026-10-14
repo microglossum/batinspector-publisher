@@ -145,7 +145,7 @@ public static class InputSchemaReader
             var comment = OptionalString(entry, "Comment", path, entryIssues);
 
             // Reading is done; whether the values are acceptable is the validator's call.
-            foreach (var issue in EntryValidator.ValidateValues(new EntryValues(observedAt, lat, lon, png, wav), now))
+            foreach (var issue in EntryValidator.ValidateValues(new EntryValues(species, observedAt, zone?.Id, lat, lon, png, wav), now))
             {
                 entryIssues.Add(issue with { Path = $"{path}.{InputFieldName(issue.Path)}" });
             }
@@ -328,6 +328,7 @@ public static class InputSchemaReader
     private static string InputFieldName(string candidateProperty) => candidateProperty switch
     {
         nameof(ObservationCandidate.ObservedAt) => "Date",
+        nameof(ObservationCandidate.TimeZoneId) => "TimeZone",
         nameof(ObservationCandidate.ScientificName) => "SpeciesLatin",
         nameof(ObservationCandidate.TemperatureCelsius) => "Temperature",
         nameof(ObservationCandidate.HumidityPercent) => "Humidity",

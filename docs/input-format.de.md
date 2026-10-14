@@ -158,7 +158,10 @@ Zweifelhafte, das sich danach nicht mehr korrigieren lässt, ist deshalb ein Feh
 | `PathToPng` / `PathToWav` ist nicht absolut oder endet nicht auf `.png` / `.wav` | das Feld |
 
 Ein Kandidat, der im Code statt aus einer Datei gebaut wurde, wird beim Veröffentlichen von denselben Wertprüfungen beurteilt
-(`PublishStatus.SkippedInvalidEntry`).
+(`PublishStatus.SkippedInvalidEntry`). Weil er den Leser umgeht, wird er außerdem abgelehnt bei einem leeren `ScientificName`,
+einer Koordinate, die keine Zahl ist (NaN, unendlich), einer unbekannten `TimeZoneId` oder einem `ObservedAt`, dessen Offset
+nicht der Offset von `TimeZoneId` zu diesem Zeitpunkt ist. Sein `ScientificName` wird wie `SpeciesLatin` normalisiert
+(Groß-/Kleinschreibung und Leerzeichen), und das `PublishResult` enthält den normalisierten Kandidaten.
 
 ### Eintragsebene: Warnungen
 

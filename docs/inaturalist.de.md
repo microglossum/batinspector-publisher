@@ -17,7 +17,7 @@ flowchart TD
     A["Kandidat + Belege<br/>(einmal gelesen und geprüft)"] --> B{"Regeln von iNaturalist<br/>(Datum, Position, Größe, ...)"}
     B -->|verletzt| S1["SkippedInvalidEntry /<br/>SkippedInvalidEvidence"]
     B -->|ok| C["Anmeldung (gespeichertes Token oder Browser)"]
-    C --> D{"Taxon: genau ein<br/>aktiver Treffer?"}
+    C --> D{"Taxon: genau ein<br/>aktiver Fledermaus-Treffer?"}
     D -->|nein| S2["SkippedUnresolvedTaxon"]
     D -->|ja| E{"Eigene Beobachtung dieses<br/>Taxons, Tages und Ortes?"}
     E -->|"ja, vollständig"| S3["SkippedDuplicate"]
@@ -91,13 +91,15 @@ Beschreibung erkennt außerdem eine Beobachtung als eine, die dieses Paket für 
 
 Taxa werden **für jeden Kandidaten live** mit `taxa/autocomplete` aufgelöst und nie zwischengespeichert oder als Liste
 mitgeliefert. Ein Name wird nur akzeptiert, wenn genau ein aktives Taxon genau diesen Namen und den erwarteten Rang hat
-(zwei Wörter: Art; ein Wort: Gattung). Es wird nichts geraten: kein „erster Treffer der Autovervollständigung“, kein
-übergeordnetes Taxon für einen Tippfehler.
+(zwei Wörter: Art; ein Wort: Gattung), und wenn dieses Taxon eine Fledermaus ist: Chiroptera selbst oder ein Taxon darunter.
+Auch Chiroptera wird live über den Namen aufgelöst. Es wird nichts geraten: kein „erster Treffer der Autovervollständigung“,
+kein übergeordnetes Taxon für einen Tippfehler.
 
 | Situation | Ergebnis |
 |---|---|
 | Ein aktives Taxon, Name und Rang passen | Wird verwendet. |
-| Mehrere Treffer | `SkippedUnresolvedTaxon`, mehrdeutig (die IDs stehen in der Meldung). |
+| Mehrere Treffer | `SkippedUnresolvedTaxon`, mehrdeutig (die IDs stehen in der Meldung). Ein Treffer außerhalb der Fledermäuse zählt nicht, ein gleichnamiges Taxon in einer anderen Gruppe macht einen Fledermausnamen also nicht mehrdeutig. |
+| Der Name existiert, aber nicht unter Chiroptera (oder iNaturalist meldet seine Abstammung nicht) | `SkippedUnresolvedTaxon`, keine Fledermaus. |
 | Der Name existiert, aber nur mit anderem Rang | `SkippedUnresolvedTaxon`, falscher Rang. |
 | Der Name ist ein Synonym | `SkippedUnresolvedTaxon`, mit dem aktuellen Namen. Die Eingabedatei korrigieren. |
 | Nicht gefunden | `SkippedUnresolvedTaxon`, nicht gefunden. |

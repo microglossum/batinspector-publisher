@@ -155,7 +155,10 @@ cannot be fixed afterwards is an error, not a warning.
 | `PathToPng` / `PathToWav` is not absolute, or does not end in `.png` / `.wav` | the field |
 
 A candidate built in code instead of read from a file is judged by the same value checks when it is published
-(`PublishStatus.SkippedInvalidEntry`).
+(`PublishStatus.SkippedInvalidEntry`). Because it skips the reader, it is also rejected for an empty `ScientificName`,
+a coordinate that is not a number (NaN, infinity), a `TimeZoneId` that is not known, or an `ObservedAt` whose offset is not
+the offset of `TimeZoneId` at that instant. Its `ScientificName` is normalized like `SpeciesLatin` (case and spaces), and
+the `PublishResult` carries the normalized candidate.
 
 ### Entry level: warnings
 
