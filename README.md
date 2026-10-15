@@ -5,6 +5,7 @@
 [![CI](https://github.com/microglossum/batinspector-publisher/actions/workflows/ci.yml/badge.svg)](https://github.com/microglossum/batinspector-publisher/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/microglossum/batinspector-publisher/blob/main/LICENSE)
 ![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-512BD4)
+[![NuGet](https://img.shields.io/nuget/v/BatInspectorPublisher.svg)](https://www.nuget.org/packages/BatInspectorPublisher) [![Downloads](https://img.shields.io/nuget/dt/BatInspectorPublisher.svg)](https://www.nuget.org/packages/BatInspectorPublisher)
 
 .NET library that publishes bat acoustic-monitoring observations from
 BatInspector to citizen-science platforms.
@@ -41,6 +42,12 @@ Built for a **single-user desktop application** (BatInspector) or a command-line
 * One run at a time per account, on a trusted input file (BatInspector's own output).
 
 **Web, server and multi-user hosting is not supported and not planned.**
+
+## Install
+
+```text
+dotnet add package BatInspectorPublisher
+```
 
 ## Quick start (iNaturalist)
 

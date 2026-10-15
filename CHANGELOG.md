@@ -4,6 +4,10 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed
+
+- README: an install section, the NuGet badges and a short section on licenses (English and German).
+
 ## [0.1.0] - 2026-10-15
 
 First version: reads BatInspector's export file and publishes one observation per entry to iNaturalist, with the spectrogram and the recording as evidence.

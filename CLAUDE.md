@@ -56,7 +56,8 @@ Flow: BatInspector's export file is read into candidates (one reference recordin
   - a structural check of the evidence files beyond the first bytes (PNG chunks, WAV chunk sizes) (2026-10-14: iNaturalist itself refuses an image it cannot read and resume completes the entry after a fix; a rule about WAV chunk sizes could refuse valid recorder files that cannot be tested here; the export file is trusted as BatInspector's own output, and a signature check only guards against the wrong file);
   - an async `InputSchemaReader.ReadFileAsync` (2026-10-14: the file is small and parsing is CPU work, so async buys nothing; a host that must not block wraps the call in `Task.Run`; adding a method later is not a breaking change);
   - registering an author-signing certificate on nuget.org (2026-10-14: once one is registered, nuget.org requires every package of the account to be signed with it and rejects the unsigned push of the release workflow; nuget.org repository-signs every package itself; revisit only if a host asks for author signing, which needs a code-signing certificate and a signing step);
-  - an offline validation pass over all candidates before the first one is published (2026-10-04: the host publishes in batches, not all at once, so a bad entry late in the file costs at most one batch, and the dry run already finds it).
+  - an offline validation pass over all candidates before the first one is published (2026-10-04: the host publishes in batches, not all at once, so a bad entry late in the file costs at most one batch, and the dry run already finds it);
+  - a manual dry run of the release workflow (2026-10-15: the GitHub environment `nuget` allows `v*` tags only, so only a pushed tag can reach nuget.org, and allowing `main` for a dry run would give every run on `main` the nuget login; CI already restores, builds, tests and packs, and the changelog check is part of the pre-flight in `docs/releasing.md`).
 
 ## Conventions
 
@@ -78,6 +79,10 @@ Flow: BatInspector's export file is read into candidates (one reference recordin
 - Fixtures in `tests/**/Fixtures` must be sanitized: no real coordinates, no real local paths.
 - Do not `git push` or commit unless the user explicitly asks. The remote is public.
 
+## Live tests against a real platform
+
+`tools/LiveTest` (see its README) publishes **public, irreversible** observations. Run a dry run first, ask the owner before every step with `--commit`, use the forged places and the `batinspector-livetest` tag of the scenario files, and leave the deletion of the test observations to the owner (`out/ledger.txt` lists them). Real recordings stay in the git-ignored `tools/LiveTest/data/`.
+
 ## Backlog and docs
 
 - `TODO.md` is the project backlog: open and blocked work only, no list of finished items. Read it at the start of a task, update it when something is decided or found, and groom it before every commit (see Git rules). English only.
@@ -95,6 +100,7 @@ Target host: a single-user rich client (BatInspector, Windows desktop) or a CLI 
 
 - **No AI attribution.** Commit messages and PR descriptions must not mention Claude or AI and must not contain `Co-Authored-By: Claude` or "Generated with Claude Code" lines. Enforced by `"attribution": {"commit": "", "pr": ""}` in `.claude/settings.json`; if a session or tool still suggests such a line, leave it out.
 - Branches: `main` is the squash-merge target; do not commit on it directly. Work on a branch such as `tech/<topic>` and squash-merge into `main` when it is good.
+  Create it with `git switch -c tech/<topic> --no-track origin/main` (a tracked `origin/main` would send a plain `git push` straight to `main`; the owner's admin bypass in the `main` ruleset would let it through), and push it with `git push -u origin HEAD`.
 - Commit messages are English and explain **why**, not what (the diff shows what):
   - Subject: imperative, at most 72 characters, no trailing period, no `feat:`/`fix:` prefix (the changelog is hand-written, nothing parses prefixes).
   - Body (wrapped at 72): why the change exists (problem or constraint); the decisions taken and the alternatives rejected, with the reason; consequences and open ends (what is unverified, deferred or known to be imperfect). No file-by-file list.
@@ -108,7 +114,8 @@ Target host: a single-user rich client (BatInspector, Windows desktop) or a CLI 
 
 ## Versioning
 
-The package version comes from the git tag via MinVer (`vX.Y.Z`); never add `<Version>` to the csproj. Release procedure and SemVer sizing: `docs/releasing.md`.
+The package version comes from the git tag via MinVer (`vX.Y.Z`); never add `<Version>` to the csproj. Release procedure, SemVer sizing, the one-time setup (nuget.org trusted publishing policy, GitHub environment `nuget`, rulesets), the pre-flight and the after-release checks: `docs/releasing.md`.
+Releasing: Claude prepares the `Release X.Y.Z` commit (CHANGELOG section, groomed `TODO.md`) on a branch and runs the read-only checks (GitHub and nuget.org public APIs with `curl`); the owner merges, pushes and tags. A pushed `v*` tag publishes to nuget.org without a further approval.
 Validate non-C# files with `scripts/validate-config.sh` (VS Code task "validate (config files)"; the tools come from the devcontainer) before finishing changes to workflows, YAML/JSON config, Markdown or the devcontainer.
 
 ## BatInspector (producer of the input file)

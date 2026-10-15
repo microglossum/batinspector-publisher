@@ -7,7 +7,7 @@
     <AssemblyName>BatInspectorPublisher</AssemblyName>
 
     <PackageId>BatInspectorPublisher</PackageId>
-    <!-- Version comes from the git tag (MinVer): tag v0.1.0-preview.1 gives package 0.1.0-preview.1. Untagged builds are 0.1.0-preview.0.N. -->
+    <!-- Version comes from the git tag (MinVer): tag v0.1.0 gives package 0.1.0, tag v0.2.0-preview.1 gives 0.2.0-preview.1. Untagged builds are the next patch as a preview, 0.1.1-preview.0.N. -->
     <MinVerTagPrefix>v</MinVerTagPrefix>
     <MinVerMinimumMajorMinor>0.1</MinVerMinimumMajorMinor>
     <MinVerDefaultPreReleaseIdentifiers>preview.0</MinVerDefaultPreReleaseIdentifiers>
