@@ -1,6 +1,6 @@
 # BatInspectorPublisher
 
-![BatInspectorPublisher icon: a bat above an upload arrow](https://raw.githubusercontent.com/microglossum/batinspector-publisher/main/assets/icon.png)
+<img src="https://raw.githubusercontent.com/microglossum/batinspector-publisher/main/assets/icon.png" alt="BatInspectorPublisher icon: a bat above an upload arrow" width="64" height="64">
 
 [![CI](https://github.com/microglossum/batinspector-publisher/actions/workflows/ci.yml/badge.svg)](https://github.com/microglossum/batinspector-publisher/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/microglossum/batinspector-publisher/blob/main/LICENSE)

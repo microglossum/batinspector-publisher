@@ -13,6 +13,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-26.04
+    environment: nuget # the owner approves every run; the nuget.org trusted publishing policy names this environment
     permissions:
       contents: write # create the GitHub Release
       id-token: write # trusted publishing to nuget.org (OIDC), no stored API key
