@@ -351,6 +351,80 @@ public class INaturalistPublisherTests
         Assert.Equal(call, observation.GetProperty("species_guess").GetString());
     }
 
+    private void UncertainCallWithExisting(string searchResponse) => _http
+        .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 42, "name": "Chiroptera", "rank": "order" } ] }""")
+        .On("GET /v1/users/me", HttpStatusCode.OK, UserProfile)
+        .On("GET /v1/observations", HttpStatusCode.OK, searchResponse)
+        .On("POST /v2/observations", HttpStatusCode.OK, """{ "results": [ { "id": 123, "uuid": "uuid-1" } ] }""")
+        .On("POST /v2/observation_photos", HttpStatusCode.OK, "{}")
+        .On("POST /v2/observation_sounds", HttpStatusCode.OK, "{}");
+
+    [Fact]
+    public async Task Publish_UncertainCall_IsNotBlockedByAnObservationOfASpeciesBelowItsTaxon()
+    {
+        UncertainCallWithExisting("""{ "total_results": 1, "results": [ { "id": 5, "uuid": "uuid-5", "taxon": { "id": 7 } } ] }""");
+
+        var result = await CreatePublisher().PublishAsync(Candidate() with { ScientificName = "Nyctaloid" }, Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.Created, result.Status);
+    }
+
+    [Fact]
+    public async Task Publish_UncertainCall_IsSkippedWhenAnObservationIsFiledUnderExactlyItsTaxon()
+    {
+        UncertainCallWithExisting("""{ "total_results": 2, "results": [ { "id": 5, "uuid": "uuid-5", "taxon": { "id": 7 } }, { "id": 6, "uuid": "uuid-6", "taxon": { "id": 42 } } ] }""");
+
+        var result = await CreatePublisher().PublishAsync(Candidate() with { ScientificName = "Nyctaloid" }, Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.SkippedDuplicate, result.Status);
+        Assert.Equal("6", result.ObservationId);
+        Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
+    }
+
+    [Fact]
+    public async Task Publish_UncertainCall_IsSkippedWhenTheTaxonOfAnExistingObservationIsNotReported()
+    {
+        UncertainCallWithExisting("""{ "total_results": 1, "results": [ { "id": 5, "uuid": "uuid-5" } ] }""");
+
+        var result = await CreatePublisher().PublishAsync(Candidate() with { ScientificName = "Nyctaloid" }, Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.SkippedDuplicate, result.Status);
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("CC-BY-NC", true)]
+    public async Task Publish_License_IsSentWithTheObservationOnlyWhenSet(string? license, bool sent)
+    {
+        ResolvesTo("Pipistrellus pipistrellus", "species", 5);
+        var publisher = new INaturalistPublisher(new INaturalistOptions { ClientId = "c", License = license, AllowAnyRequestInterval = true }, new HttpClient(_http), _ => Task.FromResult("jwt"));
+
+        await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        using var doc = JsonDocument.Parse(_http.Requests.Single(r => r.Method == "POST" && r.Uri.AbsolutePath == "/v2/observations").Body);
+        var observation = doc.RootElement.GetProperty("observation");
+        Assert.Equal(sent, observation.TryGetProperty("license", out var value));
+        if (sent)
+        {
+            Assert.Equal("cc-by-nc", value.GetString());
+        }
+    }
+
+    [Theory]
+    [InlineData("cc-by-nc")]
+    [InlineData(" CC0 ")]
+    [InlineData("c")]
+    public void Constructor_AcceptsAKnownLicenseInAnyCase(string license) =>
+        _ = new INaturalistPublisher(new INaturalistOptions { ClientId = "c", License = license }, new HttpClient(_http), _ => Task.FromResult("jwt"));
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("cc-by-4.0")]
+    [InlineData("public domain")]
+    public void Constructor_RefusesAnUnknownLicense(string license) =>
+        Assert.Throws<ArgumentException>(() =>
+            new INaturalistPublisher(new INaturalistOptions { ClientId = "c", License = license }, new HttpClient(_http), _ => Task.FromResult("jwt")));
+
     [Fact]
     public async Task Publish_UncertainCall_DryRunSaysItIsFiledUnderTheBroaderTaxon()
     {
@@ -723,7 +797,7 @@ public class INaturalistPublisherTests
 
         Assert.Equal(PublishStatus.Created, result.Status);
         Assert.Equal("uuid-1", result.ObservationId);
-        Assert.Null(result.Url);
+        Assert.Equal("https://www.inaturalist.org/observations/uuid-1", result.Url);
         var uploads = _http.Requests.Where(r => r.Uri.AbsolutePath is "/v2/observation_photos" or "/v2/observation_sounds").ToList();
         Assert.Equal(2, uploads.Count);
         Assert.All(uploads, r => Assert.Contains("uuid-1", r.Body));

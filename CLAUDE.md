@@ -25,7 +25,8 @@ src/BatInspectorPublisher/
   Core/        platform-neutral: input file, validation, models, results, orchestration, publisher interface
   Adapters/    one folder per platform: everything that platform needs (auth, API client, platform rules, publisher)
 tests/         xunit, hand-written HTTP stubs; Fixtures/ = sanitized sample data
-tools/SmokeTest/   manual console host for live tests (not in the solution); reads git-ignored appsettings.local.json
+tools/SmokeTest/   manual console host with access to internals (not in the solution); reads git-ignored appsettings.local.json
+tools/LiveTest/    black-box live test host: packed package only, fixed scenario files per platform (scenarios/inaturalist/), see its README
 ```
 
 Flow: BatInspector's export file is read into candidates (one reference recording each), the orchestrator loads the evidence and hands each candidate to a platform publisher, which returns a structured result per candidate.

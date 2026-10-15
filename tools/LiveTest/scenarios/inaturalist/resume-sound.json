@@ -1,0 +1,16 @@
+{
+  "SchemaVersion": 1,
+  "DocumentFiles": [
+    {
+      "Date": "08.10.2026 23:05:40",
+      "Latitude": 49.95,
+      "Longitude": 8.968,
+      "SpeciesLatin": "Nyctalus noctula",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/NNOC_20260430_041104.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/NNOC_20260430_041104.wav"
+    }
+  ]
+}

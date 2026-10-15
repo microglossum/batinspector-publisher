@@ -79,6 +79,16 @@ internal sealed class ExistingObservation
 
     [JsonPropertyName("sounds")]
     public List<JsonElement>? Sounds { get; set; }
+
+    /// <summary>The taxon the observation is filed under; null when the response does not say.</summary>
+    [JsonPropertyName("taxon")]
+    public ExistingTaxon? Taxon { get; set; }
+}
+
+internal sealed class ExistingTaxon
+{
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
 }
 
 internal sealed class CreateObservationRequest
@@ -119,6 +129,10 @@ internal sealed class ObservationPayload
     [JsonPropertyName("tag_list")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? TagList { get; set; }
+
+    [JsonPropertyName("license")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? License { get; set; }
 }
 
 internal sealed class CreateObservationResult

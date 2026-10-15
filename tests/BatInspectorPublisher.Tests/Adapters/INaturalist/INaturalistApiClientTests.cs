@@ -247,6 +247,20 @@ public class INaturalistApiClientTests
     }
 
     [Fact]
+    public async Task Upload_WithLicense_SendsItWithThePhotoButNotWithTheSound()
+    {
+        _http.On("POST /v2/observation_photos", HttpStatusCode.OK, "{}").On("POST /v2/observation_sounds", HttpStatusCode.OK, "{}");
+        var client = new INaturalistApiClient(new INaturalistOptions { ClientId = "c", License = "CC-BY-NC", AllowAnyRequestInterval = true }, new HttpClient(_http));
+
+        await client.AttachPhotoAsync("uuid-9", TestData.Evidence().Spectrogram, "jwt", default);
+        await client.AttachSoundAsync("uuid-9", TestData.Evidence().Audio, "jwt", default);
+
+        Assert.Contains("observation_photo[photo][license_code]", _http.Requests[0].Body);
+        Assert.Contains("cc-by-nc", _http.Requests[0].Body);
+        Assert.DoesNotContain("license", _http.Requests[1].Body);
+    }
+
+    [Fact]
     public async Task ErrorResponse_ThrowsApiExceptionWithStatusAndBody()
     {
         _http.On("GET /v1/users/me", HttpStatusCode.Unauthorized, "bad token");

@@ -155,6 +155,24 @@ What a host should do: log in before the run. Call `LoginAsync()` from a "connec
 can show the reason. This matters with a stored login too: if the user has revoked the access on iNaturalist, the renewal is
 rejected and the run falls back to the browser login.
 
+## Licenses
+
+Observation, photo and sound each carry a license on iNaturalist, and the published data is only as closed as the most open of them.
+
+| What | How the license is set |
+|---|---|
+| Observation | `INaturalistOptions.License` |
+| Spectrogram (photo) | `INaturalistOptions.License` |
+| Recording (sound) | **Not possible through the API.** The sound gets the default sound license of the iNaturalist account. |
+
+`License` is one of `cc0`, `cc-by`, `cc-by-nc`, `cc-by-sa`, `cc-by-nd`, `cc-by-nc-sa`, `cc-by-nc-nd` or `c` (all rights reserved), in any case; any other
+value makes the constructor throw. `null` (the default) sends none, and iNaturalist applies the account's default licenses to all three.
+Seen live: with `License = "cc-by-nc"` the observation and the photo came out as CC BY-NC and the sound as CC0, the default of that account.
+
+What to do: set `License`, and set the **default sound license** of the iNaturalist account to the same value (iNaturalist account settings,
+Content & Display, Licensing; the page is iNaturalist's to change). A host should tell its users this before the first real run: the package
+cannot see the account's setting. The license of a published observation can also be changed afterwards on iNaturalist.
+
 ## Token storage
 
 After the login the authenticator keeps one `INaturalistToken` in its token store:

@@ -1,0 +1,16 @@
+{
+  "SchemaVersion": 1,
+  "DocumentFiles": [
+    {
+      "Date": "08.10.2026 23:35:10",
+      "Latitude": 49.95,
+      "Longitude": 8.986,
+      "SpeciesLatin": "Myotis daubentonii",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/MDAU_20260429_231021.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/MDAU_20260429_231021.wav"
+    }
+  ]
+}

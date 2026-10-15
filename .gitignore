@@ -25,3 +25,8 @@ local/
 .claude/settings.local.json
 artifacts/
 node_modules/
+
+# Black-box live test host: the packed package, evidence files, generated input files and the ledger of created observations.
+tools/LiveTest/feed/
+tools/LiveTest/data/
+tools/LiveTest/out/

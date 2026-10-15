@@ -34,6 +34,20 @@ public sealed class INaturalistOptions
     /// </summary>
     public string TagList { get; init; } = "bat,acoustic-monitoring,batinspector";
 
+    /// <summary>
+    /// License of the published observation and its spectrogram, one of <c>cc0</c>, <c>cc-by</c>, <c>cc-by-nc</c>, <c>cc-by-sa</c>,
+    /// <c>cc-by-nd</c>, <c>cc-by-nc-sa</c>, <c>cc-by-nc-nd</c> or <c>c</c> (all rights reserved); case does not matter. Null (the default)
+    /// sends none, and iNaturalist applies the default licenses of the logged-in account. The recording (sound) is not covered:
+    /// iNaturalist's API takes no license for a sound upload, so the sound always gets the account's default sound license.
+    /// </summary>
+    public string? License { get; init; }
+
+    /// <summary>The license codes iNaturalist knows (lower case).</summary>
+    internal static readonly string[] LicenseCodes = ["cc0", "cc-by", "cc-by-nc", "cc-by-sa", "cc-by-nd", "cc-by-nc-sa", "cc-by-nc-nd", "c"];
+
+    /// <summary><see cref="License"/> as sent: trimmed and lower case; null when not set.</summary>
+    internal string? LicenseCode => string.IsNullOrWhiteSpace(License) ? null : License.Trim().ToLowerInvariant();
+
     /// <summary>Text placed at the start of every observation description (German, as users are German speaking).</summary>
     public string DescriptionPrefix { get; init; } = "Automatisierte passive akustische Erfassung (BatInspector, batdetect2 + manuelle Prüfung).";
 
@@ -145,6 +159,13 @@ public sealed class INaturalistOptions
             throw new ArgumentException(
                 $"INaturalistOptions.MaxEvidenceBytes must be between 1 and {MaxAllowedEvidenceBytes:N0}; iNaturalist rejects a larger file only after the observation exists.",
                 nameof(MaxEvidenceBytes));
+        }
+
+        if (License is not null && (LicenseCode is not { } code || !LicenseCodes.Contains(code)))
+        {
+            throw new ArgumentException(
+                $"INaturalistOptions.License '{License}' is not an iNaturalist license code; use one of {string.Join(", ", LicenseCodes)}, or null for the account's default.",
+                nameof(License));
         }
 
         // Every observation also gets its resume marker tag, so its length is reserved.

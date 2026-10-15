@@ -6,8 +6,8 @@ This page describes what `INaturalistPublisher` does with an entry of the input 
 field, the steps of one run, the outcomes and what is public afterwards. Registration, login and the rate limits are in
 [inaturalist-setup.md](inaturalist-setup.md); how the input file is read is in [input-format.md](input-format.md).
 
-Everything here is derived from the code and from iNaturalist's open source and forum. The behavior that only a live run can
-show is not verified yet and is marked as such.
+Everything here is derived from the code and from iNaturalist's open source and forum, and the flow was checked in a live run against
+iNaturalist on 2026-10-15. What a live run has not shown yet is marked as such.
 
 ## The steps of one candidate
 
@@ -61,6 +61,7 @@ The steps use these iNaturalist endpoints (every request with its parameters is 
 | `PathToWav` | sound | The recording, uploaded under its file name. |
 | `SpeciesLocal` | not sent | |
 | (options) | `tag_list` | `INaturalistOptions.TagList`, default `bat,acoustic-monitoring,batinspector`, plus the resume tag of the entry (see below). |
+| (options) | `license`, photo `license_code` | `INaturalistOptions.License`, none by default (then the account's default licenses apply). Not for the sound, see [Licenses](inaturalist-setup.md#licenses). |
 | `SpeciesLatin`, `Date`, `Latitude`, `Longitude` | `tag_list` | One more tag, `batinspector:` and 12 hex digits: a short hash of the species as in the file, the instant in UTC and the coordinates. It marks the observation as the one this package created for the entry, see [Re-running](#re-running-duplicates-and-resume). |
 
 Not sent: a time zone, a positional accuracy, geoprivacy, captive/cultivated flags. The package does not handle
@@ -70,7 +71,7 @@ sensitive species; iNaturalist obscures the coordinates of taxa it considers sen
 
 Every observation is sent with coordinates, and iNaturalist then takes the time zone **from the coordinates**: it reads
 `observed_on_string` as local time at that place, and ignores a zone or offset in the string and a `time_zone` parameter
-(per its source, not yet seen live). So the package sends the wall-clock time of the entry as it is and no zone. This is
+(per its source; seen live: the sent local time comes back with the zone of the place, also after midnight and for Lisbon). So the package sends the wall-clock time of the entry as it is and no zone. This is
 right as long as `TimeZone` (default Europe/Berlin) is the zone of the place where the recording was made, which is the
 meaning of the input field. If it is not (for example a recorder that stayed on German time in Portugal), iNaturalist
 shows the time shifted by the difference; the description still names the zone the entry was read in.
@@ -142,10 +143,11 @@ Things to know about this check:
 
 - It relies on the file holding one reference recording per species, night and place. Several entries for one combination
   are skipped after the first; the dry run cannot foresee that, because it creates nothing, so they all say `WouldCreate`.
-- iNaturalist's `taxon_id` filter is meant to include the descendants of a taxon. An entry for a species is then compared
-  with the user's observations of that species (and its subspecies), but an entry filed under a broader taxon (`Nyctaloid` under
-  Chiroptera, `Mbart` under *Myotis*) may match any of the user's observations below that taxon on that day and place and be
-  skipped as a duplicate. Not verified live yet.
+- iNaturalist's `taxon_id` filter includes the descendants of a taxon. An entry for a species is compared with the user's
+  observations of that species (and its subspecies). An entry filed under a broader taxon (`Nyctaloid` under Chiroptera,
+  `Mbart` under *Myotis*) only counts an observation as its duplicate when that is filed under exactly this taxon, so a species
+  of the same night and place does not block it, and the order of publishing does not matter. Several group entries of one
+  taxon (two `Nyctaloid`, or `Nyctaloid` and `Social`, both under Chiroptera) for one night and place are skipped after the first.
 - Observations that appear or disappear on iNaturalist after the check are not foreseen.
 
 ## Results
@@ -167,8 +169,9 @@ Things to know about this check:
 | `Cancelled` | The caller cancelled. The same partial information as `Failed`, without `Error`. |
 
 `ObservationId` is iNaturalist's numeric observation id, and `Url` its public page. If iNaturalist returns only the uuid of an
-observation and no numeric id, `ObservationId` is the uuid and `Url` is null; this applies to every status that names an
-observation.
+observation and no numeric id, `ObservationId` is the uuid and `Url` the uuid form of the page address, which iNaturalist redirects
+to the observation (this is the usual answer to a created observation; a later run finds the numeric id). It applies to every
+status that names an observation.
 
 `Message` is a short English text written by the package, meant for a log or a details view; a host that shows the results
 in another language maps the status, not the text. An error from iNaturalist itself is passed through as is, not translated or

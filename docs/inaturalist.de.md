@@ -7,8 +7,8 @@ iNaturalist-Feld wird, die Schritte eines Laufs, die Ergebnisse und was danach �
 Ratenbegrenzung stehen in [inaturalist-setup.de.md](inaturalist-setup.de.md); wie die Eingabedatei gelesen wird, steht in
 [input-format.de.md](input-format.de.md).
 
-Alles hier ist aus dem Code sowie aus dem Open-Source-Code und dem Forum von iNaturalist abgeleitet. Verhalten, das nur ein
-Live-Lauf zeigen kann, ist noch nicht überprüft und als solches gekennzeichnet.
+Alles hier ist aus dem Code sowie aus dem Open-Source-Code und dem Forum von iNaturalist abgeleitet, und der Ablauf wurde am 2026-10-15
+in einem Live-Lauf gegen iNaturalist geprüft. Was ein Live-Lauf noch nicht gezeigt hat, ist als solches gekennzeichnet.
 
 ## Die Schritte eines Kandidaten
 
@@ -62,6 +62,7 @@ Die Schritte verwenden diese Endpunkte von iNaturalist (jede Anfrage mit ihren P
 | `PathToWav` | Ton | Die Aufnahme, hochgeladen unter ihrem Dateinamen. |
 | `SpeciesLocal` | nicht gesendet | |
 | (Optionen) | `tag_list` | `INaturalistOptions.TagList`, Standard `bat,acoustic-monitoring,batinspector`, dazu das Fortsetzungs-Tag des Eintrags (siehe unten). |
+| (Optionen) | `license`, Foto-`license_code` | `INaturalistOptions.License`, standardmäßig keine (dann gelten die Standardlizenzen des Kontos). Nicht für den Sound, siehe [Lizenzen](inaturalist-setup.de.md#lizenzen). |
 | `SpeciesLatin`, `Date`, `Latitude`, `Longitude` | `tag_list` | Ein weiteres Tag, `batinspector:` und 12 Hex-Ziffern: ein kurzer Hash aus der Art wie in der Datei, dem Zeitpunkt in UTC und den Koordinaten. Es kennzeichnet die Beobachtung als die, die dieses Paket für den Eintrag angelegt hat, siehe [Erneuter Lauf](#erneuter-lauf-duplikate-und-fortsetzen). |
 
 Nicht gesendet werden: eine Zeitzone, eine Positionsgenauigkeit, Geoprivacy, Captive/Cultivated-Kennzeichen. Das Paket behandelt
@@ -71,7 +72,7 @@ sensible Arten nicht; iNaturalist verschleiert die Koordinaten von Taxa, die es 
 
 Jede Beobachtung wird mit Koordinaten gesendet, und iNaturalist übernimmt die Zeitzone dann **aus den Koordinaten**: Es liest
 `observed_on_string` als Ortszeit an diesem Ort und ignoriert eine Zone oder einen Offset im Text sowie einen
-`time_zone`-Parameter (laut Quellcode, noch nicht live gesehen). Das Paket sendet deshalb die Uhrzeit des Eintrags, wie sie
+`time_zone`-Parameter (laut Quellcode; live gesehen: Die gesendete Ortszeit kommt mit der Zone des Ortes zurück, auch nach Mitternacht und für Lisbon). Das Paket sendet deshalb die Uhrzeit des Eintrags, wie sie
 ist, und keine Zone. Das stimmt, solange `TimeZone` (Standard Europe/Berlin) die Zone des Ortes ist, an dem aufgenommen
 wurde; so ist das Eingabefeld gemeint. Ist sie es nicht (etwa ein Rekorder, der in Portugal auf deutscher Zeit blieb),
 zeigt iNaturalist die Zeit um die Differenz verschoben; die Beschreibung nennt weiterhin die Zone, in der der Eintrag gelesen wurde.
@@ -146,10 +147,12 @@ Was man über diese Prüfung wissen sollte:
 - Sie verlässt sich darauf, dass die Datei eine Referenzaufnahme pro Art, Nacht und Ort enthält. Mehrere Einträge für eine
   Kombination werden nach dem ersten übersprungen; der Probelauf kann das nicht vorhersehen, weil er nichts anlegt, und
   meldet für alle `WouldCreate`.
-- Der Filter `taxon_id` von iNaturalist soll die untergeordneten Taxa einschließen. Ein Eintrag für eine Art wird dann mit
-  den Beobachtungen des Nutzers von dieser Art (und ihren Unterarten) verglichen, ein Eintrag unter einem übergeordneten Taxon (`Nyctaloid` unter
-  Chiroptera, `Mbart` unter *Myotis*) kann dagegen zu jeder seiner Beobachtungen unterhalb dieses Taxons an diesem Tag und Ort
-  passen und als Duplikat übersprungen werden. Noch nicht live überprüft.
+- Der Filter `taxon_id` von iNaturalist schließt die untergeordneten Taxa ein. Ein Eintrag für eine Art wird mit den
+  Beobachtungen des Nutzers von dieser Art (und ihren Unterarten) verglichen. Ein Eintrag unter einem übergeordneten Taxon
+  (`Nyctaloid` unter Chiroptera, `Mbart` unter *Myotis*) zählt nur eine Beobachtung als Duplikat, die genau unter diesem Taxon
+  abgelegt ist; eine Art derselben Nacht und desselben Ortes blockiert ihn also nicht, und die Reihenfolge der Veröffentlichung
+  spielt keine Rolle. Mehrere Gruppeneinträge desselben Taxons (zweimal `Nyctaloid`, oder `Nyctaloid` und `Social`, beide unter
+  Chiroptera) für eine Nacht und einen Ort werden nach dem ersten übersprungen.
 - Beobachtungen, die nach der Prüfung bei iNaturalist auftauchen oder verschwinden, werden nicht vorhergesehen.
 
 ## Ergebnisse
@@ -171,8 +174,9 @@ Was man über diese Prüfung wissen sollte:
 | `Cancelled` | Der Aufrufer hat abgebrochen. Dieselben Teilinformationen wie bei `Failed`, ohne `Error`. |
 
 `ObservationId` ist die numerische Beobachtungs-ID von iNaturalist, `Url` ihre öffentliche Seite. Liefert iNaturalist zu einer
-Beobachtung nur die UUID und keine numerische ID, ist `ObservationId` die UUID und `Url` null; das gilt für jeden Status, der
-eine Beobachtung nennt.
+Beobachtung nur die UUID und keine numerische ID, ist `ObservationId` die UUID und `Url` die Adresse der Seite mit der UUID, die
+iNaturalist auf die Beobachtung umleitet (das ist die übliche Antwort auf eine angelegte Beobachtung; ein späterer Lauf findet die
+numerische ID). Das gilt für jeden Status, der eine Beobachtung nennt.
 
 `Message` ist ein kurzer englischer Text des Pakets, gedacht für ein Log oder eine Detailansicht; eine Anwendung, die die
 Ergebnisse in einer anderen Sprache zeigt, übersetzt den Status, nicht den Text. Eine Fehlermeldung von iNaturalist selbst wird

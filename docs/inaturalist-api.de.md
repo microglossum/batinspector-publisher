@@ -20,12 +20,12 @@ API-Dokumentation oder dem Forum von iNaturalist abgeleitet und noch nicht im er
 | 1 | `GET /oauth/authorize` | www | Anmeldung im Browser | Einmal, ohne gespeichertes Token | Live bestätigt |
 | 2 | `POST /oauth/token` | www | Code gegen OAuth-Token | Einmal je Anmeldung | Live bestätigt |
 | 3 | `GET /users/api_token` | www | OAuth-Token gegen API-JWT | Anmeldung und etwa einmal täglich | Live bestätigt |
-| 4 | `GET /v1/users/me` | api | Login-Name, numerische Nutzer-ID | Anmeldung; einmal je JWT in einem Lauf | `login` live, `id` noch nicht |
-| 5 | `GET /v2/taxa/autocomplete` | api | Wissenschaftlichen Namen auflösen, dann Chiroptera | Jeder Kandidat, zweimal, wenn der Name einen Treffer hat | Live bestätigt, `ancestor_ids` noch nicht |
-| 6 | `GET /v1/observations` | api | Duplikatprüfung und Fortsetzen | Jeder Kandidat | Teilweise live |
-| 7 | `POST /v2/observations` | api | Beobachtung anlegen | Nur im Commit-Lauf | Noch nicht live |
-| 8 | `POST /v2/observation_photos` | api | Spektrogramm | Nur im Commit-Lauf | Noch nicht live |
-| 9 | `POST /v2/observation_sounds` | api | Audio | Nur im Commit-Lauf | Noch nicht live |
+| 4 | `GET /v1/users/me` | api | Login-Name, numerische Nutzer-ID | Anmeldung; einmal je JWT in einem Lauf | Live bestätigt |
+| 5 | `GET /v2/taxa/autocomplete` | api | Wissenschaftlichen Namen auflösen, dann Chiroptera | Jeder Kandidat, zweimal, wenn der Name einen Treffer hat | Live bestätigt |
+| 6 | `GET /v1/observations` | api | Duplikatprüfung und Fortsetzen | Jeder Kandidat | Live bestätigt |
+| 7 | `POST /v2/observations` | api | Beobachtung anlegen | Nur im Commit-Lauf | Live bestätigt |
+| 8 | `POST /v2/observation_photos` | api | Spektrogramm | Nur im Commit-Lauf | Live bestätigt |
+| 9 | `POST /v2/observation_sounds` | api | Audio | Nur im Commit-Lauf | Live bestätigt |
 
 `www` ist `https://www.inaturalist.org`, `api` ist `https://api.inaturalist.org`. Ein Probelauf sendet die Anfragen 4 bis 6,
 davor die Anmeldung (1 bis 3), wenn kein gültiges Token gespeichert ist, und nichts sonst.
@@ -54,8 +54,8 @@ mit dem neuen JWT wiederholt.
 **4. `GET /v1/users/me`**: JWT als Bearer. Aus `results[0]` wird verwendet:
 
 - `login`: wird mit dem Token gespeichert und von der Anmeldung angezeigt (SmokeTest `whoami`);
-- `id`: die numerische Nutzer-ID, die die Duplikatprüfung braucht (dass dieses Feld vorhanden ist, ist **noch nicht live**
-  bestätigt; dieselbe Zahl steht im Claim `user_id` des JWT). Sie wird einmal je JWT erfragt und für die Lebensdauer des Publishers im Speicher
+- `id`: die numerische Nutzer-ID, die die Duplikatprüfung braucht (in der echten Antwort vorhanden; dieselbe Zahl steht im Claim
+  `user_id` des JWT). Sie wird einmal je JWT erfragt und für die Lebensdauer des Publishers im Speicher
   gehalten, nirgends geschrieben. Fehlt `id` in der Antwort, endet der Kandidat als `Failed`, bevor etwas gesucht oder geschrieben wird.
 
 ## Taxon
@@ -82,9 +82,9 @@ dieser Endpunkt nicht (live geprüft, 2026-10-14).
 
 Gelesen wird nur die erste Ergebnisseite (Standardgröße); `total_results` entscheidet, ob etwas existiert, die ersten Ergebnisse
 zeigen, ob es vollständig ist. Aus jedem Ergebnis nutzt das Paket `id`, `uuid`, `tags`, `photos` und `sounds` (`id`, `uuid`, `photos`
-und `sounds` sind in der Antwort vorhanden, live geprüft). Ob `tags` als Liste von Zeichenketten zurückkommt, die das mit Anfrage 7
-gesendete `batinspector:`-Tag enthält, und ob ein noch nicht verarbeiteter Upload schon aufgelistet wird, ist **noch nicht live**
-geprüft. Ein `tags`-Wert anderer Form wird ignoriert, Fortsetzen greift dann nicht.
+und `sounds` sind in der Antwort vorhanden, live geprüft). `tags` kommt als Liste von Zeichenketten zurück, die das mit Anfrage 7
+gesendete `batinspector:`-Tag unverändert enthält, und eine halb angelegte Beobachtung (ein fehlgeschlagener Upload) wird sofort
+aufgelistet (live gesehen, 2026-10-15). Ein `tags`-Wert anderer Form würde ignoriert, Fortsetzen griffe dann nicht.
 
 **`mine` und `mine_only` wirken nicht.** Die v1-API ignoriert beide, auch mit gültiger Anmeldung: Eine Suche nach Chiroptera lieferte mit
 und ohne sie dieselben 291317 Ergebnisse, mit `user_id` 6 (live geprüft, 2026-10-14). Sie hätten Beobachtungen anderer Nutzer als
@@ -101,14 +101,15 @@ Serverfehler, einem Netzwerkfehler oder einem Timeout nicht wiederholt (eine Wie
 
 **7. `POST /v2/observations`**, JSON-Body `{"observation": {...}}` mit `taxon_id`, `observed_on_string` (`yyyy-MM-dd HH:mm:ss`, Ortszeit), `latitude`,
 `longitude`, `place_guess` (die Koordinaten als Text), `species_guess` (der Name aus der Datei), `description` (deutscher Text, siehe
-[inaturalist.de.md](inaturalist.de.md#die-beschreibung)) und `tag_list` (`INaturalistOptions.TagList` und das
-`batinspector:`-Tag des Eintrags). Aus der Antwort wird `results[0].uuid` zum Anhängen der Belege gebraucht;
-die numerische `id` fehlt manchmal, dann trägt das Ergebnis die uuid und keine URL.
+[inaturalist.de.md](inaturalist.de.md#die-beschreibung)), `tag_list` (`INaturalistOptions.TagList` und das
+`batinspector:`-Tag des Eintrags) und, wenn `INaturalistOptions.License` gesetzt ist, `license`. Aus der Antwort wird `results[0].uuid` zum Anhängen der Belege gebraucht;
+die numerische `id` fehlt manchmal, dann trägt das Ergebnis die uuid und die URL mit der uuid (sie leitet auf die Beobachtung um, live gesehen).
 
 **8. `POST /v2/observation_photos`** und **9. `POST /v2/observation_sounds`**: je eine Multipart-Anfrage, die die Datei hochlädt
 (`file`) und im selben Schritt verknüpft (`observation_photo[observation_id]` bzw. `observation_sound[observation_id]`, gesetzt auf
 die uuid der Beobachtung). Der Zweischritt-Ablauf (hochladen, dann verknüpfen) wurde von der echten API abgelehnt; die kombinierte
-Anfrage folgt der OpenAPI-Spezifikation von v2.
+Anfrage folgt der OpenAPI-Spezifikation von v2. Ist `INaturalistOptions.License` gesetzt, trägt die Foto-Anfrage zusätzlich
+`observation_photo[photo][license_code]` (live bestätigt). Die Sound-Anfrage trägt keine Lizenz: Die API hat dafür keinen Parameter.
 
 ## Was nie gesendet wird
 

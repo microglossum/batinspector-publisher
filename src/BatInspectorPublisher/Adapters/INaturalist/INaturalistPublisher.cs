@@ -186,7 +186,18 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         var existing = await CallAsync(state, jwt => _api.FindExistingObservationsAsync(
             taxon.Id, userId, DateOnly.FromDateTime(candidate.ObservedAt.DateTime), candidate.Latitude, candidate.Longitude, jwt, ct), ct).ConfigureAwait(false);
 
-        if (existing.TotalResults == 0)
+        // A group value (Nyctaloid, Mbart) is filed under a broader taxon, and the search includes everything below it. Only an
+        // observation filed under exactly that taxon is the group entry's equivalent: a species of the same night and place is not.
+        // An observation whose taxon is not reported, or results beyond the first page, count as before (a wrong assumption fails safe).
+        var results = existing.Results;
+        var total = existing.TotalResults;
+        if (!SameName(taxon.Name, candidate.ScientificName) && total <= results.Count)
+        {
+            results = results.Where(o => o.Taxon is null || o.Taxon.Id == taxon.Id).ToList();
+            total = results.Count;
+        }
+
+        if (total == 0)
         {
             var filedAs = SameName(taxon.Name, candidate.ScientificName) ? "" : $" as {taxon.Name}";
             return new CreatePlan(payload,
@@ -194,10 +205,10 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         }
 
         var marker = ResumeMarker.For(candidate);
-        var match = existing.Results.FirstOrDefault(o => IsIncompleteOwnObservation(o, marker));
+        var match = results.FirstOrDefault(o => IsIncompleteOwnObservation(o, marker));
         if (match is null)
         {
-            if (existing.Results.FirstOrDefault(o => o.Id != 0 || o.Uuid.Length > 0) is { } known)
+            if (results.FirstOrDefault(o => o.Id != 0 || o.Uuid.Length > 0) is { } known)
             {
                 state.Found(known);
             }
@@ -353,7 +364,8 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
 
     private static (string? Id, string? Url) Identify(long id, string uuid) => id != 0
         ? (id.ToString(CultureInfo.InvariantCulture), $"https://www.inaturalist.org/observations/{id}")
-        : (uuid.Length > 0 ? uuid : null, null);
+        // The uuid form of the URL redirects to the observation page (seen live).
+        : uuid.Length > 0 ? (uuid, $"https://www.inaturalist.org/observations/{uuid}") : (null, null);
 
     /// <summary>
     /// True for an observation this package created for the same entry (it carries the entry's
@@ -380,5 +392,6 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         SpeciesGuess = candidate.ScientificName,
         Description = DescriptionBuilder.Build(candidate, _options.DescriptionPrefix, taxonName),
         TagList = _options.TagList.Trim().Length == 0 ? ResumeMarker.For(candidate) : $"{_options.TagList},{ResumeMarker.For(candidate)}",
+        License = _options.LicenseCode,
     };
 }

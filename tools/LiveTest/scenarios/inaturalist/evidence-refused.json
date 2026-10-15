@@ -1,0 +1,16 @@
+{
+  "SchemaVersion": 1,
+  "DocumentFiles": [
+    {
+      "Date": "08.10.2026 22:15:00",
+      "Latitude": 49.95,
+      "Longitude": 9.004,
+      "SpeciesLatin": "Plecotus",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/malformed/refused.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/Plecotus_20260430_211926.wav"
+    }
+  ]
+}

@@ -19,12 +19,12 @@ the API documentation or the forum and waiting for the first live test.
 | 1 | `GET /oauth/authorize` | www | Browser login | Once, without a stored token | Verified live |
 | 2 | `POST /oauth/token` | www | Code for OAuth token | Once per login | Verified live |
 | 3 | `GET /users/api_token` | www | OAuth token for API JWT | Login and about once a day | Verified live |
-| 4 | `GET /v1/users/me` | api | Login name, numeric user id | Login; once per JWT in a run | `login` live, `id` not yet |
-| 5 | `GET /v2/taxa/autocomplete` | api | Resolve a scientific name, then Chiroptera | Every candidate, twice when the name has a match | Verified live, `ancestor_ids` not yet |
-| 6 | `GET /v1/observations` | api | Duplicate check and resume | Every candidate | Partly live |
-| 7 | `POST /v2/observations` | api | Create the observation | Commit run only | Not yet live |
-| 8 | `POST /v2/observation_photos` | api | Spectrogram | Commit run only | Not yet live |
-| 9 | `POST /v2/observation_sounds` | api | Audio | Commit run only | Not yet live |
+| 4 | `GET /v1/users/me` | api | Login name, numeric user id | Login; once per JWT in a run | Verified live |
+| 5 | `GET /v2/taxa/autocomplete` | api | Resolve a scientific name, then Chiroptera | Every candidate, twice when the name has a match | Verified live |
+| 6 | `GET /v1/observations` | api | Duplicate check and resume | Every candidate | Verified live |
+| 7 | `POST /v2/observations` | api | Create the observation | Commit run only | Verified live |
+| 8 | `POST /v2/observation_photos` | api | Spectrogram | Commit run only | Verified live |
+| 9 | `POST /v2/observation_sounds` | api | Audio | Commit run only | Verified live |
 
 `www` is `https://www.inaturalist.org`, `api` is `https://api.inaturalist.org`. A dry run sends requests 4 to 6, preceded by the login (1 to 3) when no valid token is stored, and nothing else.
 Requests 4 to 9 carry the JWT as `Authorization: Bearer`. The JWT is never logged.
@@ -51,7 +51,7 @@ the new JWT.
 **4. `GET /v1/users/me`**: JWT as Bearer. Used from `results[0]`:
 
 - `login`: stored with the token and shown by the login (the SmokeTest `whoami`);
-- `id`: the numeric user id, needed by the duplicate check (that this field is present is **not yet live**; the same number is the `user_id` claim of the JWT). It is asked once per JWT and kept in memory for the
+- `id`: the numeric user id, needed by the duplicate check (present in the live answer; the same number is the `user_id` claim of the JWT). It is asked once per JWT and kept in memory for the
   publisher's lifetime, not written anywhere. A response without an `id` ends the candidate as `Failed` before anything is searched or written.
 
 ## Taxon
@@ -77,9 +77,9 @@ Nothing is cached: every candidate asks again. Inactive taxa are not returned by
 
 Only the first page of results is read (the default page size); `total_results` decides whether something exists, the first
 results tell whether it is complete. From each result the package uses `id`, `uuid`, `tags`, `photos` and `sounds`
-(`id`, `uuid`, `photos` and `sounds` present in the answer, checked live). Whether `tags` comes back as a list of strings that
-holds the `batinspector:` tag sent with request 7, and whether an upload that is not processed yet is already listed, is
-**not yet live**. A `tags` value of another shape is ignored, so resume does not trigger.
+(`id`, `uuid`, `photos` and `sounds` present in the answer, checked live). `tags` comes back as a list of strings that holds the
+`batinspector:` tag sent with request 7 as it was sent, and a half-created observation (an upload that failed) is listed at once (seen live, 2026-10-15).
+A `tags` value of another shape would be ignored, so resume would not trigger.
 
 **`mine` and `mine_only` do not work.** The v1 API ignores both, even with a valid login: a Chiroptera search returned the
 same 291317 results with and without them, and 6 with `user_id` (checked live, 2026-10-14). They would have matched other users'
@@ -96,14 +96,15 @@ server error, a network error or a timeout (a repeat could create a second obser
 
 **7. `POST /v2/observations`**, JSON body `{"observation": {...}}` with `taxon_id`, `observed_on_string` (`yyyy-MM-dd HH:mm:ss`, local time),
 `latitude`, `longitude`, `place_guess` (the coordinates as text), `species_guess` (the name from the file), `description`
-(German text, see [inaturalist.md](inaturalist.md#the-description)) and `tag_list` (`INaturalistOptions.TagList` plus the
-entry's `batinspector:` tag). The answer's `results[0].uuid` is needed to
-attach the evidence; the numeric `id` is sometimes missing, then the result carries the uuid and no URL.
+(German text, see [inaturalist.md](inaturalist.md#the-description)), `tag_list` (`INaturalistOptions.TagList` plus the
+entry's `batinspector:` tag) and, when `INaturalistOptions.License` is set, `license`. The answer's `results[0].uuid` is needed to
+attach the evidence; the numeric `id` is sometimes missing, then the result carries the uuid and the uuid form of the URL (it redirects to the observation, seen live).
 
 **8. `POST /v2/observation_photos`** and **9. `POST /v2/observation_sounds`**: one multipart request each that uploads the file
 (`file`) and links it in the same step (`observation_photo[observation_id]` or `observation_sound[observation_id]`, set to the
 observation's uuid). The two-step flow (upload, then link) was rejected by the real API; the combined request follows the v2
-OpenAPI specification.
+OpenAPI specification. With `INaturalistOptions.License` set, the photo request also carries `observation_photo[photo][license_code]`
+(seen working live). The sound request carries no license: the API has no parameter for it.
 
 ## What is never sent
 

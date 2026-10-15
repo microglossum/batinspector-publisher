@@ -156,6 +156,24 @@ vor `RunAsync` `HasStoredToken` prüfen und bei false `LoginAsync()` aufrufen. E
 die Host-Anwendung, die den Grund anzeigen kann. Das gilt auch mit gespeicherter Anmeldung: Hat die Person den Zugriff bei
 iNaturalist widerrufen, wird die Erneuerung abgelehnt, und der Lauf fällt auf die Browser-Anmeldung zurück.
 
+## Lizenzen
+
+Beobachtung, Foto und Sound tragen bei iNaturalist je eine Lizenz, und die veröffentlichten Daten sind nur so geschützt wie die offenste davon.
+
+| Was | Wie die Lizenz gesetzt wird |
+|---|---|
+| Beobachtung | `INaturalistOptions.License` |
+| Spektrogramm (Foto) | `INaturalistOptions.License` |
+| Aufnahme (Sound) | **Über die API nicht möglich.** Der Sound bekommt die Standard-Soundlizenz des iNaturalist-Kontos. |
+
+`License` ist eines von `cc0`, `cc-by`, `cc-by-nc`, `cc-by-sa`, `cc-by-nd`, `cc-by-nc-sa`, `cc-by-nc-nd` oder `c` (alle Rechte vorbehalten), in beliebiger
+Schreibweise; jeder andere Wert lässt den Konstruktor werfen. `null` (Standard) sendet keine, dann gelten für alle drei die Standardlizenzen des Kontos.
+Live gesehen: mit `License = "cc-by-nc"` waren Beobachtung und Foto CC BY-NC und der Sound CC0, der Standard dieses Kontos.
+
+Was zu tun ist: `License` setzen und die **Standard-Soundlizenz** des iNaturalist-Kontos auf denselben Wert stellen (iNaturalist-Kontoeinstellungen,
+Inhalt & Anzeige, Lizenzierung; die Seite ändert iNaturalist). Ein Host sollte seinen Nutzern das vor dem ersten echten Lauf sagen: Das Paket
+kann die Einstellung des Kontos nicht sehen. Die Lizenz einer veröffentlichten Beobachtung lässt sich auch nachträglich bei iNaturalist ändern.
+
 ## Token-Speicherung
 
 Nach der Anmeldung legt der Authenticator ein `INaturalistToken` in seinem Token-Speicher ab:

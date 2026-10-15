@@ -1,0 +1,38 @@
+{
+  "SchemaVersion": 1,
+  "DocumentFiles": [
+    {
+      "Date": "08.10.2026 20:30:00",
+      "Latitude": 49.95,
+      "Longitude": 9.04,
+      "SpeciesLatin": "Nyctaloid",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/NLEI_20260429_222759.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/NLEI_20260429_222759.wav"
+    },
+    {
+      "Date": "08.10.2026 20:40:00",
+      "Latitude": 49.95027,
+      "Longitude": 9.04,
+      "SpeciesLatin": "Pipistrellus pygmaeus",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/PPYG_20260430_215601.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/PPYG_20260430_215601.wav"
+    },
+    {
+      "Date": "08.10.2026 20:50:00",
+      "Latitude": 49.950541,
+      "Longitude": 9.04,
+      "SpeciesLatin": "Mbart",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/MDAU_20260429_231021.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/MDAU_20260429_231021.wav"
+    }
+  ]
+}
