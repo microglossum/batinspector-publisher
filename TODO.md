@@ -19,7 +19,7 @@ before every commit (rules in `CLAUDE.md`).
 
 ### Live checks against iNaturalist that are still open
 
-- **Stored login after a day or more:** run `tools/LiveTest/scenarios/inaturalist/smoke.json` as a dry run on a later day. It must not ask for a browser login. This is the last check before the first tag. It also shows the silent renewal after the API token (assumed to last 24 h) has expired; that an invalid token is answered with 401 stays an assumption.
+- **Stored login after a day or more:** run `tools/LiveTest/scenarios/inaturalist/smoke.json` as a dry run on a later day. It must not ask for a browser login. It also shows the silent renewal after the API token (assumed to last 24 h) has expired; that an invalid token is answered with 401 stays an assumption.
 - **Rate limits, 429 and retries** (defaults `MaxAttempts = 1`, `MinRequestInterval` 1 s): the limits come from the forum and secondary sources (100 requests per minute, 60 asked for, about 10,000 per day). Read iNaturalist's "API recommended practices" page in a browser (it answers 403 to our tools) and compare with `docs/inaturalist-setup.md`. A 429, a `Retry-After` header and the write limits have not been observed and are not to be provoked: no rate-limit response header has appeared so far. Use the findings to document a sensible `MaxAttempts` and `RetryBaseDelay` for hosts that opt in, and to confirm that the enforced 1 s minimum for `MinRequestInterval` matches the limit.
 - **Login as a non-admin Windows user** (BatInspector's normal case; CI's Windows runners run as admin). `OAuthFlow` registers `http://127.0.0.1:<port>/` with `HttpListener` (http.sys); a prefix without a URL reservation is refused for a non-admin with error 5 (`HttpListenerException`). Secondary sources suggest `127.0.0.1` may work without admin on Windows 10 (one remark in googleapis/google-api-dotnet-client#1055); nothing found about Windows 11. Run `login` as a standard user on Windows 11 (and 10) with the fixed port and with a fallback port, and confirm that the error code on a real machine is 5 (`ErrorCode`) and that the `netsh http add urlacl` hint in the message and in the setup guide works. If a normal user is refused for `127.0.0.1`, replace `HttpListener` with a small `TcpListener` on `IPAddress.Loopback` that reads one request line and answers with a fixed response (no http.sys, no Host-header match; the `OAuthFlowTests` talk HTTP to the port and keep working). If it works, drop the "not verified" wording about the `netsh` hint in `docs/inaturalist-setup.md` / `.de.md`.
 - **Login with `localhost` or `[::1]` as redirect host:** the options accept both, the docs recommend `127.0.0.1`, the only form that was tried.
@@ -53,12 +53,7 @@ Waits until BatInspector runs off Windows:
 
 ### First NuGet release
 
-Runbook: `docs/releasing.md`. Before the first tag:
-
-- The day-later check of the stored login (above) and a `CHANGELOG.md` section for the version.
-- 2FA enabled on the nuget.org account.
-- Preview the package page on nuget.org: take the `nuget-package` artifact of the CI run on `main` (or `dotnet pack src/BatInspectorPublisher -c Release -o artifacts`), upload the `.nupkg` under "Upload Package" and stop before "Submit". Check the README, the icon, the CI badge and the release-notes link.
-- First release as `0.1.0-preview.N`. Versions are immutable: they can be unlisted but not deleted.
+Runbook: `docs/releasing.md`. The release commit is merged: tag the merge commit on `main` with `v0.1.0`, push the tag and approve the `nuget` environment on the Release run. Then check the package page on nuget.org (indexing takes a few minutes) and install the package into a scratch project.
 
 After the first version is out:
 
@@ -68,7 +63,7 @@ After the first version is out:
 
 ### GitHub Actions and repository
 
-- The tag path of `release.yml` (login, push, GitHub Release, the check that the tagged commit is on `main`) can only be tested by a real tag: the first `-preview` tag is that test.
+- The tag path of `release.yml` (login, push, GitHub Release, the check that the tagged commit is on `main`) can only be tested by a real tag: the `v0.1.0` tag is that test. If the nuget.org login fails, nothing was pushed: fix it and tag again.
 - The environment name `nuget` is in `release.yml` and in the nuget.org trusted publishing policy; keep both in step, and update the policy if `release.yml` is ever renamed (it matches the file name).
 - Check on the next pull request that the gitleaks job works with the workflow-level `permissions: contents: read` (the action may need `pull-requests: read`).
 - Dependabot must keep the SHA-pinned actions (`# vN` comments) current; check its next pull requests.

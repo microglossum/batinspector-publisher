@@ -4,6 +4,8 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-15
+
 First version: reads BatInspector's export file and publishes one observation per entry to iNaturalist, with the spectrogram and the recording as evidence.
 
 ### Added
@@ -44,3 +46,6 @@ First version: reads BatInspector's export file and publishes one observation pe
 - Documentation states the intended host (single-user desktop or CLI; web, server and multi-user hosting is not supported) in the README's "Who this is for".
 - Documentation in English and German: README, setup guide, input file reference, iNaturalist mapping (`docs/inaturalist.md`), the requests sent to iNaturalist (`docs/inaturalist-api.md`) and the logging contract.
 - Package icon (a bat above an upload arrow).
+
+[Unreleased]: https://github.com/microglossum/batinspector-publisher/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/microglossum/batinspector-publisher/releases/tag/v0.1.0
