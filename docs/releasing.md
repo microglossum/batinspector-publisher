@@ -38,7 +38,7 @@ Add a bullet under `## [Unreleased]` in `CHANGELOG.md` for everything users of t
 
 ## Cutting a release
 
-1. CI is green on `main`; release prerequisites in `TODO.md` are done (live test against iNaturalist).
+1. CI is green on `main`; release prerequisites in `TODO.md` are done (the live tests against iNaturalist are listed in `tools/LiveTest/README.md`; re-run the dry runs and the day-later check before a tag).
 2. In `CHANGELOG.md` rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` and add a fresh empty `## [Unreleased]` above it.
    Update the compare links at the bottom of the file:
    `[Unreleased]: https://github.com/microglossum/batinspector-publisher/compare/vX.Y.Z...HEAD` and
@@ -47,6 +47,7 @@ Add a bullet under `## [Unreleased]` in `CHANGELOG.md` for everything users of t
 4. The release workflow (`.github/workflows/release.yml`, starts on the pushed `v*` tag; it checks out with `fetch-depth: 0` so MinVer sees the tag) runs the tests, packs,
    pushes to nuget.org through trusted publishing (`NuGet/login`, secret `NUGET_USER` = profile name, no API key) and creates the GitHub Release with the notes from step 2 and the `.nupkg` / `.snupkg` attached; `-` versions are pre-releases.
    It fails before publishing anything if the tagged commit is not on `main`, if the packed version differs from the tag, or if `CHANGELOG.md` has no section for the tag.
+   The job runs in the GitHub environment `nuget` (Settings > Environments): its required reviewer, the owner, has to approve every run, the manual dry run too, and the trusted publishing policy on nuget.org names this environment. Rename it in one place only together with the other.
    A manual run (Actions > Release > Run workflow) is a dry run: build, test, pack and the `[Unreleased]` notes check, but no login, push or GitHub Release. Use it before the first tag and after changing the workflow. Do not register an author-signing certificate on nuget.org: it would make nuget.org reject the unsigned push.
 5. Check the package page on nuget.org (indexing takes a few minutes) and install it into a scratch project.
 
