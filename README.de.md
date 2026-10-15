@@ -5,6 +5,7 @@
 [![CI](https://github.com/microglossum/batinspector-publisher/actions/workflows/ci.yml/badge.svg)](https://github.com/microglossum/batinspector-publisher/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-512BD4)
+[![NuGet](https://img.shields.io/nuget/v/BatInspectorPublisher.svg)](https://www.nuget.org/packages/BatInspectorPublisher) [![Downloads](https://img.shields.io/nuget/dt/BatInspectorPublisher.svg)](https://www.nuget.org/packages/BatInspectorPublisher)
 
 .NET-Bibliothek, die Fledermaus-Beobachtungen aus der akustischen Erfassung von
 BatInspector auf Citizen-Science-Plattformen veröffentlicht.
@@ -41,6 +42,12 @@ Gebaut für eine **Desktop-Anwendung mit einem Benutzer** (BatInspector) oder ei
 * Ein Lauf zur Zeit pro Konto, mit einer vertrauenswürdigen Eingabedatei (die eigene Ausgabe von BatInspector).
 
 **Web-, Server- und Mehrbenutzerbetrieb ist nicht unterstützt und nicht geplant.**
+
+## Installation
+
+```text
+dotnet add package BatInspectorPublisher
+```
 
 ## Schnellstart (iNaturalist)
 

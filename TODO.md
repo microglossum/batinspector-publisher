@@ -51,26 +51,19 @@ Waits until BatInspector runs off Windows:
 
 ## Open: release and repository
 
-### First NuGet release
+### After the first release (0.1.0)
 
-Runbook: `docs/releasing.md`. The release commit is merged: tag the merge commit on `main` with `v0.1.0`, push the tag and approve the `nuget` environment on the Release run. Then check the package page on nuget.org (indexing takes a few minutes) and install the package into a scratch project.
-
-After the first version is out:
-
-- Narrow the trusted publishing policy scope to "Push only new package versions".
-- Add the NuGet version and downloads badges to both READMEs.
+- Optional guards: a tag ruleset for `v*` that blocks updates and deletions (nobody can move a released tag; to delete a tag after a failed run the ruleset has to be switched off briefly), a required reviewer on the environment `nuget`, and the bypass mode of the `main` ruleset set to "For pull requests only" (the owner can push to `main` directly now).
 - Optional: reserve the ID prefix `BatInspectorPublisher` (not `BatInspector*`, which would also claim the BatInspector project's IDs) by e-mail to `account@nuget.org`.
 
 ### GitHub Actions and repository
 
-- The tag path of `release.yml` (login, push, GitHub Release, the check that the tagged commit is on `main`) can only be tested by a real tag: the `v0.1.0` tag is that test. If the nuget.org login fails, nothing was pushed: fix it and tag again.
-- The environment name `nuget` is in `release.yml` and in the nuget.org trusted publishing policy; keep both in step, and update the policy if `release.yml` is ever renamed (it matches the file name).
 - Check on the next pull request that the gitleaks job works with the workflow-level `permissions: contents: read` (the action may need `pull-requests: read`).
 - Dependabot must keep the SHA-pinned actions (`# vN` comments) current; check its next pull requests.
 - Remove `.github/actionlint.yaml` once a released actionlint knows the `ubuntu-26.04` label.
 - The actionlint version in the `validate-config` job is pinned by hand (Dependabot does not see it): bump it together with the devcontainer feature now and then.
 - Optional: a musl test leg in an Alpine job container (`mcr.microsoft.com/dotnet/sdk:10.0-alpine`), only if a consumer runs on Alpine.
-- Optional: CodeQL (default setup), `CITATION.cff` if the tool should be citable.
+- Optional: `CITATION.cff` if the tool should be citable.
 
 ### NuGet package quality
 
