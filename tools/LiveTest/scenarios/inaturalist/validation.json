@@ -1,0 +1,125 @@
+{
+  "SchemaVersion": 1,
+  "DocumentFiles": [
+    {
+      "Date": "08.10.2026 22:00:00",
+      "Latitude": 90.5,
+      "Longitude": 10,
+      "SpeciesLatin": "Pipistrellus pipistrellus",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.wav"
+    },
+    {
+      "Date": "08.10.2026 22:00:00",
+      "Latitude": 0,
+      "Longitude": 0,
+      "SpeciesLatin": "Pipistrellus pipistrellus",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.wav"
+    },
+    {
+      "Date": "08.10.2026 22:00:00",
+      "Longitude": 8.968,
+      "SpeciesLatin": "Pipistrellus pipistrellus",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.wav"
+    },
+    {
+      "Date": "08.10.2026 22:00:00",
+      "Latitude": "abc",
+      "Longitude": 8.968,
+      "SpeciesLatin": "Pipistrellus pipistrellus",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.wav"
+    },
+    {
+      "Date": "08.10.2026 22:00:00",
+      "Latitude": 50.007009,
+      "Longitude": 8.968,
+      "SpeciesLatin": "Pipistrellus pipistrellus",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "relative/path.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.wav"
+    },
+    {
+      "Date": "08.10.2026 22:00:00",
+      "Latitude": 50.011514,
+      "Longitude": 8.968,
+      "SpeciesLatin": "Pipistrellus pipistrellus",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.png",
+      "PathToWav": "/tmp/sound.mp3"
+    },
+    {
+      "Date": "08.10.2026 22:00:00",
+      "Latitude": 90,
+      "Longitude": 10,
+      "SpeciesLatin": "Pipistrellus pipistrellus",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.wav"
+    },
+    {
+      "Date": "08.10.2026 22:00:00",
+      "Latitude": 50.016018,
+      "Longitude": 8.968,
+      "SpeciesLatin": "Pipistrellus pipistrellus",
+      "Temperature": -127,
+      "Humidity": 150,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.wav"
+    },
+    {
+      "Date": "08.10.2026 22:00:00",
+      "Latitude": 50.020523,
+      "Longitude": 8.968,
+      "SpeciesLatin": "Pipistrellus pipistrellus",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Größe – süß 🦇 \"zitiert\" <b>",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.wav"
+    },
+    {
+      "Date": "08.10.2026 22:00:00",
+      "Latitude": 50.025027,
+      "Longitude": 8.968,
+      "SpeciesLatin": "Pipistrellus pipistrellus",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.wav"
+    },
+    {
+      "Date": "08.10.2026 22:00:00",
+      "Latitude": 50.029532,
+      "Longitude": 8.968,
+      "SpeciesLatin": "Pipistrellus pipistrellus",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/malformed/missing.wav"
+    }
+  ]
+}

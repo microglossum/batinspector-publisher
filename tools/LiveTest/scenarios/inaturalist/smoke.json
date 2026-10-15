@@ -1,0 +1,16 @@
+{
+  "SchemaVersion": 1,
+  "DocumentFiles": [
+    {
+      "Date": "08.10.2026 21:03:30",
+      "Latitude": 49.95,
+      "Longitude": 8.95,
+      "SpeciesLatin": "Pipistrellus pipistrellus",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/PPIP_20260429_210330.wav"
+    }
+  ]
+}

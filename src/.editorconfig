@@ -1,0 +1,3 @@
+[*.cs]
+# Library code: every await must use ConfigureAwait(false) so a continuation never returns to the host's UI thread.
+dotnet_diagnostic.CA2007.severity = warning

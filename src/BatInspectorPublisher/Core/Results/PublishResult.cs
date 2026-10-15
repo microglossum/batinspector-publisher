@@ -1,0 +1,149 @@
+using BatInspectorPublisher.Core.Models;
+
+namespace BatInspectorPublisher.Core.Results;
+
+/// <summary>
+/// Outcome of publishing one <see cref="ObservationCandidate"/>. The values are stable and grouped: 0-9 something was written,
+/// 10-19 dry run, 20-29 skipped (nothing written), 30-39 not finished (may be partial).
+/// <para>
+/// Provisional until a second platform exists: <see cref="WouldResume"/> and <see cref="Resumed"/> exist because an
+/// iNaturalist submission takes several requests, and may not occur, or not mean the same, on every platform.
+/// </para>
+/// </summary>
+public enum PublishStatus
+{
+    /// <summary>The observation was created on the platform.</summary>
+    Created = 0,
+
+    /// <summary>
+    /// An earlier run left an incomplete observation of this entry on the platform; this run attached
+    /// the missing evidence to it (see <see cref="PublishResult.ObservationId"/>). No new observation was created.
+    /// </summary>
+    Resumed = 1,
+
+    /// <summary>Dry run: the observation would be created; nothing was written.</summary>
+    WouldCreate = 10,
+
+    /// <summary>
+    /// Dry run: an earlier run left an incomplete observation of this entry, and a commit run would attach the missing evidence to it
+    /// (see <see cref="PublishResult.ObservationId"/>); nothing was written.
+    /// </summary>
+    WouldResume = 11,
+
+    /// <summary>The platform already has an equivalent observation of this user.</summary>
+    SkippedDuplicate = 20,
+
+    /// <summary>The species name could not be resolved to a taxon on the platform.</summary>
+    SkippedUnresolvedTaxon = 21,
+
+    /// <summary>The spectrogram or audio file does not exist; nothing is published without evidence.</summary>
+    SkippedMissingEvidence = 22,
+
+    /// <summary>
+    /// The spectrogram or audio file is unreadable, empty, not a PNG / WAV file, or larger than the platform accepts;
+    /// nothing is published. <see cref="PublishResult.Message"/> names the file and the reason.
+    /// </summary>
+    SkippedInvalidEvidence = 23,
+
+    /// <summary>
+    /// The entry breaks a rule; nothing is published. <see cref="PublishResult.Message"/> lists every problem. Either a
+    /// platform-neutral rule that the reader would have caught (a candidate built in code skips the reader), or a rule of
+    /// this platform (for example a date or a position it rejects), in which case the same entry may be fine for another platform.
+    /// </summary>
+    SkippedInvalidEntry = 24,
+
+    /// <summary>Publishing failed; see <see cref="PublishResult.Error"/>. May be partial, see <see cref="PublishResult.ObservationId"/>.</summary>
+    Failed = 30,
+
+    /// <summary>
+    /// The caller cancelled while this candidate was being published. May be partial: if
+    /// <see cref="PublishResult.ObservationId"/> is set the observation exists on the platform and its evidence may be incomplete.
+    /// </summary>
+    Cancelled = 31,
+}
+
+/// <summary>
+/// The stage of publishing one candidate, used to say where a <see cref="PublishStatus.Failed"/> or <see cref="PublishStatus.Cancelled"/> result stopped.
+/// Provisional until a second platform exists: the stages follow iNaturalist's order (create, then attach the photo, then the sound).
+/// </summary>
+public enum PublishStep
+{
+    /// <summary>Reading the evidence, signing in, resolving the species and checking for duplicates. Nothing was written to the platform.</summary>
+    Preparation = 0,
+
+    /// <summary>Creating the observation. Interrupted here the outcome is unknown: the platform may have created it without the caller learning its id.</summary>
+    CreateObservation = 1,
+
+    /// <summary>Attaching the spectrogram to the observation.</summary>
+    AttachSpectrogram = 2,
+
+    /// <summary>Attaching the audio to the observation.</summary>
+    AttachAudio = 3,
+}
+
+/// <summary>
+/// Result of publishing one candidate. In-process .NET type for 0.x; a versioned serialized form
+/// is deferred until a consumer needs to persist results.
+/// </summary>
+public sealed record PublishResult
+{
+    /// <summary>The candidate this result belongs to.</summary>
+    public required ObservationCandidate Candidate { get; init; }
+
+    /// <summary>Platform that produced the result (see <see cref="IObservationPublisher.PlatformId"/>).</summary>
+    public required string PlatformId { get; init; }
+
+    /// <summary>What happened.</summary>
+    public required PublishStatus Status { get; init; }
+
+    /// <summary>
+    /// Name of the platform taxon the observation is filed under (or would be, in a dry run). It differs from
+    /// <see cref="ObservationCandidate.ScientificName"/> for an uncertain call that is filed under a broader taxon.
+    /// Null when no taxon was resolved.
+    /// </summary>
+    public string? TaxonName { get; init; }
+
+    /// <summary>
+    /// Platform-side observation id. Also set when the observation was already created before the result
+    /// became <see cref="PublishStatus.Failed"/> or <see cref="PublishStatus.Cancelled"/>, and for
+    /// <see cref="PublishStatus.Resumed"/> and a <see cref="PublishStatus.SkippedDuplicate"/> whose existing observation is known.
+    /// </summary>
+    public string? ObservationId { get; init; }
+
+    /// <summary>
+    /// The text posted as the observation's description (German), also in a dry run, where it shows what would become public.
+    /// Null when the run stopped before the text was built.
+    /// </summary>
+    public string? Description { get; init; }
+
+    /// <summary>Public URL of the observation, if the platform provides one.</summary>
+    public string? Url { get; init; }
+
+    /// <summary>
+    /// True if the platform observation has the spectrogram attached (attached now, or already by an earlier run). In a dry run: what is already there.
+    /// Provisional until a second platform exists, like <see cref="AudioAttached"/>: on a platform without sound or photo upload a
+    /// created observation would look incomplete.
+    /// </summary>
+    public bool SpectrogramAttached { get; init; }
+
+    /// <summary>
+    /// True if the platform observation has the audio attached (attached now, or already by an earlier run). In a dry run: what is already there.
+    /// Provisional, see <see cref="SpectrogramAttached"/>.
+    /// </summary>
+    public bool AudioAttached { get; init; }
+
+    /// <summary>Short human-readable (English) detail.</summary>
+    public string? Message { get; init; }
+
+    /// <summary>The exception behind a <see cref="PublishStatus.Failed"/> result.</summary>
+    public Exception? Error { get; init; }
+
+    /// <summary>For <see cref="PublishStatus.Failed"/> and <see cref="PublishStatus.Cancelled"/>: the stage that was interrupted, if known.</summary>
+    public PublishStep? InterruptedStep { get; init; }
+
+    /// <summary>
+    /// Set by a publisher on a <see cref="PublishStatus.Failed"/> result whose cause would fail every following candidate the
+    /// same way (for example the login); the orchestrator then stops the run.
+    /// </summary>
+    internal bool StopsRun { get; init; }
+}

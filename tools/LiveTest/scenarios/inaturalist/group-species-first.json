@@ -1,0 +1,27 @@
+{
+  "SchemaVersion": 1,
+  "DocumentFiles": [
+    {
+      "Date": "08.10.2026 21:10:00",
+      "Latitude": 49.95,
+      "Longitude": 9.022,
+      "SpeciesLatin": "Pipistrellus nathusii",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/PNAT_20260429_213726.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/PNAT_20260429_213726.wav"
+    },
+    {
+      "Date": "08.10.2026 21:20:00",
+      "Latitude": 49.95027,
+      "Longitude": 9.022,
+      "SpeciesLatin": "Nyctaloid",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/NLEI_20260429_222759.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/NLEI_20260429_222759.wav"
+    }
+  ]
+}

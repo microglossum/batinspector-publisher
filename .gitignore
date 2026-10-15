@@ -1,0 +1,32 @@
+# Build output
+bin/
+obj/
+TestResults/
+*.nupkg
+*.snupkg
+.vs/
+*.user
+
+# Secrets and local configuration - never commit these.
+# The package itself reads no config files; credentials are passed in by the host application.
+appsettings.local.json
+*.local.json
+.env
+.env.*
+secrets.json
+*.pfx
+*.pem
+*.key
+
+# Real observation data (coordinates, local file paths). Sanitized fixtures live in tests/**/Fixtures.
+local/
+
+# Claude Code per-user settings
+.claude/settings.local.json
+artifacts/
+node_modules/
+
+# Black-box live test host: the packed package, evidence files, generated input files and the ledger of created observations.
+tools/LiveTest/feed/
+tools/LiveTest/data/
+tools/LiveTest/out/

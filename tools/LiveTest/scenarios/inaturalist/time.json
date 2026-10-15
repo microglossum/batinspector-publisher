@@ -1,0 +1,39 @@
+{
+  "SchemaVersion": 1,
+  "DocumentFiles": [
+    {
+      "Date": "09.10.2026 00:30:12",
+      "Latitude": 49.962,
+      "Longitude": 8.95,
+      "SpeciesLatin": "Pipistrellus nathusii",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/PNAT_20260429_213726.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/PNAT_20260429_213726.wav"
+    },
+    {
+      "Date": "09.10.2026 23:50:00",
+      "Latitude": 49.962,
+      "Longitude": 8.968,
+      "SpeciesLatin": "Pipistrellus pygmaeus",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/PPYG_20260430_215601.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/PPYG_20260430_215601.wav"
+    },
+    {
+      "Date": "09.10.2026 22:30:00",
+      "Latitude": 38.8,
+      "Longitude": -9.2,
+      "SpeciesLatin": "Plecotus",
+      "Temperature": 14.2,
+      "Humidity": 80.5,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/Plecotus_20260430_211926.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/Plecotus_20260430_211926.wav",
+      "TimeZone": "Europe/Lisbon"
+    }
+  ]
+}

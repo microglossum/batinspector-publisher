@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Black-box live test host: it references the PACKED package from ./feed (see pack.sh), never the source project,
+       so it sees exactly what a consumer sees (public API only, Release build). Not part of the solution. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <RootNamespace>LiveTest</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <PublisherVersion Condition="'$(PublisherVersion)' == '' And Exists('$(MSBuildThisFileDirectory)feed/version.txt')">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)feed/version.txt').Trim())</PublisherVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BatInspectorPublisher" Version="$(PublisherVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.1" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,319 @@
+# iNaturalist setup
+
+Deutsche Version: [inaturalist-setup.de.md](inaturalist-setup.de.md)
+
+BatInspectorPublisher ships no iNaturalist credentials. The application that uses the package
+registers its own OAuth application once and passes the values in via `INaturalistOptions`. **Registering an application is restricted by iNaturalist, see the first section.**
+
+## Prerequisite: you must be approved as an "App Owner"
+
+**Creating an iNaturalist application is not self-service.** iNaturalist does not let everybody register one.
+You first have to be approved as an *App Owner*, and the form in step 1 only works after that.
+
+1. Apply on the App Owner application page: <https://www.inaturalist.org/oauth/app_owner_application>.
+2. The page states two conditions: your account must be **at least 2 months old**, and you must have made **at least 10 improving
+   identifications in the last month**.
+3. "Improving" is a specific term, defined in the
+   [iNaturalist help article](https://help.inaturalist.org/en/support/solutions/articles/151000170241):
+   * It must be an identification on **someone else's** observation. Your own observations do not count.
+   * It must move the observation forward, for example adding a first identification to an *unknown* observation that later gets confirmed,
+     or refining a genus to a species. Plain "I agree" identifications are *confirming*, not improving.
+   * Check your own count at `https://www.inaturalist.org/identifications?user_id=<your login>&category=improving&for=others`.
+4. After you submit, iNaturalist staff process the application manually. There is no automatic confirmation and no stated processing time;
+   reports in the forum range from days to weeks. Plan for the wait.
+
+What this means in practice:
+
+* **One application per host application, not one per user.** The application that distributes this package (BatInspector) registers a single
+  iNaturalist application and ships its client ID. Its users do **not** need an application of their own, they only log in with their own
+  iNaturalist account (step 3). Only the developer has to be an App Owner.
+* If you cannot qualify (yet), you cannot publish with your own application. Reading public iNaturalist data needs no application, but this
+  package writes observations, which requires an authorized (OAuth) application.
+
+Sources: iNaturalist community forum, [API Application Request (May to Sept 2026)](https://forum.inaturalist.org/t/api-application-request/78965)
+and [Can't register as App owner (Aug 2025)](https://forum.inaturalist.org/t/cant-register-as-app-owner-api-authentication/68639),
+quoting the application page and iNaturalist staff. The conditions are iNaturalist's to change; check the application page for the current text.
+
+## 1. Register the OAuth application
+
+1. Log in at <https://www.inaturalist.org/> with the account that should own the application.
+2. Open <https://www.inaturalist.org/oauth/applications/new>.
+3. Fill in:
+
+   | Field | Value |
+   |---|---|
+   | Name | A descriptive name, shown to users on the authorization screen. |
+   | Redirect URI | `http://127.0.0.1:45679/callback`. Must match exactly, including the port. Use `127.0.0.1`, not `localhost`. |
+   | Confidential | See [Confidential or public client](#confidential-or-public-client). |
+
+4. Copy the **Client ID** (and the **Client Secret** if one was issued).
+
+### Confidential or public client
+
+* **Confidential** (default): you get a Client ID and a Client Secret. Pass both in `INaturalistOptions`.
+* **Public**: a native desktop application cannot keep a secret safe, so this is the technically correct choice.
+  You only get a Client ID; leave `ClientSecret` empty. The code sends the secret only if one is set.
+
+> A secret embedded in a distributed application is not secret. Prefer a public client (PKCE protects the flow)
+> when the application is distributed to other people.
+
+## 2. Pass the credentials to the package
+
+```csharp
+var options = new INaturalistOptions
+{
+    ClientId = settings.INaturalistClientId,
+    ClientSecret = settings.INaturalistClientSecret, // null or empty for a public client
+};
+```
+
+The package reads no files or environment variables. Where the host keeps the values is up to the host.
+Never commit them to a repository.
+
+## 3. Log in
+
+```csharp
+var auth = new INaturalistAuthenticator(options, httpClient);
+await auth.LoginAsync(); // e.g. from a "connect to iNaturalist" button
+```
+
+By default the system browser opens. To show the URL in your own UI, pass an `AuthorizationPrompt`.
+The login completes when iNaturalist redirects to the redirect URI; a temporary local listener
+catches that request; other requests to it are ignored. `AuthorizationTimeout` (default 5 minutes) bounds the wait.
+
+The login keeps two tokens (see [Token storage](#token-storage)): iNaturalist's OAuth access token, which does not expire,
+and the API token, a JWT that every API call sends and that is valid for about 24 hours. The publisher
+asks for the API token for every candidate (internally; the tokens are not handed to the host) and gets the stored one while it is valid. When the API token has expired (or is
+within 5 minutes of it), the authenticator exchanges the stored OAuth token for a new one, silently and without a browser. So the browser
+login is needed **once**, until the user revokes the application's access on iNaturalist or the stored login is removed.
+A new browser login only happens when no login is stored or iNaturalist rejects the stored OAuth token (401 or 403).
+A network error during the renewal never starts a login; that candidate ends as `Failed` and the run stops.
+If iNaturalist rejects the API token earlier than expected (any API request answers 401), the publisher renews it the same
+way and repeats that one request, once per candidate. That is safe for a write too, because iNaturalist refused the request
+before processing it; a second 401 ends the candidate as `Failed`.
+
+### Port 45679
+
+The login listens on the port of the registered redirect URI. 45679 avoids common dev-server ports.
+If it is taken on a machine, the login retries on up to three free ports chosen by the operating system
+(logged as a warning) and sends the matching redirect URI to iNaturalist. For a loopback URI
+(`127.0.0.1`) iNaturalist ignores the port when it matches the redirect URI, so the one registered URI is
+enough. Should the browser show iNaturalist's redirect URI error anyway, free the port, or pick another
+port, set `INaturalistOptions.RedirectUri` and register the identical URI at iNaturalist. If no port can
+be opened at all, the login fails with an `INaturalistLoginException` (`Reason` is `ListenerUnavailable`).
+
+On Windows a user without administrator rights may not be allowed to listen on the address at all (Windows error 5,
+"access denied"). Then the login fails at once with `ListenerUnavailable` and a message that says so, and tries no other
+port, because every port is refused for the same reason. An administrator can grant the right once:
+`netsh http add urlacl url=http://127.0.0.1:45679/ user=DOMAIN\user`. Whether a normal user is refused for `127.0.0.1`
+is not verified yet.
+
+While it waits, the listener ignores every request that does not belong to this login (a port scan, a browser
+prefetch, another local program) and answers it with 404; only the redirect carrying this login's `state`
+ends the wait.
+
+The host must be `127.0.0.1` in both places: `HttpListener` matches the request's `Host` header
+text verbatim, so `localhost` would get a 404 from a listener bound to `127.0.0.1`. The package refuses a redirect URI that is
+not on this machine (`127.0.0.1`, `localhost` or `[::1]`, over http) when the authenticator is created, because the authorization
+code is sent there unencrypted.
+
+### Where the loopback login does not work
+
+The login needs two things on the **same machine**: the app can open a local port, and the browser that
+completes the login can reach it. These setups break one of them (none was tested yet; the cause follows
+from how the login works):
+
+| Setup | What happens | What to do |
+|---|---|---|
+| Browser on another machine than the app (remote desktop, VDI, SSH session) | iNaturalist redirects the browser to `127.0.0.1` of *its* machine, where nothing listens. The login ends with `TimedOut`. | Forward the port to the browser's machine (for SSH: `ssh -L 45679:127.0.0.1:45679 <host>`) and make sure the fixed port is free, because a fallback port cannot be forwarded in advance. Or log in on the machine that has the browser. |
+| Locked-down machine (firewall or security software blocks local listeners) | No port can be opened: `ListenerUnavailable`. Or the browser cannot reach it: `TimedOut`. | Allow the app to listen on the loopback address. If that is not possible, the loopback login is not usable there. |
+| Several users on one machine (terminal server) | The fixed port is taken by another session's login; the fallback ports take over. | Nothing, unless `ListenerUnavailable` appears: then retry when the other login has finished. |
+| A web or multi-user server that logs in on behalf of its users | The browser of a remote user cannot reach the server's loopback port, and one authenticator holds one account. | Not supported, see [Who this is for](../README.md#who-this-is-for). |
+| Sandboxed or packaged apps with loopback isolation (for example MSIX) | The app may be unable to reach its own loopback listener from the browser. | Not supported: the login needs a loopback listener. |
+
+A failed login stores nothing. Cancel and try again; the stray requests of other programs do not end the wait.
+
+### Why there is an extra JWT exchange
+
+iNaturalist's REST API does not accept a raw OAuth access token as Bearer token (401). The token is
+first exchanged for a JWT with `GET https://www.inaturalist.org/users/api_token` (note the `www`
+host), and that JWT, valid about 24 h, is used for all API calls and stored locally. This is
+undocumented in the official API reference.
+
+### When the login fails during a run
+
+The publisher asks the authenticator for a token for every candidate, after the adapter's own checks and before the first
+request, in a dry run too. If no usable login is stored, that call starts the browser login inside `RunAsync`. When no token
+can be obtained (the user clicks Deny: `Denied`; nobody completes the login within `AuthorizationTimeout`: `TimedOut`; no port
+can be opened: `ListenerUnavailable`; the token store cannot save, see [Token storage](#token-storage); a network error during
+the token exchange), that candidate ends as `Failed`, with the exception in `PublishResult.Error` and its text in `Message`,
+and **the run stops there**: every following candidate would fail the same way. The candidates not yet started get no result,
+and `RunReport.IsComplete` is false. The next run tries the login again.
+
+What a host should do: log in before the run. Call `LoginAsync()` from a "connect to iNaturalist" button, or check
+`HasStoredToken` before `RunAsync` and call `LoginAsync()` when it is false. A failed `LoginAsync()` throws to the host, which
+can show the reason. This matters with a stored login too: if the user has revoked the access on iNaturalist, the renewal is
+rejected and the run falls back to the browser login.
+
+## Licenses
+
+Observation, photo and sound each carry a license on iNaturalist, and the published data is only as closed as the most open of them.
+
+| What | How the license is set |
+|---|---|
+| Observation | `INaturalistOptions.License` |
+| Spectrogram (photo) | `INaturalistOptions.License` |
+| Recording (sound) | **Not possible through the API.** The sound gets the default sound license of the iNaturalist account. |
+
+`License` is one of `cc0`, `cc-by`, `cc-by-nc`, `cc-by-sa`, `cc-by-nd`, `cc-by-nc-sa`, `cc-by-nc-nd` or `c` (all rights reserved), in any case; any other
+value makes the constructor throw. `null` (the default) sends none, and iNaturalist applies the account's default licenses to all three.
+Seen live: with `License = "cc-by-nc"` the observation and the photo came out as CC BY-NC and the sound as CC0, the default of that account.
+
+What to do: set `License`, and set the **default sound license** of the iNaturalist account to the same value (iNaturalist account settings,
+Content & Display, Licensing; the page is iNaturalist's to change). A host should tell its users this before the first real run: the package
+cannot see the account's setting. The license of a published observation can also be changed afterwards on iNaturalist.
+
+## Token storage
+
+After the login the authenticator keeps one `INaturalistToken` in its token store:
+
+* `AccessToken`: the API token, the JWT every API call sends, valid for about 24 hours.
+* `OAuthAccessToken`: iNaturalist's OAuth access token. It does not expire and renews the API token without a browser.
+* `Username` (the iNaturalist login) and when the API token was obtained.
+
+iNaturalist issues no refresh token, so `RefreshToken` stays empty. Treat the stored token like a password: whoever has the
+OAuth token can publish in the user's name until the user revokes the application's access on iNaturalist.
+
+### The default store
+
+Without a `tokenStore` argument the authenticator uses `ProtectedFileTokenStore`. It keeps one file, `oauthtoken.dat`, in the
+directory `BatInspectorPublisher/inaturalist` under .NET's `Environment.SpecialFolder.LocalApplicationData`:
+
+| Platform | Default directory |
+|---|---|
+| Windows | `%LOCALAPPDATA%\BatInspectorPublisher\inaturalist` |
+| Linux | `$XDG_DATA_HOME/BatInspectorPublisher/inaturalist`, usually `~/.local/share/BatInspectorPublisher/inaturalist` |
+| macOS | `~/Library/Application Support/BatInspectorPublisher/inaturalist` |
+
+`new ProtectedFileTokenStore(directory)` uses another directory, for example one per profile of the host.
+
+* **Windows:** the file is encrypted with DPAPI for the current Windows user. Another user cannot read it.
+* **Linux and macOS:** there is no DPAPI, so saving throws `PlatformNotSupportedException` unless the host opts in with
+  `new ProtectedFileTokenStore(allowPlaintextOnNonWindows: true)`. The file is then plain JSON, created with mode `0600`
+  (owner read and write only). That protects against other local users, not against other programs of the same user.
+* **`CanSave`** is false on Linux and macOS without the opt-in. The authenticator checks it before the browser opens and throws
+  `PlatformNotSupportedException`, so the user does not authorize a login that cannot be kept.
+* The file is written to a temporary file first and then moved over the old one, so an interrupted write never leaves half a token.
+* **An unreadable file** (corrupt, or encrypted by another Windows user) counts as "no token": a warning is logged
+  (event 2201, see [logging.md](logging.md)), a new login is needed, and that login replaces the file.
+
+### A store of your own
+
+To keep the token somewhere else (an OS keychain, a vault of the host), implement `INaturalistTokenStore` and pass it as
+`tokenStore` to the `INaturalistAuthenticator` constructor:
+
+* `Load()` returns the stored token or null. Return null, not an exception, for a token that cannot be read. The authenticator
+  reads the store each time it needs a token, that is once per candidate, so keep it cheap.
+* `Save(token)` replaces the previous token. Keep the whole `INaturalistToken`, all its properties.
+* `Clear()` removes the token.
+* `CanSave` (default true): return false when `Save` is known to fail, so the login fails before the browser opens.
+
+### Connect and disconnect in the host
+
+A "connect / disconnect iNaturalist" UI needs these members of `INaturalistAuthenticator`:
+
+| Member | What it does |
+|---|---|
+| `HasStoredToken` | True when the store holds a readable login. It does not ask iNaturalist: an expired API token still counts (the next request renews it), and so does a login whose access the user has revoked, until the renewal is rejected. |
+| `StoredUsername` | The iNaturalist login of the stored user, for a "connected as ..." label, or null. |
+| `LoginAsync()` | "Connect": runs the browser login and stores the result, replacing a stored login. Returns the iNaturalist login of the user (the tokens stay in the token store). Throws when it fails (`INaturalistLoginException`, `PlatformNotSupportedException`, `INaturalistApiException`; `OperationCanceledException` when cancelled). |
+| `Logout()` | "Disconnect": deletes the stored token. It does not revoke the application's access on iNaturalist; the user does that in the iNaturalist account settings. The next run needs a new browser login. |
+
+`HasStoredToken` and `StoredUsername` read the store on every access (with the default store: read the file and, on Windows,
+decrypt it), so read them when the UI needs them, not in a loop.
+
+## Limits and rules checked before publishing
+
+Before the login and before anything is written, the publisher checks what iNaturalist would reject, and reports it
+as `PublishStatus.SkippedInvalidEntry` (the entry) or `SkippedInvalidEvidence` (the files) with every problem in
+`PublishResult.Message`. This also applies to a dry run. Without it a rejected upload would only fail after the
+observation was created, leaving a public observation without its photo or sound. The rules are taken from
+iNaturalist's open source and forum, not from an official reference, and are not verified against the live service yet.
+
+| Rule | Limit |
+|---|---|
+| File size (spectrogram and audio, each) | 20 MB (`INaturalistOptions.MaxEvidenceBytes`, default 20,000,000 bytes; the option can only lower it, a value above 20,000,000 or below 1 is refused when the publisher is created) |
+| Observation date | not in the future (a moment after now, as for the input file), not older than 130 years |
+| Latitude | a number greater than -90 and less than 90 |
+| Longitude | a number from -180 to 180 |
+| Position | not exactly 0, 0 |
+| Species name (`species_guess`) | at most 255 characters |
+| `INaturalistOptions.TagList` | at most 723 characters in total (joined with ", "), at most 255 per tag: iNaturalist accepts 750, and 27 are reserved for the resume tag each observation gets. Checked when the publisher is created (`ArgumentException`), since it would reject every entry |
+
+Some rows are the platform-neutral checks of the input file (see `docs/input-format.md`), which `ExportOrchestrator` runs on
+every candidate before the publisher sees it. The entry rules come first: if one fails, the result is
+`SkippedInvalidEntry` and the file sizes are not checked yet.
+iNaturalist also refuses a date after today in the observation's own time zone (taken from the coordinates). A recording
+that is not in the future can only break that rule when its `TimeZone` does not match the place; such a request fails with
+iNaturalist's own message.
+
+Accepted as they are: PNG photos (iNaturalist scales them to 2048 pixels on the longest side) and WAV sounds
+(stored unchanged; MP3 and M4A are accepted by iNaturalist too, but the input format only knows `.wav`).
+iNaturalist documents no duration or sample-rate limit. For orientation: a mono 16 bit recording at 384 kHz takes
+768 kB per second, so about 26 seconds fill 20 MB. If a file is too large, shorten the recording or lower its sample
+rate and run again; nothing was created for that entry.
+
+Error messages that iNaturalist itself sends back are passed through unchanged in `PublishResult.Message`, cut to their first 1000 characters
+(`INaturalistApiException.ResponseBody` keeps the whole body; a server error can answer with a complete HTML page).
+
+## Request rate and retries
+
+iNaturalist throttles the API at 100 requests per minute and asks clients to stay at 60 or fewer; beyond that it answers
+`429 Too Many Requests`. A candidate needs about five requests (taxon search, duplicate check, create, photo, sound), plus a
+token exchange when the stored API token has expired. The package therefore paces its requests and can retry failures.
+
+**Pacing (on by default).** `INaturalistOptions.MinRequestInterval` (default one second) is the minimum time between the starts
+of two requests, so a run stays at about 60 requests per minute and a candidate takes about five seconds. The spacing holds per
+`INaturalistPublisher` (the authenticator keeps its own, it sends rarely): do not run several publishers in parallel against one
+account. The option must be at least one second (an `ArgumentException` otherwise), so pacing cannot be switched off. The package does not count requests; iNaturalist's recommended practices also name a
+daily volume, so split a very large file over several days.
+
+**Retries (off by default).** `INaturalistOptions.MaxAttempts` is the number of tries per request, the first one included.
+The default 1 does not retry: a transient failure ends the candidate as `Failed` and the next run completes it (see
+[Re-running: duplicates and resume](inaturalist.md#re-running-duplicates-and-resume)). Set 3 to retry. A failure is repeated only when that cannot create anything twice:
+
+| Request | Retried after | Not retried after |
+|---|---|---|
+| Reads: taxon search, duplicate check, user profile, token exchange | 429, 500, 502, 503, 504, a network error, a timeout | any other status (400, 401, 404, 422, ...); a 401 renews the API token instead, see [Log in](#3-log-in) |
+| Writes: create the observation, attach the spectrogram, attach the audio | 429 (refused before processing); a connection that could not be set up (no network, DNS, TLS handshake) | 500, 502, 503, 504, a network error after sending, a timeout |
+
+A write that fails that way may already have been processed, and sending it again could create a second observation or a
+second upload. It ends as `Failed` (with `ObservationId` set if the observation exists) and the next run's duplicate check and resume sort it out.
+
+The wait before a retry is `RetryBaseDelay` (default 5 seconds), doubled with every further retry, at most `MaxRetryDelay`
+(default 60 seconds). If iNaturalist sends a `Retry-After` header (its documentation does not promise one), that wait is used instead.
+A header that asks for more than `MaxRetryDelay` is not waited out: the request fails at once and
+`INaturalistApiException.RetryAfter` holds the requested time. After the last attempt the original error is reported unchanged.
+Every retry is logged as a Warning (event 3003, see [logging.md](logging.md)), without the URL, which can contain coordinates.
+
+Not retried: the token request of the browser login (its code works once) and anything that is not one of the requests above.
+Cancelling during a wait ends the candidate as `Cancelled`.
+
+**Upload timeout.** `HttpClient.Timeout` of the client passed to `INaturalistPublisher` (default 100 seconds) also bounds the
+evidence uploads: a 20 MB WAV needs about 1.6 Mbit/s upstream to finish in time. A timed-out upload is a write, so it is not
+repeated; the candidate ends as `Failed` and a re-run completes it. On slow lines, pass an `HttpClient` with a larger `Timeout`.
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `ArgumentException` about `ClientId` | `INaturalistOptions.ClientId` is empty. |
+| `INaturalistLoginException`, `Reason` = `ListenerUnavailable`, on login | Port in use and no fallback port could be opened, or (Windows, message says "access denied") the user may not listen on the address, see [Port 45679](#port-45679). |
+| iNaturalist error page after clicking Authorize | The registered redirect URI differs from `INaturalistOptions.RedirectUri`. |
+| `INaturalistLoginException`, `Reason` = `TimedOut`, on login | Nobody completed the browser login within `AuthorizationTimeout`. |
+| The run stops after one `Failed` result with an `INaturalistLoginException` in `Error` | No login was stored and the browser login inside the run was denied or timed out. Log in before the run, see [When the login fails during a run](#when-the-login-fails-during-a-run). |
+| `PlatformNotSupportedException` when logging in or saving the token | Not Windows. The check runs before the browser opens. Pass `allowPlaintextOnNonWindows: true` (file mode `0600`, protects against other local users only) or supply your own `INaturalistTokenStore`. |
+| Login asked again although you logged in before | The token file could not be read (corrupt, or encrypted by another Windows user); a warning is logged and the file is replaced by the next login. See [Token storage](#token-storage). |
+| `Failed` with `429` or `Retry-After` in `INaturalistApiException` | iNaturalist throttled the run. Raise `MinRequestInterval`, set `MaxAttempts` to 3, see [Request rate and retries](#request-rate-and-retries); run again later, the next run completes what was left. |
+| `Failed` with a 5xx or a network error | Transient on iNaturalist's or your side. Run again: the duplicate check and resume complete it. |
+| 401/403 during the JWT exchange | See [Why there is an extra JWT exchange](#why-there-is-an-extra-jwt-exchange); check the application registration at <https://www.inaturalist.org/oauth/applications>. |
