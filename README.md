@@ -103,6 +103,13 @@ application once and pass the values via `INaturalistOptions`; iNaturalist requi
 The login is kept by an `INaturalistTokenStore`; the default encrypts it with Windows DPAPI and refuses plain text elsewhere
 unless you opt in. Details and custom stores: [Token storage](https://github.com/microglossum/batinspector-publisher/blob/main/docs/inaturalist-setup.md#token-storage).
 
+## Licenses
+
+Observation, photo and sound each carry a license on iNaturalist. Without `INaturalistOptions.License` iNaturalist applies the
+default licenses of the logged-in account, which may be as open as CC0. Set `License` (for example `"cc-by-nc"`) for the observation
+and the spectrogram. The license of the recording (sound) cannot be set through the API, so set the account's default sound
+license to the same value. Details: [Licenses](https://github.com/microglossum/batinspector-publisher/blob/main/docs/inaturalist-setup.md#licenses).
+
 ## Input format
 
 The input is BatInspector's export file. Its schema is versioned: `SchemaVersion` is required, and newer versions than the

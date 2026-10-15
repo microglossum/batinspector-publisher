@@ -104,6 +104,13 @@ zugelassen ist. Schritte: [docs/inaturalist-setup.de.md](docs/inaturalist-setup.
 Die Anmeldung hält ein `INaturalistTokenStore`; der Standard verschlüsselt sie mit Windows-DPAPI und schreibt auf anderen
 Plattformen keinen Klartext, außer man stimmt zu. Einzelheiten und eigene Stores: [Token-Speicherung](docs/inaturalist-setup.de.md#token-speicherung).
 
+## Lizenzen
+
+Beobachtung, Foto und Sound tragen bei iNaturalist je eine Lizenz. Ohne `INaturalistOptions.License` gelten die Standardlizenzen
+des angemeldeten Kontos, die so offen sein können wie CC0. `License` setzen (zum Beispiel `"cc-by-nc"`) gilt für die Beobachtung
+und das Spektrogramm. Die Lizenz der Aufnahme (Sound) lässt sich über die API nicht setzen; dafür die Standard-Soundlizenz des
+Kontos auf denselben Wert stellen. Einzelheiten: [Lizenzen](docs/inaturalist-setup.de.md#lizenzen).
+
 ## Eingabeformat
 
 Die Eingabe ist die Exportdatei von BatInspector. Ihr Schema ist versioniert: `SchemaVersion` ist Pflicht, neuere
