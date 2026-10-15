@@ -1,6 +1,6 @@
 # BatInspectorPublisher
 
-<img src="assets/icon.png" alt="BatInspectorPublisher-Icon: eine Fledermaus über einem Upload-Pfeil" width="64" height="64">
+![BatInspectorPublisher-Icon: eine Fledermaus über einem Upload-Pfeil](assets/icon.png)
 
 [![CI](https://github.com/microglossum/batinspector-publisher/actions/workflows/ci.yml/badge.svg)](https://github.com/microglossum/batinspector-publisher/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
