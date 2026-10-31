@@ -23,6 +23,7 @@ local/
 
 # Claude Code per-user settings
 .claude/settings.local.json
+CLAUDE.local.md
 artifacts/
 node_modules/
 
