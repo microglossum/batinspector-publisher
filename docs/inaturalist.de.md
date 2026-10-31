@@ -19,9 +19,9 @@ flowchart TD
     B -->|ok| C["Anmeldung (gespeichertes Token oder Browser)"]
     C --> D{"Taxon: genau ein<br/>aktiver Fledermaus-Treffer?"}
     D -->|nein| S2["SkippedUnresolvedTaxon"]
-    D -->|ja| E{"Eigene Beobachtung dieses<br/>Taxons, Tages und Ortes?"}
+    D -->|ja| E{"Für diesen Eintrag schon<br/>veröffentlicht? (am Tag gefunden)"}
     E -->|"ja, vollständig"| S3["SkippedDuplicate"]
-    E -->|"ja, mit dem Tag dieses Eintrags,<br/>Foto oder Ton fehlt"| G{"Commit?"}
+    E -->|"ja, Foto oder Ton fehlt"| G{"Commit?"}
     E -->|nein| H{"Commit?"}
     G -->|nein| W1["WouldResume"]
     G -->|ja| K["Fehlendes anhängen"]
@@ -43,7 +43,7 @@ Die Schritte verwenden diese Endpunkte von iNaturalist (jede Anfrage mit ihren P
 | Schritt | Anfrage |
 |---|---|
 | Taxon | `GET /v2/taxa/autocomplete` |
-| Duplikatprüfung, Fortsetzen | `GET /v1/observations` (eingeschränkt mit `user_id`, die aus `GET /v1/users/me` stammt) |
+| Duplikatprüfung, Fortsetzen | `GET /v1/observations` (nach dem Tag des Eintrags, eingeschränkt mit `user_id`, die aus `GET /v1/users/me` stammt) |
 | Anlegen | `POST /v2/observations` |
 | Spektrogramm | `POST /v2/observation_photos` (eine Multipart-Anfrage, die hochlädt und verknüpft) |
 | Audio | `POST /v2/observation_sounds` (ebenso) |
@@ -56,17 +56,19 @@ Die Schritte verwenden diese Endpunkte von iNaturalist (jede Anfrage mit ihren P
 | `SpeciesLatin` | `species_guess` | Der Name aus der Datei, normalisiert. Bei einem unsicheren Ruf wie `Nyctaloid` bleibt hier der ursprüngliche Wert, während `taxon_id` das übergeordnete Taxon ist. |
 | `Date` | `observed_on_string` | Lokales Datum und Uhrzeit als `yyyy-MM-dd HH:mm:ss`, ohne Zone oder Offset (siehe [Zeitzone](#zeitzone)). Die Zeit mit ihrer Zone steht auch in der Beschreibung. |
 | `Latitude`, `Longitude` | `latitude`, `longitude` | Unverändert. Eine Positionsgenauigkeit wird nicht gesendet. |
-| `Latitude`, `Longitude` | `place_guess` | Die Koordinaten als Text mit fünf Nachkommastellen (`50.11000, 8.68200`): Die Eingabe hat keinen Ortsnamen, und v2 lehnt einen leeren Wert ab. |
+| `Latitude`, `Longitude` | `place_guess` | Nicht gesendet. Die Eingabe hat keinen Ortsnamen; iNaturalist setzt aus den Koordinaten selbst einen, siehe [Position verbergen](inaturalist-setup.de.md#position-verbergen). |
 | `Temperature`, `Humidity`, `Comment`, `Date`, `TimeZone` | `description` | Deutscher Text, siehe unten. |
 | `PathToPng` | Foto | Das Spektrogramm, hochgeladen unter seinem Dateinamen. |
 | `PathToWav` | Ton | Die Aufnahme, hochgeladen unter ihrem Dateinamen. |
 | `SpeciesLocal` | nicht gesendet | |
 | (Optionen) | `tag_list` | `INaturalistOptions.TagList`, Standard `bat,acoustic-monitoring,batinspector`, dazu das Fortsetzungs-Tag des Eintrags (siehe unten). |
+| (Optionen) | `geoprivacy` | `INaturalistOptions.Geoprivacy`, standardmäßig keine. |
 | (Optionen) | `license`, Foto-`license_code` | `INaturalistOptions.License`, standardmäßig keine (dann gelten die Standardlizenzen des Kontos). Nicht für den Sound, siehe [Lizenzen](inaturalist-setup.de.md#lizenzen). |
 | `SpeciesLatin`, `Date`, `Latitude`, `Longitude` | `tag_list` | Ein weiteres Tag, `batinspector:` und 12 Hex-Ziffern: ein kurzer Hash aus der Art wie in der Datei, dem Zeitpunkt in UTC und den Koordinaten. Es kennzeichnet die Beobachtung als die, die dieses Paket für den Eintrag angelegt hat, siehe [Erneuter Lauf](#erneuter-lauf-duplikate-und-fortsetzen). |
 
-Nicht gesendet werden: eine Zeitzone, eine Positionsgenauigkeit, Geoprivacy, Captive/Cultivated-Kennzeichen. Das Paket behandelt
-sensible Arten nicht; iNaturalist verschleiert die Koordinaten von Taxa, die es für sensibel hält, selbst.
+Nicht gesendet werden: eine Zeitzone, eine Positionsgenauigkeit, Captive/Cultivated-Kennzeichen. Das Paket behandelt
+sensible Arten nicht; iNaturalist verschleiert die Koordinaten von Taxa, die es für sensibel hält, selbst. Die Position aller
+Beobachtungen lässt sich mit `INaturalistOptions.Geoprivacy` verbergen, siehe [Position verbergen](inaturalist-setup.de.md#position-verbergen).
 
 ### Zeitzone
 
@@ -128,32 +130,30 @@ die Bestimmung auf iNaturalist verfeinern. `todo` und jeder andere Wert, der kei
 
 ## Erneuter Lauf: Duplikate und Fortsetzen
 
-Bevor etwas angelegt wird, fragt der Publisher iNaturalist nach den **eigenen** Beobachtungen des angemeldeten Nutzers (`user_id`, seine numerische Nutzer-ID)
-des aufgelösten Taxons am selben Kalendertag im Umkreis von `INaturalistOptions.DuplicateCheckRadiusKm` (Standard 0,1 km = 100 m; es muss eine endliche Zahl über 0 sein, sonst startet der Publisher nicht, weil die Prüfung nichts fände).
+Bevor etwas angelegt wird, fragt der Publisher iNaturalist, ob dieses Paket den Eintrag schon veröffentlicht hat. Gesucht wird das
+`batinspector:`-Tag des Eintrags unter den **eigenen** Beobachtungen des angemeldeten Nutzers (`user_id`, seine numerische Nutzer-ID).
+Das Tag wird gefunden, wo auch immer die Beobachtung liegt, auch wenn ihre Position verschleiert oder privat ist (durch `Geoprivacy` oder
+bei einem sensiblen Taxon durch iNaturalist selbst).
 
 - **Nichts gefunden:** Die Beobachtung wird angelegt.
-- **Etwas gefunden, und es ist vollständig oder nicht als die dieses Eintrags erkennbar:** `SkippedDuplicate`. Die vorhandene
-  Beobachtung steht in `ObservationId`, wenn sie bekannt ist. Sie wird nie angefasst.
-- **Etwas gefunden, das das `batinspector:`-Tag dieses Eintrags trägt, und es fehlt Foto oder Ton:** Ein früherer Lauf hat sie
-  angelegt und ist vor dem vollständigen Beleg abgebrochen. Der fehlende Beleg wird angehängt (`Resumed`, im Probelauf
-  `WouldResume`). Es wird nur eine Beobachtung vervollständigt, die eindeutig von diesem Paket stammt. Das Tag ist an der
-  Beobachtung sichtbar; wer es entfernt, schaltet das nur für diese Beobachtung ab, die dann unberührt bleibt.
+- **Gefunden, und sie ist vollständig:** `SkippedDuplicate`. Die vorhandene Beobachtung steht in `ObservationId`. Sie wird nie angefasst.
+- **Gefunden, und es fehlt Foto oder Ton:** Ein früherer Lauf hat sie angelegt und ist vor dem vollständigen Beleg abgebrochen. Der
+  fehlende Beleg wird angehängt (`Resumed`, im Probelauf `WouldResume`). Vervollständigt wird nur eine Beobachtung, die das Tag trägt.
 
 Sagt das Suchergebnis nicht, ob Fotos und Töne vorhanden sind, bleibt die Beobachtung mit Absicht unberührt
 (`SkippedDuplicate`): Eine falsche Annahme bleibt so folgenlos.
 
 Was man über diese Prüfung wissen sollte:
 
-- Sie verlässt sich darauf, dass die Datei eine Referenzaufnahme pro Art, Nacht und Ort enthält. Mehrere Einträge für eine
-  Kombination werden nach dem ersten übersprungen; der Probelauf kann das nicht vorhersehen, weil er nichts anlegt, und
-  meldet für alle `WouldCreate`.
-- Der Filter `taxon_id` von iNaturalist schließt die untergeordneten Taxa ein. Ein Eintrag für eine Art wird mit den
-  Beobachtungen des Nutzers von dieser Art (und ihren Unterarten) verglichen. Ein Eintrag unter einem übergeordneten Taxon
-  (`Nyctaloid` unter Chiroptera, `Mbart` unter *Myotis*) zählt nur eine Beobachtung als Duplikat, die genau unter diesem Taxon
-  abgelegt ist; eine Art derselben Nacht und desselben Ortes blockiert ihn also nicht, und die Reihenfolge der Veröffentlichung
-  spielt keine Rolle. Mehrere Gruppeneinträge desselben Taxons (zweimal `Nyctaloid`, oder `Nyctaloid` und `Social`, beide unter
-  Chiroptera) für eine Nacht und einen Ort werden nach dem ersten übersprungen.
-- Beobachtungen, die nach der Prüfung bei iNaturalist auftauchen oder verschwinden, werden nicht vorhergesehen.
+- Das Tag ist ein Hash aus der Art wie in der Datei, dem Zeitpunkt und den Koordinaten. Es erkennt denselben Eintrag wieder und sonst
+  nichts: Eine Beobachtung, die anders entstanden ist (von Hand, mit einem älteren Werkzeug oder mit entferntem Tag), wird nicht erkannt und
+  bleibt unberührt, und ein Eintrag, dessen Zeit, Position oder Name nach dem Veröffentlichen geändert wurde, zählt als neuer Eintrag. Die
+  Auswahl einer Referenzaufnahme pro Art, Nacht und Ort ist Sache des Exports (siehe
+  [input-format.de.md](input-format.de.md#eine-referenzaufnahme-pro-art-nacht-und-ort)); der Probelauf kann mehrere Einträge einer Datei, die ein
+  Commit-Lauf veröffentlichen würde, nicht vorhersehen, weil er nichts anlegt, und meldet für alle `WouldCreate`.
+- Das Tag ist an der Beobachtung sichtbar. Wer es entfernt, schaltet die Prüfung für diese Beobachtung ab.
+- Beobachtungen, die nach der Prüfung bei iNaturalist auftauchen oder verschwinden, werden nicht vorhergesehen. Eine neue
+  Beobachtung braucht einen Moment, bis sie in der Suche von iNaturalist erscheint.
 
 ## Ergebnisse
 
@@ -200,7 +200,7 @@ Quellen und die offenen Fragen stehen in
 
 Ein echter Lauf veröffentlicht auf dem Konto des angemeldeten Nutzers:
 
-- die Beobachtung mit ihren **genauen Koordinaten** (sofern iNaturalist ein sensibles Taxon nicht verschleiert), Datum, Taxon,
+- die Beobachtung mit ihren **genauen Koordinaten** (sofern iNaturalist ein sensibles Taxon nicht verschleiert oder `Geoprivacy` gesetzt ist), Datum, Taxon,
   Tags und der Beschreibung, die die Messwerte und die Anmerkung enthält;
 - das Spektrogramm als Foto und die Aufnahme als Ton, unter ihren Dateinamen.
 

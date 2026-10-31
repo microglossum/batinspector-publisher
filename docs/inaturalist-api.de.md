@@ -70,29 +70,28 @@ dieser Endpunkt nicht (live geprüft, 2026-10-14).
 
 ## Duplikatprüfung und Fortsetzen
 
-**6. `GET /v1/observations`** mit diesen Parametern:
+**6. `GET /v1/observations`** fragt, ob dieses Paket den Eintrag schon veröffentlicht hat, mit diesen Parametern:
 
 | Parameter | Wert | Warum |
 |---|---|---|
-| `taxon_id` | das aufgelöste Taxon | Schließt untergeordnete Taxa ein (live geprüft), siehe Hinweis unten. |
-| `d1`, `d2` | der lokale Kalendertag, beide gleich | Ein Tag. |
-| `lat`, `lng` | die Position des Eintrags | |
-| `radius` | `DuplicateCheckRadiusKm` (Standard 0,1) | Kilometer. |
+| `q` | das `batinspector:`-Tag des Eintrags (URL-kodiert) | Das ganze Tag wird genau getroffen, kein Präfix und kein Teilbegriff. |
+| `search_on` | `tags` | Sucht nur in den Tags. |
 | `user_id` | die ID aus Anfrage 4 | Beschränkt die Suche auf die eigenen Beobachtungen. |
 
-Gelesen wird nur die erste Ergebnisseite (Standardgröße); `total_results` entscheidet, ob etwas existiert, die ersten Ergebnisse
-zeigen, ob es vollständig ist. Aus jedem Ergebnis nutzt das Paket `id`, `uuid`, `tags`, `photos` und `sounds` (`id`, `uuid`, `photos`
-und `sounds` sind in der Antwort vorhanden, live geprüft). `tags` kommt als Liste von Zeichenketten zurück, die das mit Anfrage 7
-gesendete `batinspector:`-Tag unverändert enthält, und eine halb angelegte Beobachtung (ein fehlgeschlagener Upload) wird sofort
-aufgelistet (live gesehen, 2026-10-15). Ein `tags`-Wert anderer Form würde ignoriert, Fortsetzen griffe dann nicht.
+Die Suche findet eine Beobachtung, egal wo ihre Position liegt: Live geprüft (2026-10-31) fand sie eine `open`-, eine `obscured`- und
+eine `private`-Beobachtung, jeweils mit Foto- und Ton-Liste, und eine unvollständige `private` wurde vervollständigt. Eine Suche nach
+Position (`lat`, `lng`, `radius`) tut das nicht: Eine verschleierte Beobachtung liegt bis zu etwa 15 km von ihrer echten Position
+entfernt und eine private hat keine. Das Paket vergleicht die Tags jedes Ergebnisses noch einmal mit dem Tag des Eintrags, bevor es
+einem Treffer glaubt.
+
+Gelesen wird nur die erste Ergebnisseite (Standardgröße). Aus jedem Ergebnis nutzt das Paket `id`, `uuid`, `tags`, `photos` und `sounds`
+(alle in der Antwort vorhanden, live geprüft). `tags` kommt als Liste von Zeichenketten zurück, die das mit Anfrage 7 gesendete
+`batinspector:`-Tag unverändert enthält, und eine halb angelegte Beobachtung (ein fehlgeschlagener Upload) wird sofort aufgelistet
+(live gesehen, 2026-10-15). Ein `tags`-Wert anderer Form würde ignoriert, die Beobachtung dann nicht erkannt.
 
 **`mine` und `mine_only` wirken nicht.** Die v1-API ignoriert beide, auch mit gültiger Anmeldung: Eine Suche nach Chiroptera lieferte mit
-und ohne sie dieselben 291317 Ergebnisse, mit `user_id` 6 (live geprüft, 2026-10-14). Sie hätten Beobachtungen anderer Nutzer als
-Duplikate getroffen, deshalb beschränkt das Paket mit `user_id`.
-
-**Untergeordnete Taxa.** Eine Suche nach einem übergeordneten Taxon schließt dessen untergeordnete ein: Ein Eintrag unter Chiroptera
-(`Nyctaloid`) oder *Myotis* (`Mbart`) trifft deine eigene Beobachtung auf Artebene vom selben Tag und Ort und wird als Duplikat
-übersprungen, während ein Arteintrag eine Beobachtung, die nur bis Familie oder Ordnung bestimmt ist, nicht trifft (live geprüft).
+und ohne sie dieselben 291317 Ergebnisse, mit `user_id` 6 (live geprüft, 2026-10-14). Sie hätten Beobachtungen anderer Nutzer getroffen,
+deshalb beschränkt das Paket mit `user_id`.
 
 ## Schreiben
 
@@ -100,9 +99,9 @@ Alle drei Schreibanfragen gibt es nur im Commit-Lauf, nur wenn die Duplikatprüf
 Serverfehler, einem Netzwerkfehler oder einem Timeout nicht wiederholt (eine Wiederholung könnte eine zweite Beobachtung oder einen zweiten Upload anlegen).
 
 **7. `POST /v2/observations`**, JSON-Body `{"observation": {...}}` mit `taxon_id`, `observed_on_string` (`yyyy-MM-dd HH:mm:ss`, Ortszeit), `latitude`,
-`longitude`, `place_guess` (die Koordinaten als Text), `species_guess` (der Name aus der Datei), `description` (deutscher Text, siehe
+`longitude`, `species_guess` (der Name aus der Datei), `description` (deutscher Text, siehe
 [inaturalist.de.md](inaturalist.de.md#die-beschreibung)), `tag_list` (`INaturalistOptions.TagList` und das
-`batinspector:`-Tag des Eintrags) und, wenn `INaturalistOptions.License` gesetzt ist, `license`. Aus der Antwort wird `results[0].uuid` zum Anhängen der Belege gebraucht;
+`batinspector:`-Tag des Eintrags) und, wenn gesetzt, `license` (`INaturalistOptions.License`) und `geoprivacy` (`INaturalistOptions.Geoprivacy`). Aus der Antwort wird `results[0].uuid` zum Anhängen der Belege gebraucht;
 die numerische `id` fehlt manchmal, dann trägt das Ergebnis die uuid und die URL mit der uuid (sie leitet auf die Beobachtung um, live gesehen).
 
 **8. `POST /v2/observation_photos`** und **9. `POST /v2/observation_sounds`**: je eine Multipart-Anfrage, die die Datei hochlädt

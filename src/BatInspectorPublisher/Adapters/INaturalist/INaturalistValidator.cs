@@ -17,7 +17,7 @@ namespace BatInspectorPublisher.Adapters.INaturalist;
 /// Sources (iNaturalist open source, read 2026-10-04, not verified live): the Rails <c>Observation</c> model validations
 /// and column sizes (<c>species_guess</c> is <c>varchar(255)</c>; the model message says 256), the tag list rule, and the
 /// forum for the 20 MB file limit. Rules that this package cannot break by construction are not checked:
-/// <c>place_guess</c> and <c>observed_on_string</c> have fixed short formats, <c>positional_accuracy</c> is not sent,
+/// <c>observed_on_string</c> has a fixed short format, <c>positional_accuracy</c> is not sent,
 /// the description has no known limit (a <c>text</c> column). iNaturalist's rule against a date after tomorrow (UTC) is
 /// covered by the platform-neutral check against any instant in the future.
 /// </para>

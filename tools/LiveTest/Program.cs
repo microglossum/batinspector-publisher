@@ -29,6 +29,7 @@ var options = new INaturalistOptions
     ClientSecret = secret,
     TagList = Tags,
     License = Opt("--license"),
+    Geoprivacy = Opt("--geoprivacy"),
     DescriptionPrefix = "TESTDATEN (werden gelöscht): Automatisierte passive akustische Erfassung (BatInspector, batdetect2 + manuelle Prüfung).",
 };
 using var logs = LoggerFactory.Create(b => b.AddSimpleConsole(o => { o.SingleLine = true; o.TimestampFormat = "HH:mm:ss "; }).SetMinimumLevel(has("--log") ? LogLevel.Information : LogLevel.Warning));

@@ -65,7 +65,7 @@ public class INaturalistRetryTests
     private const string Sound = "POST /v2/observation_sounds";
 
     private Task<ObservationsSearchResponse> Search(INaturalistApiClient client, CancellationToken ct = default) =>
-        client.FindExistingObservationsAsync(7, 4711, new DateOnly(2026, 6, 11), 50.11, 8.682, "jwt", ct);
+        client.FindObservationsByTagAsync("batinspector:0123456789ab", 4711, "jwt", ct);
 
     private static Task Upload(INaturalistApiClient client) =>
         client.AttachSoundAsync("uuid-1", new BatInspectorPublisher.Core.Models.EvidenceFile("audio.wav", "AUDIO-BYTES"u8.ToArray()), "jwt", default);
@@ -73,11 +73,11 @@ public class INaturalistRetryTests
     [Fact]
     public async Task Read_ServerError_IsRetriedUntilItSucceeds()
     {
-        Script(Observations, Respond(HttpStatusCode.ServiceUnavailable, "busy"), Respond(HttpStatusCode.OK, """{ "total_results": 4 }"""));
+        Script(Observations, Respond(HttpStatusCode.ServiceUnavailable, "busy"), Respond(HttpStatusCode.OK, """{ "results": [ { "id": 4 } ] }"""));
 
         var result = await Search(Client());
 
-        Assert.Equal(4, result.TotalResults);
+        Assert.Single(result.Results);
         Assert.Equal(2, _http.Requests.Count);
         Assert.Equal([TimeSpan.FromSeconds(5)], _waits);
     }
@@ -128,11 +128,11 @@ public class INaturalistRetryTests
         Script(Observations,
             () => throw new HttpRequestException("connection reset"),
             () => throw new TaskCanceledException("timeout", new TimeoutException()),
-            Respond(HttpStatusCode.OK, """{ "total_results": 1 }"""));
+            Respond(HttpStatusCode.OK, """{ "results": [ { "id": 1 } ] }"""));
 
         var result = await Search(Client());
 
-        Assert.Equal(1, result.TotalResults);
+        Assert.Single(result.Results);
         Assert.Equal(3, _http.Requests.Count);
     }
 
@@ -183,7 +183,7 @@ public class INaturalistRetryTests
     {
         Script(Create, Respond(HttpStatusCode.TooManyRequests), Respond(HttpStatusCode.OK, """{ "results": [ { "id": 5, "uuid": "u" } ] }"""));
 
-        var created = await Client().CreateObservationAsync(new ObservationPayload { TaxonId = 7, PlaceGuess = "x" }, "jwt", default);
+        var created = await Client().CreateObservationAsync(new ObservationPayload { TaxonId = 7 }, "jwt", default);
 
         Assert.Equal("u", created.Uuid);
         Assert.Equal(2, _http.Requests.Count);

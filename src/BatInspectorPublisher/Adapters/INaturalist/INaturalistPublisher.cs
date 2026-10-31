@@ -183,44 +183,26 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         var payload = BuildPayload(candidate, taxon.Id, taxon.Name);
         state.Description = payload.Description;
         var userId = await CallAsync(state, jwt => _api.GetAuthenticatedUserIdAsync(jwt, ct), ct).ConfigureAwait(false);
-        var existing = await CallAsync(state, jwt => _api.FindExistingObservationsAsync(
-            taxon.Id, userId, DateOnly.FromDateTime(candidate.ObservedAt.DateTime), candidate.Latitude, candidate.Longitude, jwt, ct), ct).ConfigureAwait(false);
 
-        // A group value (Nyctaloid, Mbart) is filed under a broader taxon, and the search includes everything below it. Only an
-        // observation filed under exactly that taxon is the group entry's equivalent: a species of the same night and place is not.
-        // An observation whose taxon is not reported, or results beyond the first page, count as before (a wrong assumption fails safe).
-        var results = existing.Results;
-        var total = existing.TotalResults;
-        if (!SameName(taxon.Name, candidate.ScientificName) && total <= results.Count)
-        {
-            results = results.Where(o => o.Taxon is null || o.Taxon.Id == taxon.Id).ToList();
-            total = results.Count;
-        }
-
-        if (total == 0)
+        // Did this package publish this entry before? Its tag tells, whatever the observation's position is. An observation without the
+        // tag is not recognized as this entry's (made by hand, or with an older tool): the file is trusted to hold each recording once.
+        var marker = ResumeMarker.For(candidate);
+        var tagged = await CallAsync(state, jwt => _api.FindObservationsByTagAsync(marker, userId, jwt, ct), ct).ConfigureAwait(false);
+        var own = tagged.Results.Where(o => (o.Id != 0 || o.Uuid.Length > 0) && ResumeMarker.IsIn(o.TagNames, marker)).ToList();
+        if (own.Count == 0)
         {
             var filedAs = SameName(taxon.Name, candidate.ScientificName) ? "" : $" as {taxon.Name}";
             return new CreatePlan(payload,
-                $"Dry run: would create an observation of {candidate.ScientificName}{filedAs} (taxon_id={taxon.Id}) and attach the spectrogram and the audio.");
+                $"Dry run: would create an observation of {candidate.ScientificName}{filedAs} (taxon_id={taxon.Id}){WithGeoprivacy()} and attach the spectrogram and the audio.");
         }
 
-        var marker = ResumeMarker.For(candidate);
-        var match = results.FirstOrDefault(o => IsIncompleteOwnObservation(o, marker));
-        if (match is null)
-        {
-            if (results.FirstOrDefault(o => o.Id != 0 || o.Uuid.Length > 0) is { } known)
-            {
-                state.Found(known);
-            }
-
-            return new Done(PublishStatus.SkippedDuplicate, "An equivalent observation already exists on iNaturalist.");
-        }
-
-        // An earlier run created this observation and stopped before its evidence was complete.
-        // Only an observation carrying this entry's marker tag is completed; anything else of the user's stays untouched.
-        state.Found(match);
-        return new ResumePlan(match.Uuid,
-            $"Dry run: would complete the incomplete observation {state.ObservationId} by attaching {state.Missing()}.");
+        // If an earlier run stopped before the evidence was complete, the missing evidence is attached; otherwise the entry is a duplicate.
+        var incomplete = own.FirstOrDefault(IsIncomplete);
+        state.Found(incomplete ?? own[0]);
+        return incomplete is null
+            ? new Done(PublishStatus.SkippedDuplicate, "An equivalent observation already exists on iNaturalist.")
+            : new ResumePlan(incomplete.Uuid,
+                $"Dry run: would complete the incomplete observation {state.ObservationId} by attaching {state.Missing()}.");
     }
 
     /// <summary>The writes of a commit run: create the observation (or take the incomplete one), then attach what is missing.</summary>
@@ -258,7 +240,7 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
 
         return plan is ResumePlan
             ? new Done(PublishStatus.Resumed, $"Completed the incomplete observation {state.ObservationId}.")
-            : new Done(PublishStatus.Created, $"Created observation {state.ObservationId}.");
+            : new Done(PublishStatus.Created, $"Created observation {state.ObservationId}{WithGeoprivacy()}.");
     }
 
     /// <summary>
@@ -368,16 +350,17 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         : uuid.Length > 0 ? (uuid, $"https://www.inaturalist.org/observations/{uuid}") : (null, null);
 
     /// <summary>
-    /// True for an observation this package created for the same entry (it carries the entry's
-    /// <see cref="ResumeMarker"/>) that still lacks its spectrogram or audio.
-    /// When photos or sounds are not reported, the state is unknown and nothing is touched.
+    /// True for an observation of this package (found by its entry's <see cref="ResumeMarker"/>) that still lacks its spectrogram
+    /// or audio. When photos or sounds are not reported, the state is unknown and nothing is touched.
     /// </summary>
-    private static bool IsIncompleteOwnObservation(ExistingObservation observation, string marker) =>
+    private static bool IsIncomplete(ExistingObservation observation) =>
         observation.Uuid.Length > 0
         && observation.Photos is not null
         && observation.Sounds is not null
-        && (observation.Photos.Count == 0 || observation.Sounds.Count == 0)
-        && ResumeMarker.IsIn(observation.TagNames, marker);
+        && (observation.Photos.Count == 0 || observation.Sounds.Count == 0);
+
+    /// <summary>Names the chosen geoprivacy in a message; empty when none is set.</summary>
+    private string WithGeoprivacy() => _options.GeoprivacyCode is { } code ? $" with geoprivacy '{code}'" : "";
 
     internal ObservationPayload BuildPayload(ObservationCandidate candidate, int taxonId, string? taxonName = null) => new()
     {
@@ -387,11 +370,12 @@ public sealed partial class INaturalistPublisher : IObservationPublisher
         ObservedOnString = candidate.ObservedAt.DateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
         Latitude = candidate.Latitude,
         Longitude = candidate.Longitude,
-        // Always a string: v2 rejects null. The input format has no place name, so use the coordinates.
-        PlaceGuess = string.Create(CultureInfo.InvariantCulture, $"{candidate.Latitude:F5}, {candidate.Longitude:F5}"),
+        // No place_guess on purpose: the input has no place name, and iNaturalist sets one from the coordinates itself
+        // (a coarse one when the position is obscured, none when it is private). A text of ours could only reveal the position.
         SpeciesGuess = candidate.ScientificName,
         Description = DescriptionBuilder.Build(candidate, _options.DescriptionPrefix, taxonName),
         TagList = _options.TagList.Trim().Length == 0 ? ResumeMarker.For(candidate) : $"{_options.TagList},{ResumeMarker.For(candidate)}",
         License = _options.LicenseCode,
+        Geoprivacy = _options.GeoprivacyCode,
     };
 }

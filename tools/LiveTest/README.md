@@ -35,6 +35,7 @@ lt run scenarios/inaturalist/evidence-bad.json    SkippedInvalidEvidence for 7 b
 
 Add `--commit` to publish. Every created observation is read back and printed, including the licenses of observation, photo and sound.
 `--license cc-by-nc` sets `INaturalistOptions.License` (the test observations should not be CC0; the sound stays at the account default, see `docs/inaturalist-setup.md`).
+`--geoprivacy obscured|private|open` sets `INaturalistOptions.Geoprivacy`; the read-back is anonymous, so it shows what the public sees (`place_guess`, `location`, `geoprivacy`).
 
 ```text
  1. lt run scenarios/inaturalist/smoke.json --commit --license cc-by-nc   Created; licenses: observation=cc-by-nc photo=cc-by-nc sound=<account default>
@@ -57,8 +58,13 @@ Add `--commit` to publish. Every created observation is read back and printed, i
 
 14. lt run scenarios/inaturalist/time.json --commit                    3x Created; read-back shows the sent clock time and zone (Europe/Berlin, Europe/Lisbon)
 
-15. lt run scenarios/inaturalist/group-species-first.json --commit     2x Created (a group value is no duplicate of a species); then without --commit: 2x SkippedDuplicate
+15. lt run scenarios/inaturalist/group-species-first.json --commit     2x Created; then without --commit: 2x SkippedDuplicate (found by their tags)
 16. lt run scenarios/inaturalist/group-group-first.json --commit       3x Created; Nyctaloid and Mbart keep their species_guess
+
+17. lt run scenarios/inaturalist/geoprivacy-private.json --geoprivacy private --commit   Created; read-back: no place_guess, no location
+    (the same with geoprivacy-obscured.json / --geoprivacy obscured: a coarse place_guess, a shifted location, and geoprivacy-open.json / open)
+18. lt run scenarios/inaturalist/geoprivacy-private.json --geoprivacy private           SkippedDuplicate (found by the tag, whatever the position)
+19. lt run scenarios/inaturalist/resume-sound.json --commit --fail sound --geoprivacy private, then without --commit (WouldResume), then with it (Resumed)
 ```
 
 ## Login edge cases (need the browser)

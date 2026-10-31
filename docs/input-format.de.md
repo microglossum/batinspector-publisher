@@ -58,9 +58,9 @@ veröffentlichte Einträge werden als Duplikate übersprungen.
 ## Eine Referenzaufnahme pro Art, Nacht und Ort
 
 Die Datei soll eine **Referenzaufnahme** pro Art, Nacht und Ort enthalten, nicht jede Detektion. Es geht darum, eine Art
-an einem Ort zu einer Zeit nachzuweisen, und dafür reicht meist eine gute Aufnahme. Die Duplikatprüfung der Plattform
-verlässt sich darauf, mit Absicht: Ein zweiter Eintrag für dieselbe Kombination wird übersprungen. Die Auswahl der
-Aufnahme muss der Export von BatInspector treffen; dieses Paket wählt nicht unter mehreren.
+an einem Ort zu einer Zeit nachzuweisen, und dafür reicht meist eine gute Aufnahme. Die Duplikatprüfung erkennt nur einen
+Eintrag wieder, der schon veröffentlicht wurde (dieselbe Art, Zeit und Position), nicht eine andere Aufnahme derselben Kombination.
+Die Auswahl der Aufnahme muss der Export von BatInspector treffen; dieses Paket wählt nicht unter mehreren.
 
 ## Felder
 

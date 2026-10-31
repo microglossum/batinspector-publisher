@@ -29,8 +29,8 @@ the API documentation or the forum and waiting for the first live test.
 `www` is `https://www.inaturalist.org`, `api` is `https://api.inaturalist.org`. A dry run sends requests 4 to 6, preceded by the login (1 to 3) when no valid token is stored, and nothing else.
 Requests 4 to 9 carry the JWT as `Authorization: Bearer`. The JWT is never logged.
 
-Per candidate a commit run sends one taxon search, one duplicate check, one create, one photo and one sound request: five requests,
-plus one profile request for the first candidate of a JWT. Requests are spaced by `MinRequestInterval` (default one second);
+Per candidate a commit run sends one taxon search, one duplicate check, one create,
+one photo and one sound request: five requests, plus one profile request for the first candidate of a JWT. Requests are spaced by `MinRequestInterval` (default one second);
 retries are off by default (`MaxAttempts = 1`), see [inaturalist-setup.md](inaturalist-setup.md#request-rate-and-retries).
 
 ## Login
@@ -65,29 +65,27 @@ Nothing is cached: every candidate asks again. Inactive taxa are not returned by
 
 ## Duplicate check and resume
 
-**6. `GET /v1/observations`** with these parameters:
+**6. `GET /v1/observations`** asks whether this package published the entry before, with these parameters:
 
 | Parameter | Value | Why |
 |---|---|---|
-| `taxon_id` | the resolved taxon | Includes descendant taxa (checked live), see the note below. |
-| `d1`, `d2` | the local calendar day, both the same | One day. |
-| `lat`, `lng` | the entry's position | |
-| `radius` | `DuplicateCheckRadiusKm` (default 0.1) | Kilometres. |
+| `q` | the entry's `batinspector:` tag (URL-encoded) | The whole tag is matched exactly, no prefix and no partial token. |
+| `search_on` | `tags` | Looks in the tags only. |
 | `user_id` | the id from request 4 | Restricts the search to the user's own observations. |
 
-Only the first page of results is read (the default page size); `total_results` decides whether something exists, the first
-results tell whether it is complete. From each result the package uses `id`, `uuid`, `tags`, `photos` and `sounds`
-(`id`, `uuid`, `photos` and `sounds` present in the answer, checked live). `tags` comes back as a list of strings that holds the
-`batinspector:` tag sent with request 7 as it was sent, and a half-created observation (an upload that failed) is listed at once (seen live, 2026-10-15).
-A `tags` value of another shape would be ignored, so resume would not trigger.
+The search finds an observation whatever its position is: checked live (2026-10-31) it found an `open`, an `obscured` and a `private`
+observation, each with its photo and sound lists, and an incomplete `private` one was completed. A search by position
+(`lat`, `lng`, `radius`) does not: an obscured observation lies up to about 15 km from its real position and a private one has none.
+The package compares the tags of every result with the entry's tag again before it believes a hit.
+
+Only the first page of results is read (the default page size). From each result the package uses `id`, `uuid`, `tags`, `photos` and
+`sounds` (all present in the answer, checked live). `tags` comes back as a list of strings that holds the `batinspector:` tag sent with
+request 7 as it was sent, and a half-created observation (an upload that failed) is listed at once (seen live, 2026-10-15). A `tags`
+value of another shape would be ignored, so the observation would not be recognized.
 
 **`mine` and `mine_only` do not work.** The v1 API ignores both, even with a valid login: a Chiroptera search returned the
 same 291317 results with and without them, and 6 with `user_id` (checked live, 2026-10-14). They would have matched other users'
-observations as duplicates, so the package restricts by `user_id`.
-
-**Descendants.** A search for a broader taxon includes its descendants: an entry filed under Chiroptera (`Nyctaloid`) or
-*Myotis* (`Mbart`) matches your own species-level observation of that day and place and is skipped as a duplicate, while a
-species entry does not match an observation identified only as a family or order (checked live).
+observations, so the package restricts by `user_id`.
 
 ## Writing
 
@@ -95,9 +93,9 @@ All three writes happen only in a commit run, only after the duplicate check fou
 server error, a network error or a timeout (a repeat could create a second observation or upload).
 
 **7. `POST /v2/observations`**, JSON body `{"observation": {...}}` with `taxon_id`, `observed_on_string` (`yyyy-MM-dd HH:mm:ss`, local time),
-`latitude`, `longitude`, `place_guess` (the coordinates as text), `species_guess` (the name from the file), `description`
+`latitude`, `longitude`, `species_guess` (the name from the file), `description`
 (German text, see [inaturalist.md](inaturalist.md#the-description)), `tag_list` (`INaturalistOptions.TagList` plus the
-entry's `batinspector:` tag) and, when `INaturalistOptions.License` is set, `license`. The answer's `results[0].uuid` is needed to
+entry's `batinspector:` tag) and, when set, `license` (`INaturalistOptions.License`) and `geoprivacy` (`INaturalistOptions.Geoprivacy`). The answer's `results[0].uuid` is needed to
 attach the evidence; the numeric `id` is sometimes missing, then the result carries the uuid and the uuid form of the URL (it redirects to the observation, seen live).
 
 **8. `POST /v2/observation_photos`** and **9. `POST /v2/observation_sounds`**: one multipart request each that uploads the file

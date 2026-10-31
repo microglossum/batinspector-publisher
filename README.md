@@ -117,6 +117,11 @@ default licenses of the logged-in account, which may be as open as CC0. Set `Lic
 and the spectrogram. The license of the recording (sound) cannot be set through the API, so set the account's default sound
 license to the same value. Details: [Licenses](https://github.com/microglossum/batinspector-publisher/blob/main/docs/inaturalist-setup.md#licenses).
 
+## Hiding the position
+
+Observations are public with their exact coordinates. Set `INaturalistOptions.Geoprivacy` to `obscured` or `private` to hide the position
+of every observation of the publisher. Details: [Hiding the position](https://github.com/microglossum/batinspector-publisher/blob/main/docs/inaturalist-setup.md#hiding-the-position).
+
 ## Input format
 
 The input is BatInspector's export file. Its schema is versioned: `SchemaVersion` is required, and newer versions than the

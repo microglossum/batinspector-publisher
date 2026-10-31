@@ -35,7 +35,7 @@ public class INaturalistApiClientTests
     {
         _http.On("POST /v2/observations", HttpStatusCode.OK, """{ "results": [ { "id": 5, "uuid": "u" } ] }""");
 
-        await Client().CreateObservationAsync(new ObservationPayload { TaxonId = 7, ObservedOnString = "2026-06-11", PlaceGuess = "x" }, "jwt", default);
+        await Client().CreateObservationAsync(new ObservationPayload { TaxonId = 7, ObservedOnString = "2026-06-11" }, "jwt", default);
 
         using var doc = JsonDocument.Parse(_http.Requests.Single().Body);
         var observation = doc.RootElement.GetProperty("observation");

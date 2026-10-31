@@ -48,6 +48,23 @@ public sealed class INaturalistOptions
     /// <summary><see cref="License"/> as sent: trimmed and lower case; null when not set.</summary>
     internal string? LicenseCode => string.IsNullOrWhiteSpace(License) ? null : License.Trim().ToLowerInvariant();
 
+    /// <summary>
+    /// Who sees the exact position of the observation, one of <c>open</c>, <c>obscured</c> (iNaturalist publishes a shifted position,
+    /// a cell of about 0.2 degrees) or <c>private</c> (hidden from everyone but the owner); case does not matter. Null (the default)
+    /// sends none, and iNaturalist applies its own rules (the account's default, and obscuring of sensitive taxa). The same setting applies to every
+    /// observation of the publisher; it is not changed for an observation that already exists. The package sends no place name:
+    /// iNaturalist derives one from the coordinates (a coarse one for <c>obscured</c>, none for <c>private</c>).
+    /// The <c>batinspector:</c> tag stays unchanged and is derived from the exact coordinates; it is public, so a determined
+    /// reader with enough computing power could recover the position from it.
+    /// </summary>
+    public string? Geoprivacy { get; init; }
+
+    /// <summary>The geoprivacy values iNaturalist knows (lower case).</summary>
+    internal static readonly string[] GeoprivacyCodes = ["open", "obscured", "private"];
+
+    /// <summary><see cref="Geoprivacy"/> as sent: trimmed and lower case; null when not set.</summary>
+    internal string? GeoprivacyCode => string.IsNullOrWhiteSpace(Geoprivacy) ? null : Geoprivacy.Trim().ToLowerInvariant();
+
     /// <summary>Text placed at the start of every observation description (German, as users are German speaking).</summary>
     public string DescriptionPrefix { get; init; } = "Automatisierte passive akustische Erfassung (BatInspector, batdetect2 + manuelle Prüfung).";
 
@@ -59,12 +76,6 @@ public sealed class INaturalistOptions
     /// according to its forum (not in its documentation; the unit is unknown, so this default is the safe reading).
     /// </summary>
     public long MaxEvidenceBytes { get; init; } = 20_000_000;
-
-    /// <summary>
-    /// Radius in km for the "does this observation already exist" check. Must be a finite number greater than zero: with
-    /// no radius the check would find nothing and every re-run would create the observations again.
-    /// </summary>
-    public double DuplicateCheckRadiusKm { get; init; } = 0.1;
 
     /// <summary>
     /// How often a request is tried in total, the first try included. The default is 1: no retry, so a transient failure ends the
@@ -147,13 +158,6 @@ public sealed class INaturalistOptions
     /// <summary>Checks what would otherwise reject every candidate the same way.</summary>
     internal void ValidateForPublishing()
     {
-        if (!double.IsFinite(DuplicateCheckRadiusKm) || DuplicateCheckRadiusKm <= 0)
-        {
-            throw new ArgumentException(
-                "INaturalistOptions.DuplicateCheckRadiusKm must be a finite number greater than 0; without a radius the duplicate check finds nothing and a re-run creates the observations again.",
-                nameof(DuplicateCheckRadiusKm));
-        }
-
         if (MaxEvidenceBytes is < 1 or > MaxAllowedEvidenceBytes)
         {
             throw new ArgumentException(
@@ -166,6 +170,13 @@ public sealed class INaturalistOptions
             throw new ArgumentException(
                 $"INaturalistOptions.License '{License}' is not an iNaturalist license code; use one of {string.Join(", ", LicenseCodes)}, or null for the account's default.",
                 nameof(License));
+        }
+
+        if (Geoprivacy is not null && (GeoprivacyCode is not { } geoprivacy || !GeoprivacyCodes.Contains(geoprivacy)))
+        {
+            throw new ArgumentException(
+                $"INaturalistOptions.Geoprivacy '{Geoprivacy}' is not an iNaturalist geoprivacy value; use one of {string.Join(", ", GeoprivacyCodes)}, or null for iNaturalist's own rules.",
+                nameof(Geoprivacy));
         }
 
         // Every observation also gets its resume marker tag, so its length is reserved.

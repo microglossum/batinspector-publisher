@@ -58,8 +58,8 @@ skipped as duplicates.
 
 The file is expected to hold **one reference recording** (*Referenzaufnahme*) per species, night and place, not every
 detection. The goal is to document that a species was present at a place and time, and one good recording is usually
-enough. The duplicate check of the platform relies on this on purpose: a second entry for the same combination is skipped.
-BatInspector's export has to select the recording; this package does not choose among several.
+enough. The duplicate check only recognizes an entry that was published before (same species, time and position), not another recording
+of the same combination. BatInspector's export has to select the recording; this package does not choose among several.
 
 ## Fields
 

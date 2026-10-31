@@ -278,16 +278,14 @@ internal sealed partial class INaturalistApiClient
     private static bool SameName(string? a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// The authenticated user's observations of this taxon on this date near these coordinates (total count plus the first page of details).
+    /// The user's own observations that carry <paramref name="tag"/> (the entry's <see cref="ResumeMarker"/>). A search by tag finds an
+    /// observation whatever its position is, also an obscured (shifted by up to about 15 km) or a private one (no position at all).
     /// The search is restricted with <c>user_id</c>: the v1 API silently ignores <c>mine</c> and <c>mine_only</c> (seen live), which would
-    /// match other users' observations.
+    /// match other users' observations. It matches the whole tag; the caller still compares the tags it gets back.
     /// </summary>
-    public async Task<ObservationsSearchResponse> FindExistingObservationsAsync(int taxonId, long userId, DateOnly date, double lat, double lon, string jwt, CancellationToken ct)
+    public async Task<ObservationsSearchResponse> FindObservationsByTagAsync(string tag, long userId, string jwt, CancellationToken ct)
     {
-        var inv = CultureInfo.InvariantCulture;
-        var url = $"{_options.ApiBaseUrlV1}/observations?taxon_id={taxonId}" +
-                  $"&d1={date.ToString("yyyy-MM-dd", inv)}&d2={date.ToString("yyyy-MM-dd", inv)}" +
-                  $"&lat={lat.ToString(inv)}&lng={lon.ToString(inv)}&radius={_options.DuplicateCheckRadiusKm.ToString(inv)}&user_id={userId.ToString(inv)}";
+        var url = $"{_options.ApiBaseUrlV1}/observations?q={Uri.EscapeDataString(tag)}&search_on=tags&user_id={userId.ToString(CultureInfo.InvariantCulture)}";
         var body = await SendAsync(() => NewRequest(HttpMethod.Get, url, jwt), "Duplicate check", ct).ConfigureAwait(false);
         return JsonSerializer.Deserialize<ObservationsSearchResponse>(body) ?? new ObservationsSearchResponse();
     }

@@ -18,9 +18,9 @@ flowchart TD
     B -->|ok| C["Login (stored token or browser)"]
     C --> D{"Taxon: exactly one<br/>active bat match?"}
     D -->|no| S2["SkippedUnresolvedTaxon"]
-    D -->|yes| E{"Own observation of this<br/>taxon, day and place?"}
+    D -->|yes| E{"Published for this entry<br/>before? (found by its tag)"}
     E -->|"yes, complete"| S3["SkippedDuplicate"]
-    E -->|"yes, with this entry's tag,<br/>photo or sound missing"| G{"Commit?"}
+    E -->|"yes, photo or sound missing"| G{"Commit?"}
     E -->|no| H{"Commit?"}
     G -->|no| W1["WouldResume"]
     G -->|yes| K["attach what is missing"]
@@ -42,7 +42,7 @@ The steps use these iNaturalist endpoints (every request with its parameters is 
 | Step | Request |
 |---|---|
 | Taxon | `GET /v2/taxa/autocomplete` |
-| Duplicate check, resume | `GET /v1/observations` (restricted with `user_id`, which comes from `GET /v1/users/me`) |
+| Duplicate check, resume | `GET /v1/observations` (by the entry's tag, restricted with `user_id`, which comes from `GET /v1/users/me`) |
 | Create | `POST /v2/observations` |
 | Spectrogram | `POST /v2/observation_photos` (one multipart request that uploads and links) |
 | Audio | `POST /v2/observation_sounds` (the same way) |
@@ -55,17 +55,19 @@ The steps use these iNaturalist endpoints (every request with its parameters is 
 | `SpeciesLatin` | `species_guess` | The name from the file, normalized. For an uncertain call such as `Nyctaloid` this keeps the original value while `taxon_id` is the broader taxon. |
 | `Date` | `observed_on_string` | The local date and time as `yyyy-MM-dd HH:mm:ss`, without a zone or offset (see [Time zone](#time-zone)). The time with its zone is also in the description. |
 | `Latitude`, `Longitude` | `latitude`, `longitude` | As they are. No positional accuracy is sent. |
-| `Latitude`, `Longitude` | `place_guess` | The coordinates as text with five decimals (`50.11000, 8.68200`): the input has no place name and v2 rejects an empty value. |
+| `Latitude`, `Longitude` | `place_guess` | Not sent. The input has no place name; iNaturalist sets one from the coordinates itself, see [Hiding the position](inaturalist-setup.md#hiding-the-position). |
 | `Temperature`, `Humidity`, `Comment`, `Date`, `TimeZone` | `description` | German text, see below. |
 | `PathToPng` | photo | The spectrogram, uploaded under its file name. |
 | `PathToWav` | sound | The recording, uploaded under its file name. |
 | `SpeciesLocal` | not sent | |
 | (options) | `tag_list` | `INaturalistOptions.TagList`, default `bat,acoustic-monitoring,batinspector`, plus the resume tag of the entry (see below). |
+| (options) | `geoprivacy` | `INaturalistOptions.Geoprivacy`, none by default. |
 | (options) | `license`, photo `license_code` | `INaturalistOptions.License`, none by default (then the account's default licenses apply). Not for the sound, see [Licenses](inaturalist-setup.md#licenses). |
 | `SpeciesLatin`, `Date`, `Latitude`, `Longitude` | `tag_list` | One more tag, `batinspector:` and 12 hex digits: a short hash of the species as in the file, the instant in UTC and the coordinates. It marks the observation as the one this package created for the entry, see [Re-running](#re-running-duplicates-and-resume). |
 
-Not sent: a time zone, a positional accuracy, geoprivacy, captive/cultivated flags. The package does not handle
-sensitive species; iNaturalist obscures the coordinates of taxa it considers sensitive by itself.
+Not sent: a time zone, a positional accuracy, captive/cultivated flags. The package does not handle
+sensitive species; iNaturalist obscures the coordinates of taxa it considers sensitive by itself. The user can hide the
+position of every observation with `INaturalistOptions.Geoprivacy`, see [Hiding the position](inaturalist-setup.md#hiding-the-position).
 
 ### Time zone
 
@@ -125,30 +127,28 @@ identification on iNaturalist. `todo` and every other value that is not a taxon 
 
 ## Re-running: duplicates and resume
 
-Before creating anything the publisher asks iNaturalist for **the logged-in user's own** observations (`user_id`, the numeric user id) of the resolved
-taxon, on the same calendar day, within `INaturalistOptions.DuplicateCheckRadiusKm` (default 0.1 km = 100 m; it must be a finite number above 0, otherwise the publisher refuses to start, because the check would find nothing).
+Before creating anything the publisher asks iNaturalist whether this package published the entry before. It looks for the entry's
+`batinspector:` tag among **the logged-in user's own** observations (`user_id`, the numeric user id). The tag is found whatever the
+observation's position is, also when it is obscured or private (by `Geoprivacy`, or by iNaturalist itself for a sensitive taxon).
 
 - **Nothing found:** the observation is created.
-- **Something found, and it is complete or not recognizable as this entry's:** `SkippedDuplicate`. The existing observation
-  is named in `ObservationId` when known. It is never touched.
-- **Something found that carries this entry's `batinspector:` tag, with photo or sound missing:**
-  an earlier run created it and stopped before its evidence was complete. The missing evidence is attached
-  (`Resumed`, in a dry run `WouldResume`). Only an observation that is evidently this package's is completed.
-  The tag is visible on the observation; a user who removes it only turns this off for that observation, which is then left alone.
+- **Found, and it is complete:** `SkippedDuplicate`. The existing observation is named in `ObservationId`. It is never touched.
+- **Found, and photo or sound is missing:** an earlier run created it and stopped before its evidence was complete. The missing
+  evidence is attached (`Resumed`, in a dry run `WouldResume`). Only an observation that carries the tag is ever completed.
 
 If the search result does not tell whether photos and sounds exist, the observation is deliberately left alone
 (`SkippedDuplicate`): a wrong assumption fails safe.
 
 Things to know about this check:
 
-- It relies on the file holding one reference recording per species, night and place. Several entries for one combination
-  are skipped after the first; the dry run cannot foresee that, because it creates nothing, so they all say `WouldCreate`.
-- iNaturalist's `taxon_id` filter includes the descendants of a taxon. An entry for a species is compared with the user's
-  observations of that species (and its subspecies). An entry filed under a broader taxon (`Nyctaloid` under Chiroptera,
-  `Mbart` under *Myotis*) only counts an observation as its duplicate when that is filed under exactly this taxon, so a species
-  of the same night and place does not block it, and the order of publishing does not matter. Several group entries of one
-  taxon (two `Nyctaloid`, or `Nyctaloid` and `Social`, both under Chiroptera) for one night and place are skipped after the first.
-- Observations that appear or disappear on iNaturalist after the check are not foreseen.
+- The tag is a hash of the species as written in the file, the instant and the coordinates. It recognizes the same entry again,
+  nothing else: an observation made otherwise (by hand, with an older tool, or with the tag removed) is not recognized and left alone,
+  and an entry whose time, position or name was changed after publishing counts as a new entry. Choosing one reference recording per
+  species, night and place is the export's job (see [input-format.md](input-format.md#one-reference-recording-per-species-night-and-place));
+  the dry run cannot foresee several entries of one file that a commit run would publish, because it creates nothing, so they all say `WouldCreate`.
+- The tag is visible on the observation. A user who removes it turns the check off for that observation.
+- Observations that appear or disappear on iNaturalist after the check are not foreseen. A new observation can take a moment
+  to show up in iNaturalist's search.
 
 ## Results
 
@@ -192,7 +192,7 @@ later ends as `Failed`, with its own error text passed through unchanged. The ru
 
 A real run publishes on the account of the logged-in user:
 
-- the observation with its **exact coordinates** (unless iNaturalist obscures a sensitive taxon), the date, the taxon, the
+- the observation with its **exact coordinates** (unless iNaturalist obscures a sensitive taxon or `Geoprivacy` is set), the date, the taxon, the
   tags and the description, which includes the measurements and the comment;
 - the spectrogram as a photo and the recording as a sound, under their file names.
 

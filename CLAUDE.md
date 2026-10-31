@@ -43,12 +43,12 @@ Flow: BatInspector's export file is read into candidates (one reference recordin
 - `PublishOptions.Commit` defaults to false: publishing is public and irreversible, so dry run is the default.
 - Taxon resolution is strict and never guesses (no "first autocomplete hit", no broader taxon for a typo), and accepts only bats (Chiroptera or below, resolved live by name). The one exception is a small fixed table of BatInspector group/uncertain values, always on, no option.
 - Taxa are resolved live for every candidate and never cached or shipped as a list: iNaturalist's taxonomy changes (names are split, merged and renamed), and a stale copy would file observations under outdated taxa. A synonym is reported with its current name; the input file is corrected, not the package.
-- The input file holds one reference recording per species, night and location, not every detection; the duplicate check relies on that on purpose.
+- The input file holds one reference recording per species, night and location, not every detection; the duplicate check recognizes only an entry published before (same species, instant and position, by its tag), choosing among recordings is the export's job.
 - The package ships no credentials and reads no config files or environment variables. The host passes the adapter options.
 - Decided against:
   - retrying a write (create, photo, sound) after a 5xx, a network error or a timeout (2026-10-04: the server may have processed it, so a repeat could create a second observation or upload; only a 429 and a failed connection setup are safe, and everything else ends as `Failed` and resume completes it). Retries are opt-in (`MaxAttempts` defaults to 1, confirmed 2026-10-14), pacing is on;
   - rolling back (deleting) an observation whose evidence could not be attached (2026-10-03: deleting public data automatically is destructive and the failure may be transient; resume completes it on the next run);
-  - geoprivacy / sensitive-species handling (2026-10-02: iNaturalist obscures sensitive taxa itself, other platforms may not support it, the package cannot solve it);
+  - sensitive-species handling (2026-10-02: iNaturalist obscures sensitive taxa itself, other platforms may not support it, the package cannot solve it). The user's own choice to hide a position is `INaturalistOptions.Geoprivacy` (2026-10-31): an iNaturalist adapter option with iNaturalist's values, not in the input file and not in `PublishOptions`, because other platforms offer other privacy levels. The `batinspector:` tag keeps the exact coordinates in its hash on purpose (the owner accepted the brute-force risk; the docs say so briefly);
   - pattern-matching or translating iNaturalist's error messages (2026-10-04: the texts are undocumented and can change, so such code would break silently; the platform's message is passed through, and clear messages come from the adapter's own validation before anything is written);
   - a host-pluggable receiver for the OAuth authorization response (manual "paste the redirected URL" fallback, custom-scheme redirects) (2026-10-04: not needed; the loopback login with port fallback is enough, and the setup guide says where it does not work);
   - foreseeing duplicates within one dry run (2026-10-04: the dry run creates nothing, so entries of the same file that a commit run would skip as duplicates of each other all say `WouldCreate`; the docs say so, the file holds one reference recording per species, night and place anyway);
@@ -68,7 +68,7 @@ Flow: BatInspector's export file is read into candidates (one reference recordin
 - Never log tokens or token-bearing response bodies.
 - Public API is minimal and fully XML-documented; wire models and API clients stay `internal`.
   - A new `public` type is a deliberate API decision: add it to the allowlist in `ArchitectureTests`, or the test fails. Default to `internal`; tests see internals through `InternalsVisibleTo`, so never widen visibility for a test.
-  - Hosts get no way to weaken a safety check (pacing, duplicate radius, size limit, base URLs, loopback redirect) or to get a token: options are validated in the constructors, and test-only switches (`AllowAnyRequestInterval`, base URLs) are `internal`.
+  - Hosts get no way to weaken a safety check (pacing, size limit, base URLs, loopback redirect) or to get a token: options are validated in the constructors, and test-only switches (`AllowAnyRequestInterval`, base URLs) are `internal`.
 - Tests use hand-written HTTP stubs, never live APIs. Windows-only behavior uses `[WindowsOnlyFact]`.
 - Keep `CHANGELOG.md` (Keep a Changelog) updated under `[Unreleased]`.
 - The library multi-targets `net8.0;net10.0`. Do not use APIs that exist only on net10.0 without a `#if`.

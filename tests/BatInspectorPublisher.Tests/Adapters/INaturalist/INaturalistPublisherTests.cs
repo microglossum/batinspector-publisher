@@ -166,21 +166,6 @@ public class INaturalistPublisherTests
 
     [Theory]
     [InlineData(0)]
-    [InlineData(-0.1)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    public void Constructor_DuplicateRadiusThatFindsNothing_Throws(double radiusKm)
-    {
-        // Without a usable radius the duplicate check finds nothing and every re-run publishes again.
-        var options = new INaturalistOptions { ClientId = "c", DuplicateCheckRadiusKm = radiusKm };
-
-        var ex = Assert.Throws<ArgumentException>(() => new INaturalistPublisher(options, new HttpClient(_http), _ => Task.FromResult("jwt")));
-
-        Assert.Equal("DuplicateCheckRadiusKm", ex.ParamName);
-    }
-
-    [Theory]
-    [InlineData(0)]
     [InlineData(-1)]
     [InlineData(20_000_001)]
     public void Constructor_MaxEvidenceBytesOutsideTheServerLimit_Throws(long bytes)
@@ -351,46 +336,6 @@ public class INaturalistPublisherTests
         Assert.Equal(call, observation.GetProperty("species_guess").GetString());
     }
 
-    private void UncertainCallWithExisting(string searchResponse) => _http
-        .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, """{ "results": [ { "id": 42, "name": "Chiroptera", "rank": "order" } ] }""")
-        .On("GET /v1/users/me", HttpStatusCode.OK, UserProfile)
-        .On("GET /v1/observations", HttpStatusCode.OK, searchResponse)
-        .On("POST /v2/observations", HttpStatusCode.OK, """{ "results": [ { "id": 123, "uuid": "uuid-1" } ] }""")
-        .On("POST /v2/observation_photos", HttpStatusCode.OK, "{}")
-        .On("POST /v2/observation_sounds", HttpStatusCode.OK, "{}");
-
-    [Fact]
-    public async Task Publish_UncertainCall_IsNotBlockedByAnObservationOfASpeciesBelowItsTaxon()
-    {
-        UncertainCallWithExisting("""{ "total_results": 1, "results": [ { "id": 5, "uuid": "uuid-5", "taxon": { "id": 7 } } ] }""");
-
-        var result = await CreatePublisher().PublishAsync(Candidate() with { ScientificName = "Nyctaloid" }, Evidence(), new PublishOptions { Commit = true });
-
-        Assert.Equal(PublishStatus.Created, result.Status);
-    }
-
-    [Fact]
-    public async Task Publish_UncertainCall_IsSkippedWhenAnObservationIsFiledUnderExactlyItsTaxon()
-    {
-        UncertainCallWithExisting("""{ "total_results": 2, "results": [ { "id": 5, "uuid": "uuid-5", "taxon": { "id": 7 } }, { "id": 6, "uuid": "uuid-6", "taxon": { "id": 42 } } ] }""");
-
-        var result = await CreatePublisher().PublishAsync(Candidate() with { ScientificName = "Nyctaloid" }, Evidence(), new PublishOptions { Commit = true });
-
-        Assert.Equal(PublishStatus.SkippedDuplicate, result.Status);
-        Assert.Equal("6", result.ObservationId);
-        Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
-    }
-
-    [Fact]
-    public async Task Publish_UncertainCall_IsSkippedWhenTheTaxonOfAnExistingObservationIsNotReported()
-    {
-        UncertainCallWithExisting("""{ "total_results": 1, "results": [ { "id": 5, "uuid": "uuid-5" } ] }""");
-
-        var result = await CreatePublisher().PublishAsync(Candidate() with { ScientificName = "Nyctaloid" }, Evidence(), new PublishOptions { Commit = true });
-
-        Assert.Equal(PublishStatus.SkippedDuplicate, result.Status);
-    }
-
     [Theory]
     [InlineData(null, false)]
     [InlineData("CC-BY-NC", true)]
@@ -424,6 +369,71 @@ public class INaturalistPublisherTests
     public void Constructor_RefusesAnUnknownLicense(string license) =>
         Assert.Throws<ArgumentException>(() =>
             new INaturalistPublisher(new INaturalistOptions { ClientId = "c", License = license }, new HttpClient(_http), _ => Task.FromResult("jwt")));
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("open", "open")]
+    [InlineData("OBSCURED", "obscured")]
+    [InlineData(" Private ", "private")]
+    public async Task Publish_Geoprivacy_IsSentOnlyWhenSet(string? geoprivacy, string? sent)
+    {
+        ResolvesTo("Pipistrellus pipistrellus", "species", 5);
+        var publisher = new INaturalistPublisher(new INaturalistOptions { ClientId = "c", Geoprivacy = geoprivacy, AllowAnyRequestInterval = true }, new HttpClient(_http), _ => Task.FromResult("jwt"));
+
+        await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        using var doc = JsonDocument.Parse(_http.Requests.Single(r => r.Method == "POST" && r.Uri.AbsolutePath == "/v2/observations").Body);
+        var observation = doc.RootElement.GetProperty("observation");
+        Assert.Equal(sent is not null, observation.TryGetProperty("geoprivacy", out var value));
+        if (sent is not null)
+        {
+            Assert.Equal(sent, value.GetString());
+        }
+
+        Assert.Equal(8.682, observation.GetProperty("longitude").GetDouble());
+    }
+
+    [Theory]
+    [InlineData(false, "Dry run: would create an observation of Pipistrellus pipistrellus (taxon_id=5) and attach")]
+    [InlineData(true, "Dry run: would create an observation of Pipistrellus pipistrellus (taxon_id=5) with geoprivacy 'obscured' and attach")]
+    public async Task Publish_DryRun_NamesTheGeoprivacyOnlyWhenSet(bool set, string expected)
+    {
+        ResolvesTo("Pipistrellus pipistrellus", "species", 5);
+        var publisher = new INaturalistPublisher(new INaturalistOptions { ClientId = "c", Geoprivacy = set ? "obscured" : null, AllowAnyRequestInterval = true }, new HttpClient(_http), _ => Task.FromResult("jwt"));
+
+        var result = await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions());
+
+        Assert.Equal(PublishStatus.WouldCreate, result.Status);
+        Assert.StartsWith(expected, result.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
+    }
+
+    [Fact]
+    public async Task Publish_Commit_NamesTheGeoprivacyInTheResult()
+    {
+        ResolvesTo("Pipistrellus pipistrellus", "species", 5);
+        var publisher = new INaturalistPublisher(new INaturalistOptions { ClientId = "c", Geoprivacy = "private", AllowAnyRequestInterval = true }, new HttpClient(_http), _ => Task.FromResult("jwt"));
+
+        var result = await publisher.PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+
+        Assert.Equal(PublishStatus.Created, result.Status);
+        Assert.Contains("with geoprivacy 'private'", result.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("open")]
+    [InlineData("obscured")]
+    [InlineData(" PRIVATE ")]
+    public void Constructor_AcceptsAKnownGeoprivacyInAnyCase(string geoprivacy) =>
+        _ = new INaturalistPublisher(new INaturalistOptions { ClientId = "c", Geoprivacy = geoprivacy }, new HttpClient(_http), _ => Task.FromResult("jwt"));
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("obscure")]
+    [InlineData("hidden")]
+    public void Constructor_RefusesAnUnknownGeoprivacy(string geoprivacy) =>
+        Assert.Throws<ArgumentException>(() =>
+            new INaturalistPublisher(new INaturalistOptions { ClientId = "c", Geoprivacy = geoprivacy }, new HttpClient(_http), _ => Task.FromResult("jwt")));
 
     [Fact]
     public async Task Publish_UncertainCall_DryRunSaysItIsFiledUnderTheBroaderTaxon()
@@ -490,28 +500,12 @@ public class INaturalistPublisherTests
         _http
             .On("GET /v2/taxa/autocomplete", HttpStatusCode.OK, TestData.PipistrellusTaxa)
             .On("GET /v1/users/me", HttpStatusCode.OK, UserProfile)
-            .On("GET /v1/observations", HttpStatusCode.OK, """{ "total_results": 1, "results": [ { "id": 1 } ] }""");
+            .On("GET /v1/observations", HttpStatusCode.OK, ExistingObservations(photos: "[ { \"id\": 1 } ]", sounds: "[ { \"id\": 2 } ]"));
 
         var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
 
         Assert.Equal(PublishStatus.SkippedDuplicate, result.Status);
         Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
-    }
-
-    [Fact]
-    public async Task Publish_DuplicateCheck_UsesSingleDayAndInvariantCultureNumbers()
-    {
-        HappyPath();
-
-        await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
-
-        var query = _http.Requests.Single(r => r.PathAndQuery.StartsWith("/v1/observations")).PathAndQuery;
-        Assert.Contains("taxon_id=99", query);
-        Assert.Contains("d1=2026-06-11&d2=2026-06-11", query);
-        Assert.Contains("lat=50.11&lng=8.682", query);
-        Assert.Contains("radius=0.1", query);
-        Assert.Contains("user_id=4711", query);
-        Assert.DoesNotContain("mine_only", query);
     }
 
     [Fact]
@@ -542,15 +536,14 @@ public class INaturalistPublisherTests
     }
 
     [Fact]
-    public async Task Publish_DuplicateCheck_UsesTheLocalDayForANightAfterMidnight()
+    public async Task Publish_DuplicateCheck_LooksUpTheEntrysTagAmongTheOwnObservations()
     {
         HappyPath();
-        var candidate = Candidate() with { ObservedAt = new DateTimeOffset(2026, 6, 12, 0, 30, 0, TimeSpan.FromHours(2)) };
 
-        await CreatePublisher().PublishAsync(candidate, Evidence(), new PublishOptions { Commit = true });
+        await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions());
 
-        // 22:30 UTC on the 11th, but the 12th in Berlin.
-        Assert.Contains("d1=2026-06-12&d2=2026-06-12", _http.Requests.Single(r => r.PathAndQuery.StartsWith("/v1/observations")).PathAndQuery);
+        var search = Assert.Single(_http.Requests, r => r.PathAndQuery.StartsWith("/v1/observations"));
+        Assert.Equal($"/v1/observations?q={Uri.EscapeDataString(ResumeMarker.For(Candidate()))}&search_on=tags&user_id=4711", search.PathAndQuery);
     }
 
     [Fact]
@@ -919,14 +912,14 @@ public class INaturalistPublisherTests
 
     [Theory]
     [MemberData(nameof(TagsWithoutThisEntrysMarker))]
-    public async Task Publish_IncompleteObservationWithoutThisEntrysMarker_IsLeftAlone(string tags)
+    public async Task Publish_ObservationWithoutThisEntrysMarker_IsNotRecognizedAndLeftAlone(string tags)
     {
         WithExisting(ExistingObservations(photos: "[]", sounds: "[]", tags: tags));
 
-        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions { Commit = true });
+        var result = await CreatePublisher().PublishAsync(Candidate(), Evidence(), new PublishOptions());
 
-        Assert.Equal(PublishStatus.SkippedDuplicate, result.Status);
-        Assert.Equal("123", result.ObservationId);
+        Assert.Equal(PublishStatus.WouldCreate, result.Status);
+        Assert.Null(result.ObservationId);
         Assert.DoesNotContain(_http.Requests, r => r.Method == "POST");
     }
 
@@ -975,13 +968,11 @@ public class INaturalistPublisherTests
     }
 
     [Fact]
-    public void BuildPayload_PlaceGuess_IsAlwaysANonNullString()
+    public void BuildPayload_SendsNoPlaceGuess_SoNothingOfOursCanRevealThePosition()
     {
-        var payload = CreatePublisher().BuildPayload(TestData.Candidate(), 123);
+        var json = JsonSerializer.Serialize(CreatePublisher().BuildPayload(TestData.Candidate(), 123));
 
-        Assert.Equal("50.11000, 8.68200", payload.PlaceGuess);
-        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(payload));
-        Assert.Equal(JsonValueKind.String, doc.RootElement.GetProperty("place_guess").ValueKind);
+        Assert.DoesNotContain("place_guess", json);
     }
 
     [Fact]

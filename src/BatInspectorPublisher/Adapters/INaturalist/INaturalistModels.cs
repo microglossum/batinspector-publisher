@@ -47,9 +47,6 @@ internal sealed record TaxonLookup(Taxon? Taxon, string? Problem);
 
 internal sealed class ObservationsSearchResponse
 {
-    [JsonPropertyName("total_results")]
-    public int TotalResults { get; set; }
-
     [JsonPropertyName("results")]
     public List<ExistingObservation> Results { get; set; } = [];
 }
@@ -79,16 +76,6 @@ internal sealed class ExistingObservation
 
     [JsonPropertyName("sounds")]
     public List<JsonElement>? Sounds { get; set; }
-
-    /// <summary>The taxon the observation is filed under; null when the response does not say.</summary>
-    [JsonPropertyName("taxon")]
-    public ExistingTaxon? Taxon { get; set; }
-}
-
-internal sealed class ExistingTaxon
-{
-    [JsonPropertyName("id")]
-    public int Id { get; set; }
 }
 
 internal sealed class CreateObservationRequest
@@ -113,11 +100,6 @@ internal sealed class ObservationPayload
     [JsonPropertyName("longitude")]
     public double Longitude { get; set; }
 
-    // The v2 API validates place_guess as "must be string" and rejects an explicit null.
-    [JsonPropertyName("place_guess")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? PlaceGuess { get; set; }
-
     [JsonPropertyName("species_guess")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? SpeciesGuess { get; set; }
@@ -133,6 +115,10 @@ internal sealed class ObservationPayload
     [JsonPropertyName("license")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? License { get; set; }
+
+    [JsonPropertyName("geoprivacy")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Geoprivacy { get; set; }
 }
 
 internal sealed class CreateObservationResult

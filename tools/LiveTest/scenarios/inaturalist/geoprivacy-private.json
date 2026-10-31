@@ -1,0 +1,16 @@
+{
+  "SchemaVersion": 1,
+  "DocumentFiles": [
+    {
+      "Date": "12.10.2026 20:58:03",
+      "Latitude": 50.1679,
+      "Longitude": 8.8425,
+      "SpeciesLatin": "Pipistrellus nathusii",
+      "Temperature": 9.5,
+      "Humidity": 78.0,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/PNAT_20260429_213726.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/PNAT_20260429_213726.wav"
+    }
+  ]
+}

@@ -4,10 +4,20 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- `INaturalistOptions.Geoprivacy` (`open`, `obscured`, `private`; checked in the constructor): hides the position of every observation of the publisher. Null sends none and iNaturalist applies its own rules. The dry run and the result name the value. The `batinspector:` tag is unchanged and still derives from the exact coordinates, see `docs/inaturalist-setup.md`.
+
 ### Changed
 
+- The duplicate check looks for the entry's `batinspector:` tag among the user's own observations instead of searching by taxon, day and radius. The tag is found whatever the position is (open, obscured, private, also a taxon that iNaturalist obscures by itself), and one request less per new entry. It recognizes the same entry again and nothing else: an observation made otherwise, or an entry changed after publishing, counts as new, and choosing one recording per species, night and place is left to the export; see `docs/inaturalist.md`.
+- No `place_guess` is sent any more (it held the coordinates as text). iNaturalist sets the place name from the coordinates itself: a town for an open observation, a coarse name for an obscured one, none for a private one.
 - Setup guide: a host keeps one `INaturalistPublisher` for the whole session, because the request pacing is per instance.
 - README: an install section, the NuGet badges and a short section on licenses (English and German).
+
+### Removed
+
+- `INaturalistOptions.DuplicateCheckRadiusKm`: there is no search by position any more.
 
 ## [0.1.0] - 2026-10-15
 

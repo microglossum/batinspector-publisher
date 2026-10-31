@@ -118,6 +118,11 @@ des angemeldeten Kontos, die so offen sein können wie CC0. `License` setzen (zu
 und das Spektrogramm. Die Lizenz der Aufnahme (Sound) lässt sich über die API nicht setzen; dafür die Standard-Soundlizenz des
 Kontos auf denselben Wert stellen. Einzelheiten: [Lizenzen](docs/inaturalist-setup.de.md#lizenzen).
 
+## Position verbergen
+
+Beobachtungen sind mit ihren genauen Koordinaten öffentlich. `INaturalistOptions.Geoprivacy` auf `obscured` oder `private` zu setzen
+verbirgt die Position aller Beobachtungen des Publishers. Einzelheiten: [Position verbergen](docs/inaturalist-setup.de.md#position-verbergen).
+
 ## Eingabeformat
 
 Die Eingabe ist die Exportdatei von BatInspector. Ihr Schema ist versioniert: `SchemaVersion` ist Pflicht, neuere

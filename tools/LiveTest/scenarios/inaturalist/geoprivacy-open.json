@@ -1,0 +1,16 @@
+{
+  "SchemaVersion": 1,
+  "DocumentFiles": [
+    {
+      "Date": "10.10.2026 21:40:12",
+      "Latitude": 50.0521,
+      "Longitude": 8.9137,
+      "SpeciesLatin": "Nyctalus leisleri",
+      "Temperature": 9.5,
+      "Humidity": 78.0,
+      "Comment": "Testdaten, bitte ignorieren",
+      "PathToPng": "/workspace/tools/LiveTest/data/real/NLEI_20260429_222759.png",
+      "PathToWav": "/workspace/tools/LiveTest/data/real/NLEI_20260429_222759.wav"
+    }
+  ]
+}

@@ -174,6 +174,24 @@ Was zu tun ist: `License` setzen und die **Standard-Soundlizenz** des iNaturalis
 Inhalt & Anzeige, Lizenzierung; die Seite ändert iNaturalist). Ein Host sollte seinen Nutzern das vor dem ersten echten Lauf sagen: Das Paket
 kann die Einstellung des Kontos nicht sehen. Die Lizenz einer veröffentlichten Beobachtung lässt sich auch nachträglich bei iNaturalist ändern.
 
+## Position verbergen
+
+Standardmäßig ist die Beobachtung mit ihren genauen Koordinaten öffentlich (sensible Taxa verschleiert iNaturalist selbst).
+`INaturalistOptions.Geoprivacy` ändert das für alle Beobachtungen des Publishers: `open`, `obscured` (verschobene Position, eine Zelle von
+etwa 0,2 Grad) oder `private` (nur für den Besitzer sichtbar), in beliebiger Schreibweise; jeder andere Wert lässt den Konstruktor werfen.
+`null` (Standard) sendet keinen Wert, dann gelten die Regeln von iNaturalist. Probelauf und Ergebnis nennen den gewählten Wert. Eine bereits vorhandene Beobachtung wird nicht
+geändert; ein erneuter Lauf mit anderem Wert verschiebt sie also nicht.
+
+Das Paket sendet keinen Ortsnamen; iNaturalist leitet ihn aus den Koordinaten ab. Bei `obscured` ist er grob und verrät daher ungefähr,
+wo die Beobachtung entstand (Regel von iNaturalist, nicht unsere).
+
+Ein erneuter Lauf erkennt so eine Beobachtung weiter: Die Duplikatprüfung findet sie über ihr Tag, egal wo ihre Position liegt (siehe
+[Erneuter Lauf](inaturalist.de.md#erneuter-lauf-duplikate-und-fortsetzen)).
+
+Grenzen: Das `batinspector:`-Tag wird aus den genauen Koordinaten gebildet und bleibt öffentlich; wer genug Rechenleistung hat, könnte die
+Position daraus rekonstruieren. Spektrogramm und Aufnahme werden unverändert hochgeladen und bleiben bei einer `private`-Beobachtung sichtbar
+(live gesehen); schreibt ein Rekorder seine Position in die WAV-Metadaten, verrät sie sich dort.
+
 ## Token-Speicherung
 
 Nach der Anmeldung legt der Authenticator ein `INaturalistToken` in seinem Token-Speicher ab:

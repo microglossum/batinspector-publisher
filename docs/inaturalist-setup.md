@@ -173,6 +173,23 @@ What to do: set `License`, and set the **default sound license** of the iNatural
 Content & Display, Licensing; the page is iNaturalist's to change). A host should tell its users this before the first real run: the package
 cannot see the account's setting. The license of a published observation can also be changed afterwards on iNaturalist.
 
+## Hiding the position
+
+By default the observation is public with its exact coordinates (iNaturalist obscures sensitive taxa by itself). `INaturalistOptions.Geoprivacy`
+changes that for every observation of the publisher: `open`, `obscured` (a shifted position, a cell of about 0.2 degrees) or `private`
+(hidden from everyone but the owner), in any case; any other value makes the constructor throw. `null` (the default) sends none, and iNaturalist
+applies its own rules. The dry run and the result name the chosen value. An observation that already exists is not changed, so a re-run with another value does not move it.
+
+The package sends no place name; iNaturalist derives one from the coordinates. With `obscured` it is a coarse name, so it tells roughly
+where the observation was made (iNaturalist's rule, not ours).
+
+A re-run still recognizes such an observation: the duplicate check finds it by its tag, whatever its position is (see
+[Re-running](inaturalist.md#re-running-duplicates-and-resume)).
+
+Limits: the `batinspector:` tag is derived from the exact coordinates and stays public, so someone with enough computing power could
+recover the position from it. The spectrogram and the recording are uploaded as they are and stay visible on a `private` observation
+(seen live); a recorder that writes its position into the WAV metadata would reveal it there.
+
 ## Token storage
 
 After the login the authenticator keeps one `INaturalistToken` in its token store:
