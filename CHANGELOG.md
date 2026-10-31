@@ -4,6 +4,10 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-31
+
+Observations can hide their position, and the duplicate check finds an entry again whatever its position is.
+
 ### Added
 
 - `INaturalistOptions.Geoprivacy` (`open`, `obscured`, `private`; checked in the constructor): hides the position of every observation of the publisher. Null sends none and iNaturalist applies its own rules. The dry run and the result name the value. The `batinspector:` tag is unchanged and still derives from the exact coordinates, see `docs/inaturalist-setup.md`.
@@ -17,7 +21,7 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ### Removed
 
-- `INaturalistOptions.DuplicateCheckRadiusKm`: there is no search by position any more.
+- **Breaking:** `INaturalistOptions.DuplicateCheckRadiusKm`: there is no search by position any more. Remove the setting from your code.
 
 ## [0.1.0] - 2026-10-15
 
@@ -62,5 +66,6 @@ First version: reads BatInspector's export file and publishes one observation pe
 - Documentation in English and German: README, setup guide, input file reference, iNaturalist mapping (`docs/inaturalist.md`), the requests sent to iNaturalist (`docs/inaturalist-api.md`) and the logging contract.
 - Package icon (a bat above an upload arrow).
 
-[Unreleased]: https://github.com/microglossum/batinspector-publisher/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/microglossum/batinspector-publisher/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/microglossum/batinspector-publisher/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/microglossum/batinspector-publisher/releases/tag/v0.1.0
