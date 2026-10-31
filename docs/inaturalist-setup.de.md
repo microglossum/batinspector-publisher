@@ -277,7 +277,9 @@ Token-Austausch, wenn das gespeicherte API-Token abgelaufen ist. Das Paket takte
 
 **Taktung (standardmäßig an).** `INaturalistOptions.MinRequestInterval` (Standard eine Sekunde) ist die Mindestzeit zwischen den Starts
 zweier Anfragen. Ein Lauf bleibt damit bei etwa 60 Anfragen pro Minute, ein Kandidat dauert etwa fünf Sekunden. Der Abstand gilt je
-`INaturalistPublisher` (der Authenticator hat einen eigenen, er sendet selten): nicht mehrere Publisher parallel gegen ein Konto laufen lassen.
+`INaturalistPublisher` (der Authenticator hat einen eigenen, er sendet selten): ein Host hält für die ganze Sitzung einen Publisher und
+verwendet ihn für jede Datei und jeden Stapel weiter (ein neuer kennt die letzte Anfrage nicht, zwei hintereinander können die Rate überschreiten),
+und lässt nicht mehrere Publisher parallel gegen ein Konto laufen.
 Die Option muss mindestens eine Sekunde betragen (sonst `ArgumentException`), die Taktung lässt sich also nicht abschalten. Das Paket zählt keine Anfragen; die empfohlene Vorgehensweise von iNaturalist nennt auch eine
 Tagesmenge, eine sehr große Datei also auf mehrere Tage verteilen.
 

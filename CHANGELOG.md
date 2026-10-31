@@ -6,6 +6,7 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ### Changed
 
+- Setup guide: a host keeps one `INaturalistPublisher` for the whole session, because the request pacing is per instance.
 - README: an install section, the NuGet badges and a short section on licenses (English and German).
 
 ## [0.1.0] - 2026-10-15

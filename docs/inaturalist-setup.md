@@ -274,8 +274,9 @@ token exchange when the stored API token has expired. The package therefore pace
 
 **Pacing (on by default).** `INaturalistOptions.MinRequestInterval` (default one second) is the minimum time between the starts
 of two requests, so a run stays at about 60 requests per minute and a candidate takes about five seconds. The spacing holds per
-`INaturalistPublisher` (the authenticator keeps its own, it sends rarely): do not run several publishers in parallel against one
-account. The option must be at least one second (an `ArgumentException` otherwise), so pacing cannot be switched off. The package does not count requests; iNaturalist's recommended practices also name a
+`INaturalistPublisher` (the authenticator keeps its own, it sends rarely): a host keeps one publisher for the whole session and
+reuses it for every file and batch (a new one starts with no memory of the last request, so two in a row can exceed the rate), and
+does not run several publishers in parallel against one account. The option must be at least one second (an `ArgumentException` otherwise), so pacing cannot be switched off. The package does not count requests; iNaturalist's recommended practices also name a
 daily volume, so split a very large file over several days.
 
 **Retries (off by default).** `INaturalistOptions.MaxAttempts` is the number of tries per request, the first one included.
