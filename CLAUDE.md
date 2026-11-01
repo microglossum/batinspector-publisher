@@ -34,14 +34,14 @@ Flow: BatInspector's export file is read into candidates (one reference recordin
 - `Core` never references `Adapters`, adapters never reference each other (enforced by `ArchitectureTests`). The publisher interface lives in `Core`.
 - Each adapter owns its auth entirely. There is no shared auth abstraction; do not assume OAuth outside the iNaturalist adapter.
 - Validation has two layers. Platform-neutral checks live in `Core` and reject an entry for every platform; what only one platform rejects (its limits, its accepted ranges) is validated inside that adapter, before any login or request. Never put a platform limit into `Core`.
-- naturgucker is blocked (no public API docs): keep it an internal stub, do not guess its shape or bend the publisher interface for it.
+- naturgucker is an internal prototype (owner's go 2026-11-01, no public API docs): it stays on its branch, unpublished, until the platform's operator has confirmed the approach. Do not guess its shape or bend the publisher interface for it.
 
 ## Rules that are decided - do not re-litigate
 
 - Input schema is BatInspector-specific, `SchemaVersion` is required, changes within a version are additive only.
 - Validation is per entry: a bad entry is left out and reported, the rest is still published; only a structurally unusable file throws. No strict/lenient switch. Re-runs rely on the duplicate check.
 - `PublishOptions.Commit` defaults to false: publishing is public and irreversible, so dry run is the default.
-- Taxon resolution is strict and never guesses (no "first autocomplete hit", no broader taxon for a typo), and accepts only bats (Chiroptera or below, resolved live by name). The one exception is a small fixed table of BatInspector group/uncertain values, always on, no option.
+- Taxon resolution is strict and never guesses (no "first autocomplete hit", no broader taxon for a typo), and accepts only bats (Chiroptera or below, resolved live by name). The exceptions are a small fixed table of BatInspector group/uncertain values, always on, no option, and, per adapter, a small fixed table of name pairs where the platform's taxonomy differs from the input file's (the file follows iNaturalist and current research; naturgucker translates, decided 2026-11-01). A name without a pair is never replaced.
 - Taxa are resolved live for every candidate and never cached or shipped as a list: iNaturalist's taxonomy changes (names are split, merged and renamed), and a stale copy would file observations under outdated taxa. A synonym is reported with its current name; the input file is corrected, not the package.
 - The input file holds one reference recording per species, night and location, not every detection; the duplicate check recognizes only an entry published before (same species, instant and position, by its tag), choosing among recordings is the export's job.
 - The package ships no credentials and reads no config files or environment variables. The host passes the adapter options.

@@ -52,5 +52,5 @@
     }
   },
 
-  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.claude /home/vscode/.nuget && dotnet restore"
+  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.claude /home/vscode/.nuget && sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils && dotnet restore"
 }

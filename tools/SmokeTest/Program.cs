@@ -6,11 +6,13 @@
 //   dotnet run -- renew                       ages the stored API token by 2 days, then renews it silently from the stored OAuth token
 //   dotnet run -- dry-run <input.json>        full simulation (login, taxon, duplicate check), writes nothing
 //   dotnet run -- publish <input.json>        REAL, public, irreversible; asks for confirmation
+//   dotnet run -- naturgucker-dry-run | naturgucker-publish <input.json> [login file]   naturgucker prototype; the login file defaults to local/naturgucker-login.json; publish is REAL and public
 // whoami and renew call internals (the silent token renewal), made visible to this project in Debug builds only.
 // Keep real observation data (input files, evidence) under local/, which is git-ignored.
 using System.Diagnostics;
 using System.Text.Json;
 using BatInspectorPublisher.Adapters.INaturalist;
+using BatInspectorPublisher.Adapters.Naturgucker;
 using BatInspectorPublisher.Core;
 using BatInspectorPublisher.Core.InputSchema;
 using BatInspectorPublisher.Core.Results;
@@ -107,8 +109,49 @@ switch (command)
                           string.Join(", ", report.CountByStatus.Select(kv => $"{kv.Key}={kv.Value}")));
         return 0;
 
+    case "naturgucker-dry-run":
+    case "naturgucker-publish":
+        if (args.Length < 2)
+        {
+            Console.Error.WriteLine("Missing input file.");
+            return 2;
+        }
+
+        var naturguckerCommit = command == "naturgucker-publish";
+
+        // The login file is read here and never printed; the adapter only ever logs the species and the observation id.
+        // Without a third argument it is local/naturgucker-login.json, found upwards from the working directory (git-ignored).
+        using (var login = JsonDocument.Parse(File.ReadAllText(args.Length > 2 ? args[2] : FindLocalFile("local/naturgucker-login.json"))))
+        {
+            var root = login.RootElement;
+            var ngOptions = new NaturguckerOptions
+            {
+                Email = root.GetProperty("email").GetString()!,
+                Password = root.GetProperty("password").GetString()!,
+                ServiceNumber = root.TryGetProperty("service", out var service) ? service.GetInt64() : 999,
+            };
+            var ngReport = await new ExportOrchestrator(new NaturguckerPublisher(ngOptions, http))
+                .RunAsync(InputSchemaReader.ReadFile(args[1]), new PublishOptions { Commit = naturguckerCommit });
+            foreach (var r in ngReport.Results)
+            {
+                Console.WriteLine($"{r.Status,-24} {r.Candidate.ScientificName} -> {r.TaxonName} {r.ObservationId} {r.Message}");
+                Console.WriteLine($"{"Description",-24} {r.Description}");
+                if (r.Error is not null)
+                {
+                    Console.WriteLine($"{"Error",-24} {r.Error.GetType().Name}, step {r.InterruptedStep}");
+                }
+            }
+
+            foreach (var rejected in ngReport.Rejected)
+            {
+                Console.WriteLine($"{"Rejected",-24} entry {rejected.Index}: {string.Join("; ", rejected.Issues)}");
+            }
+        }
+
+        return 0;
+
     default:
-        Console.Error.WriteLine("Usage: login | whoami | renew | dry-run <input.json> | publish <input.json>");
+        Console.Error.WriteLine("Usage: login | whoami | renew | dry-run <input.json> | publish <input.json> | naturgucker-dry-run | naturgucker-publish <input.json> [login file]");
         return 2;
 }
 
@@ -126,6 +169,20 @@ static Task ShowLoginUrl(Uri url, CancellationToken ct)
     }
 
     return Task.CompletedTask;
+}
+
+static string FindLocalFile(string relativePath)
+{
+    for (var dir = new DirectoryInfo(Directory.GetCurrentDirectory()); dir is not null; dir = dir.Parent)
+    {
+        var path = Path.Combine(dir.FullName, relativePath);
+        if (File.Exists(path))
+        {
+            return path;
+        }
+    }
+
+    throw new FileNotFoundException($"{relativePath} not found (looked upwards from the working directory).");
 }
 
 static bool Confirm(string question)
